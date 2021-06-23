@@ -10,17 +10,17 @@
 [submodule "plugins/prezto"]
 	path = plugins/prezto
 	url = https://github.com/sorin-ionescu/prezto.git
-[submodule "plugins/zsh/z"]
-	path = plugins/zsh/z
+[submodule "plugins/zsh/zsh-z"]
+	path = plugins/zsh/zsh-z
 	url = https://github.com/agkozak/zsh-z.git
-[submodule "plugins/zsh/autocomplete"]
-	path = plugins/zsh/autocomplete
+[submodule "plugins/zsh/zsh-autocomplete"]
+	path = plugins/zsh/zsh-autocomplete
 	url = https://github.com/marlonrichert/zsh-autocomplete.git
 [submodule "runcom/.vim/bundle/Vundle.vim"]
 	path = runcom/.vim/bundle/Vundle.vim
 	url = https://github.com/VundleVim/Vundle.vim.git
-[submodule "plugins/zsh/nvm"]
-	path = plugins/zsh/nvm
+[submodule "plugins/zsh/zsh-nvm"]
+	path = plugins/zsh/zsh-nvm
 	url = https://github.com/lukechilds/zsh-nvm
 [submodule "config/spicetify_data/Themes"]
 	path = config/spicetify_data/Themes

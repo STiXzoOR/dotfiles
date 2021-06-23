@@ -36,10 +36,10 @@ zstyle ':prezto:load' pmodule \
   'spectrum' \
   'utility' \
   'completion' \
-  'z' \
+  'zsh-z' \
   'git' \
   'command-not-found' \
-  'nvm' \
+  'zsh-nvm' \
   'node' \
   'osx' \
   'ssh' \
@@ -49,7 +49,7 @@ zstyle ':prezto:load' pmodule \
   'syntax-highlighting' \
   'history-substring-search' \
   'autosuggestions' \
-  'autocomplete'
+  'zsh-autocomplete'
 
 #
 # Autosuggestions
