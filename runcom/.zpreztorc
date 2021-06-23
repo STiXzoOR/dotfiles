@@ -38,6 +38,7 @@ zstyle ':prezto:load' pmodule \
   'completion' \
   'zsh-z' \
   'git' \
+  'zsh-thefuck' \
   'command-not-found' \
   'zsh-nvm' \
   'node' \

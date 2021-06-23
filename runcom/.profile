@@ -11,7 +11,7 @@ fi
 
 PATH="$DOTFILES_DIR/bin:$PATH"
 
-for DOTFILE in "$DOTFILES_DIR"/system/.{env,bindings,function,function_*,path,alias,grep,fasd,fix,iterm}; do
+for DOTFILE in "$DOTFILES_DIR"/system/.{env,bindings,function,function_*,path,alias,grep,iterm}; do
   [[ -f "$DOTFILE" ]] && . "$DOTFILE"
 done
 

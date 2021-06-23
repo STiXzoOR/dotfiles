@@ -25,3 +25,6 @@
 [submodule "config/spicetify_data/Themes"]
 	path = config/spicetify_data/Themes
 	url = https://github.com/morpheusthewhite/spicetify-themes
+[submodule "plugins/zsh/zsh-thefuck"]
+	path = plugins/zsh/zsh-thefuck
+	url = https://github.com/laggardkernel/zsh-thefuck
