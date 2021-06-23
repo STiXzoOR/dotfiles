@@ -3,12 +3,12 @@ bot "Xcode"
 ###############################################################################
 
 running "Create xcode custom theme folder"
-CUSTOM_THEME_DIR="$HOMR/Library/Developer/Xcode/UserData/FontAndColorThemes"
+CUSTOM_THEME_DIR="$HOME/Library/Developer/Xcode/UserData/FontAndColorThemes"
 mkdir -p "$CUSTOM_THEME_DIR/"
 ok
 
 running "Install nord theme"
-ln -s "$DOTFILES_DIR/apps/xcode/nord_theme/src/Nord.xccolortheme $CUSTOM_THEME_DIR/Nord.xccolortheme"
+ln -s "$DOTFILES_DIR/apps/xcode/nord_theme/src/Nord.xccolortheme" "$CUSTOM_THEME_DIR/Nord.xccolortheme"
 ok
 
 running "Change theme to nord"
@@ -29,10 +29,6 @@ ok
 
 running "Reduce the number of compile tasks and stop indexing"
 defaults write com.apple.dt.XCode IDEIndexDisable 1
-ok
-
-running "Show all devices and their information you have plugged in before"
-defaults read com.apple.dt.XCode DVTSavediPhoneDevices
 ok
 
 running "Show ruler at 80 chars"
