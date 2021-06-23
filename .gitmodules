@@ -1,0 +1,27 @@
+[submodule "apps/iterm2/nord_theme"]
+	path = apps/iterm2/nord_theme
+	url = https://github.com/arcticicestudio/nord-iterm2
+[submodule "apps/terminal/nord_theme"]
+	path = apps/terminal/nord_theme
+	url = https://github.com/arcticicestudio/nord-terminal-app
+[submodule "apps/xcode/nord_theme"]
+	path = apps/xcode/nord_theme
+	url = https://github.com/arcticicestudio/nord-xcode
+[submodule "runcom/spicetify_data/themes"]
+	path = runcom/spicetify_data/themes
+	url = https://github.com/morpheusthewhite/spicetify-themes
+[submodule "plugins/prezto"]
+	path = plugins/prezto
+	url = https://github.com/sorin-ionescu/prezto.git
+[submodule "plugins/zsh/z"]
+	path = plugins/zsh/z
+	url = https://github.com/agkozak/zsh-z.git
+[submodule "plugins/zsh/autocomplete"]
+	path = plugins/zsh/autocomplete
+	url = https://github.com/marlonrichert/zsh-autocomplete.git
+[submodule "runcom/.vim/bundle/Vundle.vim"]
+	path = runcom/.vim/bundle/Vundle.vim
+	url = https://github.com/VundleVim/Vundle.vim.git
+[submodule "plugins/zsh/nvm"]
+	path = plugins/zsh/nvm
+	url = https://github.com/lukechilds/zsh-nvm

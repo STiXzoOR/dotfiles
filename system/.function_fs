@@ -1,0 +1,61 @@
+# Create a new directory and enter it
+function mkd() {
+  mkdir -p "$@" && cd "$_"
+}
+
+# Create a new git repo with one README commit and CD into it
+function gitnr() {
+  mkdir $1
+  cd $1
+  git init
+  touch README.md
+  git add README.md
+  git commit -minitial-commit
+}
+
+# `o` with no arguments opens the current directory, otherwise opens the given
+# location
+function o() {
+	if [ $# -eq 0 ]; then
+		open .;
+	else
+		open "$@";
+	fi;
+}
+
+# Fix file permissions
+function fix-perms() {
+  find . \( -name "*.sh" -or -type d \) -exec chmod 755 {} \; && find . -type f ! -name "*.sh" -exec chmod 644 {} \;
+}
+
+# fo [FUZZY PATTERN] - Open the selected file with the default editor
+#   - Bypass fuzzy finder if there's only one match (--select-1)
+#   - Exit if there's no match (--exit-0)
+function fo() {
+  local files
+  IFS=$'\n' files=($(fzf-tmux --query="$1" --multi --select-1 --exit-0))
+  [[ -n "$files" ]] && ${EDITOR:-vim} "${files[@]}"
+}
+
+# Fuzzy find file/dir
+ff() { find . -type f -iname "*$1*";}
+fd() { find . -type d -iname "*$1*";}
+
+# Show disk usage of current folder, or list with depth
+duf() {
+  du --max-depth=${1:-0} -c | sort -r -n | awk '{split("K M G",v); s=1; while($1>1024){$1/=1024; s++} print int($1)v[s]"\t"$2}'
+}
+
+# Create a data URL from a file
+dataurl() {
+  local MIMETYPE=$(file --mime-type "$1" | cut -d ' ' -f2)
+  if [[ $MIMETYPE == "text/*" ]]; then
+    MIMETYPE="${MIMETYPE};charset=utf-8"
+  fi
+  echo "data:${MIMETYPE};base64,$(openssl base64 -in "$1" | tr -d '\n')"
+}
+
+# Output directory/file tree, excluding ignorables
+function tre() {
+  tree -aC -I '.git|node_modules|bower_components|.DS_Store' --dirsfirst "$@"
+}

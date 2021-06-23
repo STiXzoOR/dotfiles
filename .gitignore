@@ -1,0 +1,14 @@
+.AppleDouble
+.DS_Store
+.LSOverride
+._*
+.git_template/hooks/disabled-pc
+node_modules
+runcom/.vim/backup/*
+!runcom/.vim/backup/.gitignore
+runcom/.vim/temp/*
+!runcom/.vim/temp/.gitignore
+runcom/.vim/.netrwhist
+runcom/.vim/bundle/*
+!runcom/.vim/bundle/.gitignore
+!runcom/.vim/bundle/Vundle.vim

@@ -1,0 +1,18 @@
+*~
+*.log
+._*
+.DS_Store
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+.idea
+.vscode
+node_modules
+bower_components
+id_*

@@ -1,0 +1,80 @@
+# Add to path
+prepend-path() {
+  [ -d $1 ] && PATH="$1:$PATH"
+}
+
+# Get named var
+# usage: get "VAR_NAME"
+get() {
+  echo "${!1}"
+}
+
+# Generate .gitignore file
+function gen-git-ignore() {
+  curl -sL https://www.toptal.com/developers/gitignore/api/$@
+}
+
+# Get weather information for a given country/city
+# usage: weather Cyprus
+function weather() {
+  curl wttr.in/$1
+}
+
+# Use Mac OS Preview to open a man page in a more handsome format
+function manp() {
+  man -t $1 | open -f -a /Applications/Preview.app
+}
+
+# Hide shadow under screenshots
+function hide-screenshot-shadow() {
+    defaults write com.apple.screencapture disable-shadow -bool true
+}
+
+# Show (back to defaults) shadow under screenshots
+function show-screenshot-shadow() {
+  defaults write com.apple.screencapture disable-shadow -bool false
+}
+
+# Show normally hidden system and dotfile types of files
+# in Mac OS Finder
+function show-hidden-files() {
+  defaults write com.apple.Finder AppleShowAllFiles YES
+  osascript -e 'tell application "Finder" to quit'
+  sleep 0.25
+  osascript -e 'tell application "Finder" to activate'
+}
+
+# Hide (back to defaults) normally hidden system and dotfile types of files
+# in Mac OS Finder
+function hide-hidden-files() {
+  defaults write com.apple.Finder AppleShowAllFiles NO
+  osascript -e 'tell application "Finder" to quit'
+  sleep 0.25
+  osascript -e 'tell application "Finder" to activate'
+}
+
+# Deduplicate path variables
+function dedup-pathvar() {
+  function get-var() {
+    eval 'printf "%s\n" "${'"$1"'}"'
+  }
+
+  function set-var() {
+    eval "$1=\"\$2\""
+  }
+
+  pathvar_name="$1"
+  pathvar_value="$(get-var "$pathvar_name")"
+  deduped_path="$(perl -e 'print join(":",grep { not $seen{$_}++ } split(/:/, $ARGV[0]))' "$pathvar_value")"
+  set-var "$pathvar_name" "$deduped_path"
+}
+
+# Show 256 TERM colors
+colors() {
+  local X=$(tput op)
+  local Y=$(printf %$((COLUMNS-6))s)
+  for i in {0..256}; do
+    o=00$i
+    echo -e ${o:${#o}-3:3} $(tput setaf $i;tput setab $i)${Y// /=}$X
+  done
+}
