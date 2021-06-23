@@ -7,9 +7,6 @@
 [submodule "apps/xcode/nord_theme"]
 	path = apps/xcode/nord_theme
 	url = https://github.com/arcticicestudio/nord-xcode
-[submodule "runcom/spicetify_data/themes"]
-	path = runcom/spicetify_data/themes
-	url = https://github.com/morpheusthewhite/spicetify-themes
 [submodule "plugins/prezto"]
 	path = plugins/prezto
 	url = https://github.com/sorin-ionescu/prezto.git
@@ -25,3 +22,6 @@
 [submodule "plugins/zsh/nvm"]
 	path = plugins/zsh/nvm
 	url = https://github.com/lukechilds/zsh-nvm
+[submodule "config/spicetify_data/Themes"]
+	path = config/spicetify_data/Themes
+	url = https://github.com/morpheusthewhite/spicetify-themes
