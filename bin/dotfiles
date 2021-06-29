@@ -137,24 +137,23 @@ sub_install() {
     ok
   fi
 
-  bot "installing nvm..."
+  action "installing nvm..."
   install_nvm
   ok
 
-  bot "installing node..."
+  action "installing node..."
   require_nvm node
   ok
 
   pushd "$ROOT_DIR" >/dev/null 2>&1
 
-  bot "installing npm tools needed to run this project..."
+  action "installing npm tools needed to run this project..."
   npm install
   ok
 
   popd >/dev/null 2>&1
 
-  bot "Woot. All done!"
-  bot "You should run the complementary commands to have your machine fully configured and ready to use:\n"
+  bot "Woot. All done!. You should run the complementary commands to have your machine fully configured and ready to use:\n"
   echo "$BIN_NAME install hosts"
   echo "$BIN_NAME install prezto"
   echo "$BIN_NAME link (This should be run after prezto)"
@@ -166,7 +165,6 @@ sub_install() {
 
   read -r -p "Should i run them for you? [y|N] " response
   if [[ $response =~ (yes|y|Y) ]]; then
-    echo
     $0 install all
   fi
 
@@ -199,7 +197,7 @@ sub_install_passwordless() {
 }
 
 sub_install_ssh() {
-  bot "Setting up SSH"
+  bot "Setting up SSH\n"
 
   if [[ -f "$HOME/.ssh/id_ed25519" ]]; then
     read -r -p "Looks like SSH is already configured. Should i generate a new key nontheless? [y|N] " response
@@ -366,7 +364,7 @@ sub_link() {
 }
 
 sub_unlink() {
-  bot "Dotfiles Restore"
+  bot "Dotfiles Restore\n"
   if [[ -z $1 ]]; then
     error "you need to specify a backup folder date. Take a look in ~/.dotfiles_backup/ to see which backup date you wish to restore."
     exit 1
@@ -434,38 +432,37 @@ sub_update() {
 }
 
 sub_update_system() {
-  bot "Dedusting this old rusty piece of machinery!\n"
+  bot "Dedusting this old rusty piece of machinery!"
 
-  running "Updating macOS"
+  action "Updating macOS"
   sudo softwareupdate -i -a
 
-  running "Updating homebrew"
+  action "Updating homebrew"
   brew update
 
-  running "Upgrading homebrew packages"
+  action "Upgrading homebrew packages"
   brew upgrade
 
-  running "Upgrading homebrew casks"
+  action "Upgrading homebrew casks"
   brew upgrade --cask
 
-  running "Upgrading app store apps"
+  action "Upgrading app store apps"
   mas upgrade
 
-  running "Updating npm"
+  action "Updating npm"
+  source_nvm
   nvm install-latest-npm
   npm update -g
 
-  running "Updating gem"
-  gem update --system
-  gem update
+  action "Updating gem"
+  sudo gem update --system
+  sudo gem update
 
-  bot "Woot! All done."
-  bot "You should clean your system from any leftovers files by running:\n"
-  echo "$BIN_NAME clean\n"
+  bot "Woot! All done. You should clean your system from any leftovers files by running:\n\n"
+  echo -e "$BIN_NAME clean\n\n"
 
   read -r -p "Should i clean them for you? [y|N] " response
   if [[ $response =~ (yes|y|Y) ]]; then
-    echo
     $0 clean
   fi
 }
@@ -473,10 +470,9 @@ sub_update_system() {
 sub_clean() {
   bot "Polishing this old rusty piece of machinery!\n"
   brew cleanup
-  gem cleanup
-  . /usr/local/opt/nvm/nvm.sh
-  npm audit fix
+  source_nvm
   nvm cache clear
+  sudo gem cleanup
   bot "Woot! All done."
 }
 
