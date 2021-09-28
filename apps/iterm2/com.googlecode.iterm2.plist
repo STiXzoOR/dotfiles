@@ -2024,6 +2024,8 @@
 	<string>D62DCFF9-F139-4F14-8FF9-20B8E86AA9B5</string>
 	<key>DimInactiveSplitPanes</key>
 	<false/>
+	<key>EnableAPIServer</key>
+	<true/>
 	<key>EscapeShellCharsWithBackslash</key>
 	<false/>
 	<key>FocusFollowsMouse</key>
