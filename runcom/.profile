@@ -2,6 +2,9 @@
 # Generic configuration that applies to all shells
 #############################################################
 
+# Preload Fig Env Variables
+[ -s ~/.fig/shell/pre.sh ] && source ~/.fig/shell/pre.sh
+
 if [[ -d "$HOME/.dotfiles" ]]; then
   DOTFILES_DIR="$HOME/.dotfiles"
 else
@@ -19,3 +22,6 @@ eval "$(dircolors -b "$DOTFILES_DIR"/system/.dir_colors)"
 
 unset DOTFILE
 export DOTFILES_DIR
+
+# Load Fig
+[ -s ~/.fig/fig.sh ] && source ~/.fig/fig.sh

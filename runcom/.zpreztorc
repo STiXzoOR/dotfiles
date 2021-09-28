@@ -49,8 +49,7 @@ zstyle ':prezto:load' pmodule \
   'prompt' \
   'syntax-highlighting' \
   'history-substring-search' \
-  'autosuggestions' \
-  'zsh-autocomplete'
+  'autosuggestions'
 
 #
 # Autosuggestions
