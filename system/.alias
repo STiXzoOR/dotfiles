@@ -55,31 +55,31 @@ alias mpath='echo -e ${MANPATH//:/\\n}'
 #############################################################
 
 if [ "$(command -v exa)" ]; then
-  LS_COLORS=$(is-supported "exa --color" --color)
+  LS_COLORS_ENABLE=$(is-supported "exa --color auto" --color)
   LS_TIMESTYLEISO=$(is-supported "exa --time-style=long-iso" --time-style=long-iso)
   LS_GROUPDIRSFIRST=$(is-supported "exa --group-directories-first" --group-directories-first)
 
-  unalias -m 'ls'
-  unalias -m 'll'
-  unalias -m 'la'
-  unalias -m 'lr'
-  unalias -m 'ld'
+  unalias -m "ls"
+  unalias -m "ll"
+  unalias -m "la"
+  unalias -m "lr"
+  unalias -m "ld"
 
-  alias ls='exa -Ga -s type --icons $LS_COLORS auto'
-  alias ll="exa -la --icons $LS_COLORS always"
-  alias la="exa -la --icons $LS_COLORS always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias lr="exa -lr -s time --icons $LS_COLORS always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias ld="exa -ld --icons $LS_COLORS always */"
+  alias ls="exa -Ga -s type --icons $LS_COLORS_ENABLE auto"
+  alias ll="exa -la --icons $LS_COLORS_ENABLE always"
+  alias la="exa -la --icons $LS_COLORS_ENABLE always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
+  alias lr="exa -lr -s time --icons $LS_COLORS_ENABLE always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
+  alias ld="exa -ld --icons $LS_COLORS_ENABLE always */"
 else
-  LS_COLORS=$(is-supported "ls -G" -G)
+  LS_COLORS_ENABLE=$(is-supported "ls -G" -G)
   LS_TIMESTYLEISO=$(is-supported "ls --time-style=long-iso" --time-style=long-iso)
   LS_GROUPDIRSFIRST=$(is-supported "ls --group-directories-first" --group-directories-first)
 
-  alias ls='ls $LS_COLORS'
-  alias ll="ls -lA $LS_COLORS"
-  alias la="ls -lahA $LS_COLORS $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias lr="ls -lhAtr $LS_COLORS $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias ld="ls -ld $LS_COLORS */"
+  alias ls="ls $LS_COLORS_ENABLE"
+  alias ll="ls -lA $LS_COLORS_ENABLE"
+  alias la="ls -lahA $LS_COLORS_ENABLE $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
+  alias lr="ls -lhAtr $LS_COLORS_ENABLE $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
+  alias ld="ls -ld $LS_COLORS_ENABLE */"
 fi
 
 alias ..="cd .."
