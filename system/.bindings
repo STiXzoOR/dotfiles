@@ -1,3 +1,9 @@
+# Fuzzy find: start to type
+bindkey "$terminfo[kcuu1]" history-substring-search-up
+bindkey "$terminfo[kcud1]" history-substring-search-down
+bindkey "$terminfo[cuu1]" history-substring-search-up
+bindkey "$terminfo[cud1]" history-substring-search-down
+
 # Backward and forward word with option+left/right
 bindkey '^[^[[D' backward-word
 bindkey '^[b' backward-word
@@ -5,7 +11,9 @@ bindkey '^[^[[C' forward-word
 bindkey '^[f' forward-word
 
 # To the beggining/end of line with fn+left/right or home/end
+bindkey "${terminfo[khome]}" beginning-of-line
 bindkey '^[[H' beginning-of-line
+bindkey "${terminfo[kend]}" end-of-line
 bindkey '^[[F' end-of-line
 
 # Delete char with backspaces and delete
