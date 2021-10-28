@@ -1,105 +1,118 @@
 {
-  "editor.fontSize" : 15,
-  "typescript.inlayHints.functionLikeReturnTypes.enabled" : true,
-  "shellformat.useEditorConfig" : true,
-  "python.linting.lintOnSave" : true,
-  "editor.acceptSuggestionOnCommitCharacter" : false,
-  "terminal.integrated.cursorBlinking" : true,
-  "open-in-browser.default" : "brave",
-  "workbench.editorAssociations" : {
-    "*.ipynb" : "jupyter.notebook.ipynb"
+  "[django-html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "python.pythonPath" : "python3",
-  "sync.autoUpload" : true,
-  "[typescriptreact]" : {
-    "editor.defaultFormatter" : "numso.prettier-standard-vscode"
+  "[dotenv]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
   },
-  "window.openFilesInNewWindow" : "on",
-  "python.linting.flake8Args" : [
-    "--max-line-length=120"
-  ],
-  "typescript.autoClosingTags" : true,
-  "saveBackup.conf.backupDir" : "${.vscode}\/saveBackup",
-  "typescript.inlayHints.propertyDeclarationTypes.enabled" : true,
-  "typescript.updateImportsOnFileMove.enabled" : "always",
-  "git.autofetch" : true,
-  "terminal.integrated.cursorStyle" : "line",
-  "editor.matchBrackets" : "near",
-  "emmet.includeLanguages" : {
-    "vue-html" : "html",
-    "javascript" : "javascriptreact",
-    "typescript" : "typescriptreact",
-    "pug" : "jade",
-    "django-html" : "html"
+  "[hosts]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
   },
-  "workbench.editor.enablePreview" : false,
-  "indentRainbow.excludedLanguages" : [
-    "plaintext"
-  ],
-  "python.linting.pylintPath" : "pylint",
-  "editor.formatOnSave" : true,
-  "editor.wordWrap" : "on",
-  "files.associations" : {
-    "*.html" : "html"
+  "[javascript]": {
+    "editor.defaultFormatter": "numso.prettier-standard-vscode"
   },
-  "editor.fontFamily" : "'Fira Code','DejaVu Sans Mono',Menlo, Monaco, 'Courier New', monospace",
-  "emmet.triggerExpansionOnTab" : true,
-  "puglint.enable" : true,
-  "python.linting.flake8Enabled" : true,
-  "[typescript]" : {
-    "editor.defaultFormatter" : "numso.prettier-standard-vscode"
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "numso.prettier-standard-vscode"
   },
-  "editor.defaultFormatter" : "esbenp.prettier-vscode",
-  "shellformat.path" : "\/usr\/local\/bin\/shfmt",
-  "indentRainbow.updateDelay" : 100,
-  "[javascript]" : {
-    "editor.defaultFormatter" : "numso.prettier-standard-vscode"
+  "[markdown]": {
+    "editor.defaultFormatter": "yzhang.markdown-all-in-one"
   },
-  "git.postCommitCommand" : "push",
-  "terminal.integrated.fontFamily" : "MesloLGS NF",
-  "python.linting.pylintEnabled" : false,
-  "editor.accessibilitySupport" : "off",
-  "python.formatting.provider" : "black",
-  "workbench.colorTheme" : "Nord",
-  "workbench.iconTheme" : "vscode-icons",
-  "typescript.inlayHints.variableTypes.enabled" : true,
-  "editor.suggest.preview" : true,
-  "workbench.sideBar.location" : "left",
-  "python.linting.enabled" : true,
-  "terminal.integrated.fontSize" : 15,
-  "[shellscript]" : {
-    "editor.defaultFormatter" : "foxundermoon.shell-format"
+  "[shellscript]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
   },
-  "[javascriptreact]" : {
-    "editor.defaultFormatter" : "numso.prettier-standard-vscode"
+  "[typescript]": {
+    "editor.defaultFormatter": "numso.prettier-standard-vscode"
   },
-  "javascript.validate.enable" : false,
-  "python.languageServer" : "Pylance",
-  "window.openFoldersInNewWindow" : "on",
-  "[hosts]" : {
-    "editor.defaultFormatter" : "foxundermoon.shell-format"
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "numso.prettier-standard-vscode"
   },
-  "editor.suggestSelection" : "first",
-  "terminal.external.osxExec" : "iTerm.app",
-  "sync.gist" : "49f014d3f199af74ce96b4651b9e925d",
-  "editor.showFoldingControls" : "always",
-  "typescript.inlayHints.parameterNames.enabled" : "all",
-  "javascript.updateImportsOnFileMove.enabled" : "always",
-  "workbench.startupEditor" : "newUntitledFile",
-  "editor.fontLigatures" : true,
-  "sync.quietSync" : true,
-  "terminal.integrated.copyOnSelection" : true,
-  "[django-html]" : {
-    "editor.defaultFormatter" : "esbenp.prettier-vscode"
+  "editor.acceptSuggestionOnCommitCharacter": false,
+  "editor.accessibilitySupport": "off",
+  "editor.bracketPairColorization.enabled": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.fontFamily": "'Fira Code','DejaVu Sans Mono',Menlo, Monaco, 'Courier New', monospace",
+  "editor.fontLigatures": true,
+  "editor.fontSize": 15,
+  "editor.formatOnSave": true,
+  "editor.guides.bracketPairs": true,
+  "editor.guides.highlightActiveIndentation": true,
+  "editor.guides.indentation": true,
+  "editor.matchBrackets": "always",
+  "editor.showFoldingControls": "always",
+  "editor.suggest.preview": true,
+  "editor.suggestSelection": "first",
+  "editor.wordWrap": "on",
+  "emmet.includeLanguages": {
+    "django-html": "html",
+    "javascript": "javascriptreact",
+    "pug": "jade",
+    "typescript": "typescriptreact",
+    "vue-html": "html"
   },
-  "[markdown]" : {
-    "editor.defaultFormatter" : "yzhang.markdown-all-in-one"
+  "emmet.triggerExpansionOnTab": true,
+  "files.associations": {
+    "*.html": "html"
   },
-  "python.venvPath" : "${workspaceFolder}",
-  "vsicons.dontShowNewVersionMessage" : true,
-  "editor.bracketPairColorization.enabled" : true,
-  "vsintellicode.modify.editor.suggestSelection" : "automaticallyOverrodeDefaultValue",
-  "[dotenv]" : {
-    "editor.defaultFormatter" : "foxundermoon.shell-format"
-  }
+  "git.autofetch": true,
+  "git.postCommitCommand": "push",
+  "highlight-matching-tag.styles": {
+    "full": {
+      "highlight": "#4c566a"
+    }
+  },
+  "javascript.updateImportsOnFileMove.enabled": "always",
+  "javascript.validate.enable": false,
+  "open-in-browser.default": "brave",
+  "python.formatting.provider": "black",
+  "python.languageServer": "Pylance",
+  "python.linting.enabled": true,
+  "python.linting.flake8Args": ["--max-line-length=120"],
+  "python.linting.flake8Enabled": true,
+  "python.linting.lintOnSave": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.pylintPath": "pylint",
+  "python.pythonPath": "python3",
+  "python.venvPath": "${workspaceFolder}",
+  "saveBackup.conf.backupDir": "${.vscode}/saveBackup",
+  "shellformat.path": "/usr/local/bin/shfmt",
+  "shellformat.useEditorConfig": true,
+  "sync.autoUpload": true,
+  "sync.gist": "49f014d3f199af74ce96b4651b9e925d",
+  "sync.quietSync": true,
+  "terminal.external.osxExec": "iTerm.app",
+  "terminal.integrated.copyOnSelection": true,
+  "terminal.integrated.cursorBlinking": true,
+  "terminal.integrated.cursorStyle": "line",
+  "terminal.integrated.env.osx": {
+    "FIG_NEW_SESSION": "1"
+  },
+  "terminal.integrated.fontFamily": "MesloLGS NF",
+  "terminal.integrated.fontSize": 15,
+  "typescript.autoClosingTags": true,
+  "typescript.inlayHints.functionLikeReturnTypes.enabled": true,
+  "typescript.inlayHints.parameterNames.enabled": "all",
+  "typescript.inlayHints.propertyDeclarationTypes.enabled": true,
+  "typescript.inlayHints.variableTypes.enabled": true,
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "vsicons.dontShowNewVersionMessage": true,
+  "vsintellicode.modify.editor.suggestSelection": "automaticallyOverrodeDefaultValue",
+  "window.openFilesInNewWindow": "on",
+  "window.openFoldersInNewWindow": "on",
+  "workbench.colorCustomizations": {
+    "editorBracketHighlight.foreground1": "#d08770",
+    "editorBracketHighlight.foreground2": "#88C0D0",
+    "editorBracketHighlight.foreground3": "#b48ead",
+    "editorBracketHighlight.foreground4": "#a3be8c",
+    "editorBracketHighlight.foreground5": "#ebcb8b",
+    "editorBracketHighlight.foreground6": "#D8DEE9",
+    "editorBracketHighlight.unexpectedBracket.foreground": "#bf616a"
+  },
+  "workbench.colorTheme": "Nord",
+  "workbench.editor.enablePreview": false,
+  "workbench.editorAssociations": {
+    "*.ipynb": "jupyter.notebook.ipynb"
+  },
+  "workbench.iconTheme": "vscode-icons",
+  "workbench.sideBar.location": "left",
+  "workbench.startupEditor": "newUntitledFile"
 }
