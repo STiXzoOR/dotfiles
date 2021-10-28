@@ -126,6 +126,7 @@ sub_install() {
 
   require_brew git
   require_brew zsh
+  require_brew stow
 
   RUBY_CONFIGURE_OPTS="--with-openssl-dir=$(brew --prefix openssl) --with-readline-dir=$(brew --prefix readline) --with-libyaml-dir=$(brew --prefix libyaml)"
   require_brew ruby
