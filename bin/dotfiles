@@ -142,8 +142,9 @@ sub_install() {
   install_nvm
   ok
 
-  action "installing node..."
-  require_nvm node
+  action "installing lts node..."
+  require_nvm --lts
+  nvm alias default lts/fermium
   ok
 
   pushd "$ROOT_DIR" >/dev/null 2>&1
