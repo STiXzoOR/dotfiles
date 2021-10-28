@@ -5,6 +5,7 @@ BIN_DIR=$(dirname ${BASH_SOURCE[0]})
 ROOT_DIR=$(dirname $(builtin cd $BIN_DIR && pwd))
 COMMAND_NAME=$1
 SUB_COMMAND_NAME=$2
+STRIPPED_SUB_COMMAND_NAME="${SUB_COMMAND_NAME#--}"
 
 export DOTFILES_DIR=$ROOT_DIR
 export NVM_DIR="$HOME/.nvm"
@@ -17,7 +18,7 @@ source "$ROOT_DIR/scripts/echos.sh"
 source "$ROOT_DIR/scripts/requirers.sh"
 
 sub_help() {
-  echo "Usage: $BIN_NAME <command>"
+  echo -e "\nUsage: $BIN_NAME <command>"
   echo
   echo "Commands:"
   echo "   clean            Clean up caches (brew, nvm, gem)"
@@ -32,34 +33,34 @@ sub_help() {
 }
 
 sub_install_help() {
-  echo "Usage: $BIN_NAME install <command>"
+  echo -e "\nUsage: $BIN_NAME install <command>"
   echo
   echo "Commands:"
-  echo "   all              Run all below commands"
-  echo "   fonts            Local fonts"
-  echo "   help             This help message"
-  echo "   hosts            Ad-blocking hosts file from someonewhocares.org"
-  echo "   packages         3rd party packages and extensions (brew, cask, code, npm)"
-  echo "   passwordless     Run sudo without password"
-  echo "   prezto           Zsh framework"
-  echo "   ssh              SSH Key"
+  echo "   --all              Run all below commands"
+  echo "   --fonts            Local fonts"
+  echo "   --help             This help message"
+  echo "   --hosts            Ad-blocking hosts file from someonewhocares.org"
+  echo "   --packages         3rd party packages and extensions (brew, cask, code, npm)"
+  echo "   --passwordless     Run sudo without password"
+  echo "   --prezto           Zsh framework"
+  echo "   --ssh              SSH Key"
 }
 
 sub_configure_help() {
-  echo "Usage: $BIN_NAME configure <command>"
+  echo -e "\nUsage: $BIN_NAME configure <command>"
   echo
   echo "Commands:"
-  echo "   defaults         Apply macOS system defaults"
-  echo "   dock             Apply macOS Dock settings"
-  echo "   help             This help message"
+  echo "   --defaults         Apply macOS system defaults"
+  echo "   --dock             Apply macOS Dock settings"
+  echo "   --help             This help message"
 }
 
 sub_update_help() {
-  echo "Usage: $BIN_NAME update <command>"
+  echo -e "\nUsage: $BIN_NAME update <command>"
   echo
   echo "Commands:"
-  echo "   system           Update packages and pkg managers (OS, brew, npm, gem)"
-  echo "   help             This help message"
+  echo "   --system           Update packages and pkg managers (OS, brew, npm, gem)"
+  echo "   --help             This help message"
 }
 
 sub_install() {
@@ -167,7 +168,7 @@ sub_install() {
 
   read -r -p "Should i run them for you? [y|N] " response
   if [[ $response =~ (yes|y|Y) ]]; then
-    $0 install all
+    $0 install --all
   fi
 
   open /Applications/iTerm.app
@@ -175,12 +176,12 @@ sub_install() {
 }
 
 sub_install_all() {
-  $0 install hosts
-  $0 install prezto
+  $0 install --hosts
+  $0 install --prezto
   $0 link
-  $0 install vim
-  $0 install fonts
-  $0 install packages
+  $0 install --vim
+  $0 install --fonts
+  $0 install --packages
   $0 configure
 }
 
@@ -263,7 +264,7 @@ sub_install_fonts() {
   read -r -p "Install local fonts? [y|N] " response
   if [[ $response =~ (y|yes|Y) ]]; then
     action "installing local fonts"
-    brew tap homebrew/cask-fonts
+    require_tap homebrew/cask-fonts
     require_brew fontconfig
     "$ROOT_DIR/fonts/install.sh"
     ok
@@ -306,8 +307,8 @@ sub_configure() {
   read -r -p "Do you want to update the system configurations? [y|N] " response
   if [[ -z $response || $response =~ ^(y|Y) ]]; then
     echo
-    $0 configure system
-    $0 configure dock
+    $0 configure --system
+    $0 configure --dock
   else
     skip
   fi
@@ -468,7 +469,7 @@ sub_update_system() {
 
   read -r -p "Should i clean them for you? [y|N] " response
   if [[ $response =~ (yes|y|Y) ]]; then
-    $0 clean
+    $0 --clean
   fi
 }
 
@@ -489,6 +490,21 @@ sub_edit() {
   sh -c "$DOTFILES_IDE $DOTFILES_DIR"
 }
 
+cmd_error() {
+  error "'${COMMAND_NAME}' is not a known command or has errors." >&2
+  sub_help
+  exit 1
+}
+
+subcmd_error() {
+  error "${COMMAND_NAME}: '${SUB_COMMAND_NAME}' is not a known command or has errors." >&2
+  sub_${COMMAND_NAME}_help
+  if [ $? = 127 ]; then
+    cmd_error
+  fi
+  exit 1
+}
+
 case $COMMAND_NAME in
 "" | "help")
   sub_help
@@ -500,26 +516,20 @@ case $COMMAND_NAME in
 *)
   if [[ -n $SUB_COMMAND_NAME ]]; then
     case $SUB_COMMAND_NAME in
-    *)
-      sub_${COMMAND_NAME}_${SUB_COMMAND_NAME}
+    --${STRIPPED_SUB_COMMAND_NAME})
+      sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}
       if [ $? = 127 ]; then
-        error "${COMMAND_NAME}: '${SUB_COMMAND_NAME}' is not a known command or has errors." >&2
-        sub_${COMMAND_NAME}_help
-        if [ $? = 127 ]; then
-          error "'${COMMAND_NAME}' is not a known command or has errors." >&2
-          sub_help
-          exit 1
-        fi
-        exit 1
+        subcmd_error
       fi
+      ;;
+    *)
+      subcmd_error
       ;;
     esac
   else
     sub_${COMMAND_NAME}
     if [ $? = 127 ]; then
-      error "'${COMMAND_NAME}' is not a known command or has errors." >&2
-      sub_help
-      exit 1
+      cmd_error
     fi
   fi
   ;;
