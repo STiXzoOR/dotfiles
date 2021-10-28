@@ -99,7 +99,7 @@ sub_install() {
   brew_bin=$(which brew) 2>&1 >/dev/null
   if [[ $? != 0 ]]; then
     action "installing homebrew"
-    ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     if [[ $? != 0 ]]; then
       error "unable to install homebrew, script $0 abort!"
       exit 2
@@ -207,7 +207,8 @@ sub_install_ssh() {
 
   if [[ $response =~ (yes|y|Y) ]]; then
     action "Generating a new SSH key"
-    ssh-keygen -t ed25519 -C $1 -f "$HOME/.ssh/id_ed25519"
+    read -r -p "Please enter an email to associate your ssh key: " ssh_email
+    ssh-keygen -t ed25519 -C $ssh_email -f "$HOME/.ssh/id_ed25519"
     ok
 
     action "Adding SSH key to SSH Agent"
@@ -220,6 +221,8 @@ sub_install_ssh() {
     echo -e "\nNote: You should add your SSH key to your github account by first running:\n"
     echo -e "pbcopy < ~/.ssh/id_ed25519.pub\n"
     echo -e "Then follow the guide below:\n\nhttps://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account \n"
+
+    read -p "Press [ENTER] to continue... "
   else
     skip
   fi
