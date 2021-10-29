@@ -317,7 +317,9 @@ sub_configure() {
 sub_configure_system() {
   bot "OS Configuration\n"
 
-  for DEFAULTS_FILE in "$DOTFILES_DIR/macos/defaults*.sh"; do
+  shopt -s nullglob
+
+  for DEFAULTS_FILE in $DOTFILES_DIR/macos/defaults*.sh; do
     . "$DEFAULTS_FILE"
   done
 
