@@ -471,7 +471,7 @@ sub_update_system() {
 
   read -r -p "Should i clean them for you? [y|N] " response
   if [[ $response =~ (yes|y|Y) ]]; then
-    $0 --clean
+    $0 clean
   fi
 }
 
