@@ -1,4 +1,8 @@
+DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
 COMPUTER_NAME="STiXzoOR-MBP"
+
+source "$DOTFILES_DIR/scripts/echos.sh"
+source "$DOTFILES_DIR/scripts/requirers.sh"
 
 # Ask for the administrator password upfront
 sudo -v

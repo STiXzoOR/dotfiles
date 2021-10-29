@@ -1,3 +1,8 @@
+DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
+
+source "$DOTFILES_DIR/scripts/echos.sh"
+source "$DOTFILES_DIR/scripts/requirers.sh"
+
 ###############################################################################
 bot "Terminal"
 ###############################################################################
@@ -7,7 +12,7 @@ defaults write com.apple.terminal StringEncodings -array 4
 ok
 
 running "Install nord theme in Terminal.app"
-open "${DOTFILES_DIR:=..}/apps/terminal/nord_theme/src/xml/Nord.terminal"
+open "$DOTFILES_DIR/apps/terminal/nord_theme/src/xml/Nord.terminal"
 sleep 1
 ok
 
@@ -37,7 +42,7 @@ defaults write com.googlecode.iterm2.plist PrefsCustomFolder -string "$DOTFILES_
 ok
 
 running "Install nord theme for iTerm (opening file)"
-open "${DOTFILES_DIR:=..}/apps/iterm2/nord_theme/src/xml/Nord.itermcolors"
+open "$DOTFILES_DIR/apps/iterm2/nord_theme/src/xml/Nord.itermcolors"
 sleep 1
 ok
 

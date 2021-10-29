@@ -1,3 +1,8 @@
+DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
+
+source "$DOTFILES_DIR/scripts/echos.sh"
+source "$DOTFILES_DIR/scripts/requirers.sh"
+
 ###############################################################################
 bot "Xcode"
 ###############################################################################
@@ -8,7 +13,7 @@ mkdir -p "$CUSTOM_THEME_DIR/"
 ok
 
 running "Install nord theme"
-ln -s "${DOTFILES_DIR:=..}/apps/xcode/nord_theme/src/Nord.xccolortheme" "$CUSTOM_THEME_DIR/Nord.xccolortheme"
+ln -s "$DOTFILES_DIR/apps/xcode/nord_theme/src/Nord.xccolortheme" "$CUSTOM_THEME_DIR/Nord.xccolortheme"
 ok
 
 running "Change theme to nord"
