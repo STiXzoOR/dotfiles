@@ -22,8 +22,8 @@
 [submodule "plugins/zsh/zsh-nvm"]
 	path = plugins/zsh/zsh-nvm
 	url = https://github.com/lukechilds/zsh-nvm
-[submodule "config/spicetify_data/Themes"]
-	path = config/spicetify_data/Themes
+[submodule "config/spicetify/Themes"]
+	path = config/spicetify/Themes
 	url = https://github.com/morpheusthewhite/spicetify-themes
 [submodule "plugins/zsh/zsh-thefuck"]
 	path = plugins/zsh/zsh-thefuck

@@ -4,9 +4,9 @@
 ._*
 .git_template/hooks/disabled-pc
 node_modules
-config/spicetify_data/*
-!config/spicetify_data/Themes
-!config/spicetify_data/*.ini
+config/spicetify/*
+!config/spicetify/Themes
+!config/spicetify/*.ini
 runcom/.vim/backup/*
 !runcom/.vim/backup/.gitignore
 runcom/.vim/temp/*
