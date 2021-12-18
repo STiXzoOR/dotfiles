@@ -421,7 +421,7 @@ sub_update() {
 
   running "Updating submodules"
   git submodule sync --recursive --quiet >/dev/null 2>&1
-  git submodule update --init --recursive --quiet >/dev/null 2>&1
+  git submodule update --remote --recursive --merge --quiet >/dev/null 2>&1
   ok
 
   running "Updating remote repo"
