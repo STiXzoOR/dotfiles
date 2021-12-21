@@ -1,122 +1,124 @@
 {
-  "[django-html]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  "editor.formatOnSave" : true,
+  "editor.guides.indentation" : true,
+  "git.autofetch" : true,
+  "typescript.inlayHints.parameterNames.enabled" : "all",
+  "workbench.colorCustomizations" : {
+    "editorBracketHighlight.foreground1" : "#d08770",
+    "editorBracketHighlight.unexpectedBracket.foreground" : "#bf616a",
+    "editorBracketHighlight.foreground4" : "#a3be8c",
+    "editorBracketHighlight.foreground2" : "#88C0D0",
+    "editorBracketHighlight.foreground5" : "#ebcb8b",
+    "editorBracketHighlight.foreground3" : "#b48ead",
+    "editorBracketHighlight.foreground6" : "#D8DEE9"
   },
-  "[dotenv]": {
-    "editor.defaultFormatter": "foxundermoon.shell-format"
+  "shellformat.useEditorConfig" : true,
+  "typescript.inlayHints.variableTypes.enabled" : true,
+  "editor.accessibilitySupport" : "off",
+  "[shellscript]" : {
+    "editor.defaultFormatter" : "foxundermoon.shell-format"
   },
-  "[hosts]": {
-    "editor.defaultFormatter": "foxundermoon.shell-format"
+  "editor.fontSize" : 15,
+  "python.venvPath" : "${workspaceFolder}",
+  "terminal.integrated.copyOnSelection" : true,
+  "workbench.iconTheme" : "vscode-icons",
+  "typescript.inlayHints.propertyDeclarationTypes.enabled" : true,
+  "workbench.editor.enablePreview" : false,
+  "python.linting.pylintPath" : "pylint",
+  "typescript.autoClosingTags" : true,
+  "[python]" : {
+    "editor.defaultFormatter" : "ms-python.python"
   },
-  "[javascript]": {
-    "editor.defaultFormatter": "numso.prettier-standard-vscode"
+  "emmet.includeLanguages" : {
+    "vue-html" : "html",
+    "javascript" : "javascriptreact",
+    "typescript" : "typescriptreact",
+    "pug" : "jade",
+    "django-html" : "html"
   },
-  "[javascriptreact]": {
-    "editor.defaultFormatter": "numso.prettier-standard-vscode"
+  "window.openFilesInNewWindow" : "on",
+  "sync.gist" : "49f014d3f199af74ce96b4651b9e925d",
+  "[typescriptreact]" : {
+    "editor.defaultFormatter" : "numso.prettier-standard-vscode"
   },
-  "[markdown]": {
-    "editor.defaultFormatter": "yzhang.markdown-all-in-one"
+  "open-in-browser.default" : "brave",
+  "[django-html]" : {
+    "editor.defaultFormatter" : "esbenp.prettier-vscode"
   },
-  "[python]": {
-    "editor.defaultFormatter": "ms-python.python"
+  "[dotenv]" : {
+    "editor.defaultFormatter" : "foxundermoon.shell-format"
   },
-  "[shellscript]": {
-    "editor.defaultFormatter": "foxundermoon.shell-format"
+  "[markdown]" : {
+    "editor.defaultFormatter" : "yzhang.markdown-all-in-one"
   },
-  "[typescript]": {
-    "editor.defaultFormatter": "numso.prettier-standard-vscode"
+  "terminal.integrated.cursorStyle" : "line",
+  "editor.acceptSuggestionOnCommitCharacter" : false,
+  "terminal.integrated.cursorBlinking" : true,
+  "window.openFoldersInNewWindow" : "on",
+  "editor.suggest.preview" : true,
+  "git.postCommitCommand" : "push",
+  "python.linting.pylintEnabled" : false,
+  "[javascriptreact]" : {
+    "editor.defaultFormatter" : "numso.prettier-standard-vscode"
   },
-  "[typescriptreact]": {
-    "editor.defaultFormatter": "numso.prettier-standard-vscode"
+  "editor.defaultFormatter" : "esbenp.prettier-vscode",
+  "python.linting.lintOnSave" : true,
+  "javascript.validate.enable" : false,
+  "vsicons.dontShowNewVersionMessage" : true,
+  "[hosts]" : {
+    "editor.defaultFormatter" : "foxundermoon.shell-format"
   },
-  "editor.acceptSuggestionOnCommitCharacter": false,
-  "editor.accessibilitySupport": "off",
-  "editor.bracketPairColorization.enabled": true,
-  "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "editor.fontFamily": "'Fira Code','DejaVu Sans Mono',Menlo, Monaco, 'Courier New', monospace",
-  "editor.fontLigatures": true,
-  "editor.fontSize": 15,
-  "editor.formatOnSave": true,
-  "editor.guides.bracketPairs": true,
-  "editor.guides.highlightActiveIndentation": true,
-  "editor.guides.indentation": true,
-  "editor.matchBrackets": "always",
-  "editor.showFoldingControls": "always",
-  "editor.suggest.preview": true,
-  "editor.suggestSelection": "first",
-  "editor.wordWrap": "on",
-  "emmet.includeLanguages": {
-    "django-html": "html",
-    "javascript": "javascriptreact",
-    "pug": "jade",
-    "typescript": "typescriptreact",
-    "vue-html": "html"
-  },
-  "emmet.triggerExpansionOnTab": true,
-  "files.associations": {
-    "*.html": "html"
-  },
-  "git.autofetch": true,
-  "git.postCommitCommand": "push",
-  "highlight-matching-tag.styles": {
-    "full": {
-      "highlight": "#4c566a"
-    }
-  },
-  "javascript.updateImportsOnFileMove.enabled": "always",
-  "javascript.validate.enable": false,
-  "open-in-browser.default": "brave",
-  "python.defaultInterpreterPath": "python3",
-  "python.formatting.provider": "black",
-  "python.languageServer": "Pylance",
-  "python.linting.enabled": true,
-  "python.linting.flake8Args": ["--max-line-length=120"],
-  "python.linting.flake8Enabled": true,
-  "python.linting.lintOnSave": true,
-  "python.linting.pylintEnabled": false,
-  "python.linting.pylintPath": "pylint",
-  "python.pythonPath": "python3",
-  "python.venvPath": "${workspaceFolder}",
-  "saveBackup.conf.backupDir": "${.vscode}/saveBackup",
-  "shellformat.path": "/usr/local/bin/shfmt",
-  "shellformat.useEditorConfig": true,
-  "sync.autoUpload": true,
-  "sync.gist": "49f014d3f199af74ce96b4651b9e925d",
-  "sync.quietSync": true,
-  "terminal.external.osxExec": "iTerm.app",
-  "terminal.integrated.copyOnSelection": true,
-  "terminal.integrated.cursorBlinking": true,
-  "terminal.integrated.cursorStyle": "line",
-  "terminal.integrated.env.osx": {
+  "editor.fontFamily" : "'Fira Code','DejaVu Sans Mono',Menlo, Monaco, 'Courier New', monospace",
+  "typescript.updateImportsOnFileMove.enabled" : "always",
+  "editor.fontLigatures" : true,
+  "terminal.integrated.env.osx" : {
     "FIG_NEW_SESSION": "1"
   },
-  "terminal.integrated.fontFamily": "MesloLGS NF",
-  "terminal.integrated.fontSize": 15,
-  "typescript.autoClosingTags": true,
-  "typescript.inlayHints.functionLikeReturnTypes.enabled": true,
-  "typescript.inlayHints.parameterNames.enabled": "all",
-  "typescript.inlayHints.propertyDeclarationTypes.enabled": true,
-  "typescript.inlayHints.variableTypes.enabled": true,
-  "typescript.updateImportsOnFileMove.enabled": "always",
-  "vsicons.dontShowNewVersionMessage": true,
-  "vsintellicode.modify.editor.suggestSelection": "automaticallyOverrodeDefaultValue",
-  "window.openFilesInNewWindow": "on",
-  "window.openFoldersInNewWindow": "on",
-  "workbench.colorCustomizations": {
-    "editorBracketHighlight.foreground1": "#d08770",
-    "editorBracketHighlight.foreground2": "#88C0D0",
-    "editorBracketHighlight.foreground3": "#b48ead",
-    "editorBracketHighlight.foreground4": "#a3be8c",
-    "editorBracketHighlight.foreground5": "#ebcb8b",
-    "editorBracketHighlight.foreground6": "#D8DEE9",
-    "editorBracketHighlight.unexpectedBracket.foreground": "#bf616a"
+  "javascript.updateImportsOnFileMove.enabled" : "always",
+  "python.linting.flake8Enabled" : true,
+  "editor.guides.highlightActiveIndentation" : true,
+  "terminal.integrated.fontSize" : 15,
+  "vsintellicode.modify.editor.suggestSelection" : "automaticallyOverrodeDefaultValue",
+  "python.languageServer" : "Pylance",
+  "editor.guides.bracketPairs" : true,
+  "[javascript]" : {
+    "editor.defaultFormatter" : "numso.prettier-standard-vscode"
   },
-  "workbench.colorTheme": "Nord",
-  "workbench.editor.enablePreview": false,
-  "workbench.editorAssociations": {
-    "*.ipynb": "jupyter.notebook.ipynb"
+  "python.defaultInterpreterPath" : "python3",
+  "editor.wordWrap" : "on",
+  "python.formatting.provider" : "black",
+  "sync.quietSync" : true,
+  "shellformat.path" : "\/usr\/local\/bin\/shfmt",
+  "[typescript]" : {
+    "editor.defaultFormatter" : "numso.prettier-standard-vscode"
   },
-  "workbench.iconTheme": "vscode-icons",
-  "workbench.sideBar.location": "left",
-  "workbench.startupEditor": "newUntitledFile"
+  "saveBackup.conf.backupDir" : "${.vscode}\/saveBackup",
+  "terminal.external.osxExec" : "iTerm.app",
+  "python.linting.flake8Args" : [
+    "--max-line-length=120"
+  ],
+  "typescript.inlayHints.functionLikeReturnTypes.enabled" : true,
+  "editor.showFoldingControls" : "always",
+  "editor.matchBrackets" : "always",
+  "workbench.editorAssociations" : {
+    "*.ipynb" : "jupyter.notebook.ipynb"
+  },
+  "workbench.sideBar.location" : "left",
+  "files.associations" : {
+    "*.html" : "html"
+  },
+  "python.linting.enabled" : true,
+  "terminal.integrated.fontFamily" : "MesloLGS NF",
+  "workbench.startupEditor" : "newUntitledFile",
+  "python.pythonPath" : "python3",
+  "sync.autoUpload" : true,
+  "highlight-matching-tag.styles" : {
+    "full" : {
+      "highlight" : "#4c566a"
+    }
+  },
+  "editor.bracketPairColorization.enabled" : true,
+  "emmet.triggerExpansionOnTab" : true,
+  "workbench.colorTheme" : "Nord",
+  "editor.suggestSelection" : "first"
 }
