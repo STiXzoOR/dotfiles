@@ -77,10 +77,10 @@ sub_install() {
       kill -0 "$$" || exit
     done 2>/dev/null &
 
-    $0 install passwordless
+    $0 install --passwordless
   fi
 
-  $0 install ssh
+  $0 install --ssh
 
   bot "ensuring build/install tools are available"
   if !xcode-select --print-path &>/dev/null; then
@@ -145,7 +145,7 @@ sub_install() {
 
   action "installing lts node..."
   require_nvm --lts
-  nvm alias default lts/fermium
+  nvm alias default lts/gallium
   ok
 
   pushd "$ROOT_DIR" >/dev/null 2>&1
@@ -278,6 +278,7 @@ sub_install_packages() {
   read -r -p "Install packages/tools/apps? [y|N] " response
   if [[ $response =~ (y|yes|Y) ]]; then
     action "installing packages from config.js..."
+    source_nvm
     node "$ROOT_DIR/index.js"
     ok
 
@@ -314,7 +315,7 @@ sub_configure() {
   fi
 }
 
-sub_configure_system() {
+sub_configure_defaults() {
   bot "OS Configuration\n"
 
   shopt -s nullglob
