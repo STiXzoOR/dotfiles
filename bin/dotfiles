@@ -203,32 +203,34 @@ sub_install_ssh() {
   bot "Setting up SSH\n"
 
   if [[ -f "$HOME/.ssh/id_ed25519" ]]; then
-    read -r -p "Looks like SSH is already configured. Should i generate a new key nontheless? [y|N] " response
+    read -r -p "Looks like an SSH is already generated. Should i generate a new key nontheless? [y|N] " response
   else
     response='yes'
   fi
 
   if [[ $response =~ (yes|y|Y) ]]; then
+    rm -rf "$HOME/.ssh/id_ed25519"
+    rm -rf "$HOME/.ssh/id_ed25519.pub"
     action "Generating a new SSH key"
     read -r -p "Please enter an email to associate your ssh key: " ssh_email
     ssh-keygen -t ed25519 -C $ssh_email -f "$HOME/.ssh/id_ed25519"
     ok
-
-    action "Adding SSH key to SSH Agent"
-    eval "$(ssh-agent -s)"
-    touch "$HOME/.ssh/config"
-    echo "Host *\n AddKeysToAgent yes\n UseKeychain yes\n IdentityFile ~/.ssh/id_ed25519" | tee "$HOME/.ssh/config"
-    ssh-add -K "$HOME/.ssh/id_ed25519"
-    ok
-
-    echo -e "\nNote: You should add your SSH key to your github account by first running:\n"
-    echo -e "pbcopy < ~/.ssh/id_ed25519.pub\n"
-    echo -e "Then follow the guide below:\n\nhttps://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account \n"
-
-    read -p "Press [ENTER] to continue... "
   else
     skip
   fi
+
+  action "Adding SSH key to SSH Agent"
+  eval "$(ssh-agent -s)"
+  touch "$HOME/.ssh/config"
+  echo "Host *\n AddKeysToAgent yes\n UseKeychain yes\n IdentityFile ~/.ssh/id_ed25519" | tee "$HOME/.ssh/config"
+  ssh-add -K "$HOME/.ssh/id_ed25519"
+  ok
+
+  echo -e "\nNote: You should add your SSH key to your github account by first running:\n"
+  echo -e "pbcopy < ~/.ssh/id_ed25519.pub\n"
+  echo -e "Then follow the guide below:\n\nhttps://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account \n"
+
+  read -p "Press [ENTER] to continue... "
 }
 
 sub_install_prezto() {
@@ -318,21 +320,32 @@ sub_configure() {
 sub_configure_defaults() {
   bot "OS Configuration\n"
 
-  shopt -s nullglob
+  read -r -p "Do you want to update the system defaults? [y|N] " response
+  if [[ -z $response || $response =~ ^(y|Y) ]]; then
+    shopt -s nullglob
 
-  for DEFAULTS_FILE in $DOTFILES_DIR/macos/defaults*.sh; do
-    . "$DEFAULTS_FILE"
-  done
+    for DEFAULTS_FILE in $DOTFILES_DIR/macos/defaults*.sh; do
+      . "$DEFAULTS_FILE"
+    done
 
-  bot "Note: that some of these changes require a logout/restart to take effect."
+    bot "Note: that some of these changes require a logout/restart to take effect."
+  else
+    skip
+  fi
+
 }
 
 sub_configure_dock() {
   bot "Dock Configuration\n"
 
-  . "$DOTFILES_DIR/macos/dock.sh"
+  read -r -p "Do you want to update the dock configuration? [y|N] " response
+  if [[ -z $response || $response =~ ^(y|Y) ]]; then
+    . "$DOTFILES_DIR/macos/dock.sh"
 
-  ok "Dock reloaded!"
+    ok "Dock reloaded!"
+  else
+    skip
+  fi
 }
 
 sub_link() {

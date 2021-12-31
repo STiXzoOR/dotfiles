@@ -33,7 +33,6 @@ module.exports = [
   'python',
   'python-tk',
   'reattach-to-user-namespace',
-  'ruby',
   'shfmt',
   'spotify-tui',
   'spotifyd',

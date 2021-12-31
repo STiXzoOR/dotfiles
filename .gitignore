@@ -3,6 +3,10 @@
 .LSOverride
 ._*
 .git_template/hooks/disabled-pc
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
 node_modules
 config/spicetify/*
 !config/spicetify/Themes

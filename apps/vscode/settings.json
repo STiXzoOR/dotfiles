@@ -120,5 +120,5 @@
   "editor.bracketPairColorization.enabled" : true,
   "emmet.triggerExpansionOnTab" : true,
   "workbench.colorTheme" : "Nord",
-  "editor.suggestSelection" : "first"
+  "editor.suggestSelection": "first"
 }
