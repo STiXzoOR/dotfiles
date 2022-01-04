@@ -5,6 +5,18 @@
 # @author Adam Eivy
 ###
 
+function source_brew() {
+  if ! test -v "HOMEBREW_PREFIX"; then
+    if is-apple-silicon; then
+      HOMEBREW_PREFIX="/opt/homebrew"
+    else
+      HOMEBREW_PREFIX="/usr/local"
+    fi
+  fi
+
+  command-exists brew && eval "$($HOMEBREW_PREFIX/bin/brew shellenv)"
+}
+
 function require_tap() {
   running "tap $1"
   if [[ $(brew tap | grep -x $1) != $1 ]]; then

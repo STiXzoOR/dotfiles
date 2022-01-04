@@ -1,15 +1,15 @@
 Icons=(
-  "/Applications/Launchpad.app"
+  "/System/Applications/Launchpad.app"
   "/Applications/Brave Browser.app"
-  "/Applications/Spark.app"
+  "/Applications/Google Chrome.app"
   "/Applications/Transmission.app"
-  "/Applications/Calendar.app"
-  "/Applications/Notes.app"
-  "/Applications/App Store.app"
+  "/Applications/Slack.app"
+  "/Applications/Spark.app"
+  "/System/Applications/Calendar.app"
+  "/System/Applications/Notes.app"
   "/Applications/Visual Studio Code.app"
-  "/Applications/iTerm2.app"
-  "/Applications/System Preferences.app"
-  "/Applications/Utilities/Activity Monitor.app"
+  "/Applications/iTerm.app"
+  "/System/Applications/System Preferences.app"
 )
 
 dockutil --no-restart --remove all

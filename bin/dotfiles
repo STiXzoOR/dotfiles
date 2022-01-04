@@ -105,12 +105,14 @@ sub_install() {
       error "unable to install homebrew, script $0 abort!"
       exit 2
     fi
+    source_brew
   else
     ok
     bot "Homebrew"
     read -r -p "run brew update && upgrade? [y|N] " response
     if [[ $response =~ (y|yes|Y) ]]; then
       action "updating homebrew..."
+      source_brew
       brew update
       ok "homebrew updated"
       action "upgrading brew packages..."
@@ -133,9 +135,9 @@ sub_install() {
   require_brew ruby
 
   CURRENTSHELL=$(dscl . -read /Users/$USER UserShell | awk '{print $2}')
-  if [[ "$CURRENTSHELL" != "/usr/local/bin/zsh" ]]; then
-    bot "setting newer homebrew zsh (/usr/local/bin/zsh) as your shell (password required)"
-    sudo dscl . -change /Users/$USER UserShell $SHELL /usr/local/bin/zsh >/dev/null 2>&1
+  if [[ "$CURRENTSHELL" != "$HOMEBREW_PREFIX/bin/zsh" ]]; then
+    bot "setting newer homebrew zsh ($HOMEBREW_PREFIX/bin/zsh) as your shell (password required)"
+    sudo dscl . -change /Users/$USER UserShell $SHELL $HOMEBREW_PREFIX/bin/zsh >/dev/null 2>&1
     ok
   fi
 
@@ -222,7 +224,7 @@ sub_install_ssh() {
   action "Adding SSH key to SSH Agent"
   eval "$(ssh-agent -s)"
   touch "$HOME/.ssh/config"
-  echo "Host *\n AddKeysToAgent yes\n UseKeychain yes\n IdentityFile ~/.ssh/id_ed25519" | tee "$HOME/.ssh/config"
+  echo -e "Host *\n AddKeysToAgent yes\n UseKeychain yes\n IdentityFile ~/.ssh/id_ed25519" | tee "$HOME/.ssh/config"
   ssh-add -K "$HOME/.ssh/id_ed25519"
   ok
 

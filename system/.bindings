@@ -25,7 +25,7 @@ bindkey '^[[3;5~' backward-delete-word
 
 # Search history with fzf if installed, default otherwise
 if [ "$(command -v fzf)" ]; then
-	source /usr/local/opt/fzf/shell/key-bindings.zsh
+	source "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh"
 else
 	bindkey '^R' history-incremental-search-backward
 fi

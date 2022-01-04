@@ -42,10 +42,6 @@ running "Disable wake-on modem"
 sudo systemsetup -setwakeonmodem off
 ok
 
-running "Disable wake-on LAN"
-sudo systemsetup -setwakeonnetworkaccess off
-ok
-
 running "Disable guest account login"
 sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false
 ok
@@ -73,7 +69,7 @@ defaults write NSGlobalDomain NSTableViewDefaultSizeMode -int 2
 ok
 
 running "Always show scrollbars"
-defaults write NSGlobalDomain AppleShowScrollBars -string "Always"
+defaults write NSGlobalDomain AppleShowScrollBars -string "WhenScrolling"
 ok
 # Possible values: `WhenScrolling`, `Automatic` and `Always`
 
@@ -115,12 +111,6 @@ running "Remove duplicates in the “Open With” menu (also see 'lscleanup' ali
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
 ok
 
-running "Display ASCII control characters using caret notation in standard text views"
-Try e.g. $(
-  cd /tmp
-  unidecode "\x{0000}" >cc.txt
-  open -e cc.txt
-)
 defaults write NSGlobalDomain NSTextShowsControlCharacters -bool true
 ok
 
@@ -208,10 +198,6 @@ defaults write NSGlobalDomain AppleMeasurementUnits -string "Centimeters"
 defaults write NSGlobalDomain AppleMetricUnits -bool true
 ok
 
-running "Show language menu in the top right corner of the boot screen"
-defaults write /Library/Preferences/com.apple.loginwindow showInputMenu -bool true
-ok
-
 running "Set timezone to Europe/Athens;" #see `sudo systemsetup -listtimezones` for other values
 sudo systemsetup -settimezone "Europe/Athens" >/dev/null
 ok
@@ -219,10 +205,6 @@ ok
 ###############################################################################
 bot "Energy saving"
 ###############################################################################
-
-running "Disable lid wakeup"
-sudo pmset -a lidwake 0
-ok
 
 running "Disable auto power off"
 sudo pmset -a autopoweroff 0
@@ -232,16 +214,8 @@ running "Disable auto restart on power loss"
 sudo pmset -a autorestart 0
 ok
 
-running "Disable machine sleep"
-sudo pmset -a sleep 0
-ok
-
 running "Sleep the display after 60 minutes"
 sudo pmset -a displaysleep 60
-ok
-
-running "Disable standby mode"
-sudo pmset -a standby 0
 ok
 
 running "Set standby delay to 24 hours (default is 1 hour)"
@@ -254,10 +228,6 @@ ok
 
 running "Disable periodically wake of machine for network and updates"
 sudo pmset -a powernap 0
-ok
-
-running "Restart automatically if the computer freezes"
-sudo systemsetup -setrestartfreeze on
 ok
 
 # Hibernation mode

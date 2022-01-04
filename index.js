@@ -24,7 +24,7 @@ const command = (type, item) =>
 const finished = Object.keys(packages).reduce((prevTypePromise, type) => {
   return prevTypePromise.then(() => {
     if (packages[type].length) {
-      console.log(`${emoji.get('coffee')} installing ${type} packages\n`)
+      console.log(`\n${emoji.get('coffee')} installing ${type} packages\n`)
 
       return packages[type].reduce((prevItemPromise, item) => {
         return prevItemPromise.then(() => {

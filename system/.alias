@@ -24,6 +24,8 @@ alias vtop="vtop --theme nord"
 alias rsync="rsync -vh"
 alias json="json -c"
 alias psgrep="psgrep -i"
+alias mzsh="arch -arm64 zsh"
+alias izsh="arch -x86_64 zsh"
 
 if [ "$(command -v bat)" ]; then
   unalias -m 'cat'
@@ -129,7 +131,14 @@ alias notioff="launchctl unload -w /System/Library/LaunchAgents/com.apple.notifi
 alias notion="launchctl load -w /System/Library/LaunchAgents/com.apple.notificationcenterui.plist && open /System/Library/CoreServices/NotificationCenter.app/"
 
 #############################################################
-# npm
+# Brew
+#############################################################
+if test -x "$HOMEBREW_PREFIX/bin/brew"; then
+  alias brew="arch -$HOMEBREW_ARCH $HOMEBREW_PREFIX/bin/brew $@"
+fi
+
+#############################################################
+# Npm
 #############################################################
 
 alias npmri="rm -r node_modules package-lock.json && npm install"

@@ -8,11 +8,11 @@ compdef _dotfiles_completions dotfiles
 # npm
 _npm_completion() {
   local si=$IFS
-  compadd -- $(COMP_CWORD=$((CURRENT-1)) \
-                COMP_LINE=$BUFFER \
-                COMP_POINT=0 \
-                npm completion -- "${words[@]}" \
-                2>/dev/null)
+  compadd -- $(COMP_CWORD=$((CURRENT - 1)) \
+    COMP_LINE=$BUFFER \
+    COMP_POINT=0 \
+    npm completion -- "${words[@]}" \
+    2>/dev/null)
   IFS=$si
 }
 
@@ -21,5 +21,5 @@ compdef _npm_completion npm
 # fzf
 if [ "$(command -v fzf)" ]; then
   export FZF_COMPLETION_TRIGGER=',,'
-  source /usr/local/opt/fzf/shell/completion.zsh
+  source "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh"
 fi
