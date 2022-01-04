@@ -44,7 +44,7 @@ function require_brew() {
 }
 
 function require_code() {
-  is-executable code || code="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+  command-exists code || code="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
   running "code $1"
   if [[ $(code --list-extensions | grep -x $1) != $1 ]]; then
     action "code --install-extension $1"

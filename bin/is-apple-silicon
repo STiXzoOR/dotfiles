@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+test "$(uname -p)" = 'arm' -o "$(uname -m)" = 'arm64'
