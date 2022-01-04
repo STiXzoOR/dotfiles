@@ -120,6 +120,5 @@
   "editor.fontLigatures": true,
   "terminal.integrated.defaultProfile.osx": "zsh",
   "editor.colorDecorators": true,
-  "terminal.integrated.fontSize": 14,
-  "window.zoomLevel": -1
+  "terminal.integrated.fontSize": 14
 }
