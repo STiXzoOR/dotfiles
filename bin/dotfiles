@@ -438,6 +438,7 @@ sub_update() {
 
   running "Updating submodules"
   git submodule sync --recursive --quiet >/dev/null 2>&1
+  git submodule init --recursive --quiet >/dev/null 2>&1
   git submodule update --remote --recursive --merge --quiet >/dev/null 2>&1
   ok
 
@@ -467,9 +468,6 @@ sub_update_system() {
 
   action "Upgrading homebrew packages"
   brew upgrade
-
-  action "Upgrading homebrew casks"
-  brew upgrade --cask
 
   action "Upgrading app store apps"
   mas upgrade
