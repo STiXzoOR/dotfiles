@@ -23,5 +23,8 @@ eval "$(dircolors -b "$DOTFILES_DIR"/system/.dir_colors)"
 unset DOTFILE
 export DOTFILES_DIR
 
+# Load NVM
+[ -s "${NVM_DIR}/nvm.sh" ] && source "${NVM_DIR}/nvm.sh"
+
 # Load Fig
 [ -s ~/.fig/fig.sh ] && source ~/.fig/fig.sh

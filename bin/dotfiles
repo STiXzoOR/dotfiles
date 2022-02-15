@@ -147,7 +147,8 @@ sub_install() {
 
   action "installing lts node..."
   require_nvm --lts
-  nvm alias default lts/gallium
+  require_nvm lts/fermium
+  nvm alias default lts/fermium
   ok
 
   pushd "$ROOT_DIR" >/dev/null 2>&1
