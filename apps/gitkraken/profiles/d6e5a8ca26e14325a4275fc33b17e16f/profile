@@ -1,0 +1,74 @@
+{
+  "tabInfo": {
+    "permanentTabs": {
+      "PROJECTS": {
+        "selectedProject": null,
+        "closed": true
+      }
+    },
+    "selectedTabId": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
+    "tabs": [
+      {
+        "id": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
+        "type": "REPO",
+        "repoName": ".dotfiles",
+        "repoPath": "/Users/stix/.dotfiles/"
+      },
+      {
+        "id": "881a9505-78bc-44e2-b3a2-c0c6d404f2a4",
+        "type": "REPO",
+        "repoName": "frontend",
+        "repoPath": "/Users/stix/Work/mote/frontend/"
+      }
+    ]
+  },
+  "profileIcon": "Neo-Keif.png",
+  "profileName": "STiX",
+  "userEmail": "neostixz@gmail.com",
+  "userName": "Neoptolemos Kyriakou",
+  "editor": {
+    "fontFamily": "\"Fira Code\"",
+    "wordWrap": true
+  },
+  "fileNodeList": {
+    "viewMode": "full_path",
+    "sort": "name_ascending"
+  },
+  "defaultTerminal": "iTerm2",
+  "fileView": {
+    "diffDisplayMode": "hunk"
+  },
+  "layout": {
+    "CommitMessage": {
+      "rightPanelHeight": 285
+    },
+    "RefPanel": {
+      "open": true
+    },
+    "DetailPanel": {
+      "width": 353
+    }
+  },
+  "externalEditor": "Visual Studio Code",
+  "projectGroupNamesByDirectory": {
+    "/Users/stix/Projects": "Projects"
+  },
+  "ssh": {
+    "privateKey": "/Users/stix/.ssh/id_ed25519",
+    "publicKey": "/Users/stix/.ssh/id_ed25519.pub",
+    "useLocalAgent": false,
+    "appVersion": "8.1.0"
+  },
+  "organizationId": null,
+  "cli": {
+    "fontFamily": "\"MesloLGS Nerd Font Mono\"",
+    "cursorStyle": "bar",
+    "fontSize": 14
+  },
+  "useCustomTerminalCmd": false,
+  "zoom": 1,
+  "projects": {},
+  "ui": {
+    "theme": "nord-dark.jsonc"
+  }
+}

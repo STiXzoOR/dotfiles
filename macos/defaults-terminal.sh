@@ -46,4 +46,21 @@ open "$DOTFILES_DIR/apps/iterm2/nord_theme/src/xml/Nord.itermcolors"
 sleep 1
 ok
 
-killall "iTerm2" >/dev/null 2>&1
+###############################################################################
+bot "Warp"
+###############################################################################
+
+running "Create warp custom theme folder"
+CUSTOM_THEME_DIR="$HOME/.warp/themes"
+mkdir -p "$CUSTOM_THEME_DIR/" 2>/dev/null
+ok
+
+running "Install themes for Warp"
+rm -rf "$CUSTOM_THEME_DIR/*.yaml" 2>/dev/null
+cp "$DOTFILES_DIR/apps/warp/themes/standard/*.yaml" "$CUSTOM_THEME_DIR/" 2>/dev/null
+cp "$DOTFILES_DIR/apps/warp/themes/base16/*.yaml" "$CUSTOM_THEME_DIR/" 2>/dev/null
+ok
+
+for app in "iTerm2" "Warp"; do
+  killall "${app}" >/dev/null 2>&1
+done
