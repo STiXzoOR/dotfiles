@@ -9,7 +9,7 @@
     "editor.defaultFormatter": "numso.prettier-standard-vscode"
   },
   "shellformat.useEditorConfig": true,
-  "terminal.external.osxExec": "iTerm.app",
+  "terminal.external.osxExec": "Warp.app",
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "[django-html]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
@@ -120,5 +120,6 @@
   "editor.fontLigatures": true,
   "terminal.integrated.defaultProfile.osx": "zsh",
   "editor.colorDecorators": true,
-  "terminal.integrated.fontSize": 14
+  "terminal.integrated.fontSize": 14,
+  "http.systemCertificates": false
 }
