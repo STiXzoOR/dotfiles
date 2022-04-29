@@ -15,10 +15,16 @@
         "repoPath": "/Users/stix/.dotfiles/"
       },
       {
-        "id": "881a9505-78bc-44e2-b3a2-c0c6d404f2a4",
+        "id": "7436dd66-89b4-4f5d-8410-632ebbaab115",
         "type": "REPO",
         "repoName": "frontend",
         "repoPath": "/Users/stix/Work/mote/frontend/"
+      },
+      {
+        "id": "b8224859-d0d1-4d45-a899-02243ea003e9",
+        "type": "REPO",
+        "repoName": "l10n",
+        "repoPath": "/Users/stix/Work/mote/frontend/libs/l10n/"
       }
     ]
   },
@@ -63,7 +69,8 @@
   "cli": {
     "fontFamily": "\"MesloLGS Nerd Font Mono\"",
     "cursorStyle": "bar",
-    "fontSize": 14
+    "fontSize": 14,
+    "cliPanelVisible": false
   },
   "useCustomTerminalCmd": false,
   "zoom": 1,
