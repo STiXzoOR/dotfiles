@@ -6,17 +6,9 @@ _dotfiles_completions() {
 compdef _dotfiles_completions dotfiles
 
 # npm
-_npm_completion() {
-  local si=$IFS
-  compadd -- $(COMP_CWORD=$((CURRENT - 1)) \
-    COMP_LINE=$BUFFER \
-    COMP_POINT=0 \
-    npm completion -- "${words[@]}" \
-    2>/dev/null)
-  IFS=$si
-}
-
-compdef _npm_completion npm
+if command-exists npm; then
+  . <(npm completion)
+fi
 
 # fzf
 if [ "$(command -v fzf)" ]; then

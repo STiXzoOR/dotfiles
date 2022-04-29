@@ -1,9 +1,8 @@
+# Fig pre block. Keep at the top of this file.
+. "$HOME/.fig/shell/profile.pre.bash"
 #############################################################
 # Generic configuration that applies to all shells
 #############################################################
-
-# Preload Fig Env Variables
-[ -s ~/.fig/shell/pre.sh ] && source ~/.fig/shell/pre.sh
 
 if [[ -d "$HOME/.dotfiles" ]]; then
   DOTFILES_DIR="$HOME/.dotfiles"
@@ -26,5 +25,5 @@ export DOTFILES_DIR
 # Load NVM
 [ -s "${NVM_DIR}/nvm.sh" ] && source "${NVM_DIR}/nvm.sh"
 
-# Load Fig
-[ -s ~/.fig/fig.sh ] && source ~/.fig/fig.sh
+# Fig post block. Keep at the bottom of this file.
+. "$HOME/.fig/shell/profile.post.bash"

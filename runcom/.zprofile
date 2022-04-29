@@ -1,8 +1,5 @@
-##############################################################################
-# Fig Pre-Setup
-##############################################################################
-[ -s ~/.fig/shell/pre.sh ] && source ~/.fig/shell/pre.sh
-
+# Fig pre block. Keep at the top of this file.
+. "$HOME/.fig/shell/zprofile.pre.zsh"
 ##############################################################################
 #Import the shell-agnostic (Bash or Zsh) environment config
 ##############################################################################
@@ -27,7 +24,5 @@ export NVM_LAZY_LOAD=false
 export NVM_AUTO_USE=true
 export NVM_COMPLETION=true
 
-##############################################################################
-# Fig Setup
-##############################################################################
-[ -s ~/.fig/fig.sh ] && source ~/.fig/fig.sh
+# Fig post block. Keep at the bottom of this file.
+. "$HOME/.fig/shell/zprofile.post.zsh"

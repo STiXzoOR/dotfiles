@@ -1,3 +1,5 @@
+# Fig pre block. Keep at the top of this file.
+. "$HOME/.fig/shell/zshrc.pre.zsh"
 # zmodload zsh/zprof # Enable for debugging
 #
 # Executes commands at the start of an interactive session.
@@ -5,11 +7,6 @@
 # Authors:
 #   Sorin Ionescu <sorin.ionescu@gmail.com>
 #
-
-##############################################################################
-# Fig Pre-Setup
-##############################################################################
-[ -s ~/.fig/shell/pre.sh ] && source ~/.fig/shell/pre.sh
 
 ##################################################################################################
 # Enable Instant Prompt
@@ -48,9 +45,7 @@ export DEFAULT_USER=$(whoami)
 
 setopt GLOB_STAR_SHORT
 
-##############################################################################
-# Fig Setup
-##############################################################################
-[ -s ~/.fig/fig.sh ] && source ~/.fig/fig.sh
-
 # zprof # Enable for debugging
+
+# Fig post block. Keep at the bottom of this file.
+. "$HOME/.fig/shell/zshrc.post.zsh"

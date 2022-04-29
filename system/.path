@@ -3,13 +3,12 @@
 
 command-exists getconf && PATH=$($(command -v getconf) PATH)
 
+export HOMEBREW_PREFIX=$($DOTFILES_DIR/bin/is-supported $DOTFILES_DIR/bin/is-apple-silicon /opt/homebrew /usr/local)
+
 # Default
 prepend-path "/bin"
-prepend-path "/sbin"
 prepend-path "/usr/bin"
-prepend-path "/usr/sbin"
-prepend-path "$HOME/bin"
-prepend-path "$DOTFILES_DIR/bin"
+prepend-path "/usr/local/bin"
 
 # Homebrew
 if test -x "$HOMEBREW_PREFIX/bin/brew"; then
@@ -22,6 +21,12 @@ if test -x "$HOMEBREW_PREFIX/bin/brew"; then
   prepend-path "$HOMEBREW_PREFIX/opt/ruby/bin"
   prepend-path "$HOMEBREW_PREFIX/opt/openssl/bin"
 fi
+
+prepend-path "$HOME/bin"
+prepend-path "$DOTFILES_DIR/bin"
+prepend-path "/sbin"
+prepend-path "/usr/sbin"
+prepend-path "/usr/local/sbin"
 
 # Remove duplicates (preserving prepended items)
 # Source: http://unix.stackexchange.com/a/40755
