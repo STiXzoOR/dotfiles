@@ -27,7 +27,7 @@
   },
   "homepage": "https://github.com/STiXzoOR/dotfiles#readme",
   "dependencies": {
-    "node-emoji": "1.10.0",
+    "node-emoji": "1.11.0",
     "promisify-child-process": "4.1.1"
   }
 }
