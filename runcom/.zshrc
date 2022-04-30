@@ -38,6 +38,8 @@ export DEFAULT_USER=$(whoami)
 ##################################################################################################
 
 [[ -f "$DOTFILES_DIR/system/.completion" ]] && . "$DOTFILES_DIR/system/.completion"
+fpath+="$DOTFILES_DIR/completions"
+compinit
 
 ##################################################################################################
 # Recursive globbing with "**"

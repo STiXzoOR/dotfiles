@@ -17,12 +17,5 @@ setopt appendhistory       #Append history to the history file (no overwriting)
 setopt sharehistory        #Share history across terminals
 setopt incappendhistory    #Immediately append to the history file, not just when a term is killed
 
-##############################################################################
-# zsh-nvm Setup
-##############################################################################
-export NVM_LAZY_LOAD=false
-export NVM_AUTO_USE=true
-export NVM_COMPLETION=true
-
 # Fig post block. Keep at the bottom of this file.
 . "$HOME/.fig/shell/zprofile.post.zsh"

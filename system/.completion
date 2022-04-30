@@ -11,7 +11,7 @@ if command-exists npm; then
 fi
 
 # fzf
-if [ "$(command -v fzf)" ]; then
+if command-exists fzf; then
   export FZF_COMPLETION_TRIGGER=',,'
-  source "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh"
+  . "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh"
 fi

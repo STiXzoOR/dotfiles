@@ -126,3 +126,15 @@ function require_nvm() {
   fi
   ok
 }
+
+function source_fnm() {
+  eval "$(fnm env)"
+}
+
+function require_fnm() {
+  running "fnm $1"
+  source_fnm
+  action "fnm install $1"
+  fnm install $1
+  ok
+}
