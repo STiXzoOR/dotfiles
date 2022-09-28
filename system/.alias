@@ -43,6 +43,12 @@ if $(is-supported "alias -g"); then
   alias -g L="| less"
 fi
 
+if $(is-supported "alias -s"); then
+  alias -s git="git clone --depth 1"
+  alias -s html="cat"
+  alias -s {js,jsx,ts,tsx}="code"
+fi
+
 #############################################################
 # List declared aliases, functions, paths
 #############################################################

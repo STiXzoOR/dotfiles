@@ -17,9 +17,6 @@
   "[markdown]": {
     "editor.defaultFormatter": "yzhang.markdown-all-in-one"
   },
-  "[python]": {
-    "editor.defaultFormatter": "ms-python.python"
-  },
   "[shellscript]": {
     "editor.defaultFormatter": "foxundermoon.shell-format"
   },
@@ -66,10 +63,10 @@
     "typescript",
     "typescriptreact"
   ],
-  "eslint.runtime": "/Users/stix/.nvm/versions/node/v14.18.2/bin/node",
-  "explorer.experimental.fileNesting.enabled": true,
-  "explorer.experimental.fileNesting.expand": false,
-  "explorer.experimental.fileNesting.patterns": {
+  "eslint.runtime": "/Users/stix/Library/Application Support/fnm/node-versions/v14.19.1/installation/bin/node",
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
     ".clang-tidy": ".clang-format",
     ".env": "*.env, .env.*, env.d.ts",
     ".gitignore": ".gitattributes, .gitmodules, .gitmessage, .mailmap, .git-blame*",
@@ -192,5 +189,6 @@
   "workbench.editor.highlightModifiedTabs": true,
   "workbench.iconTheme": "vscode-icons",
   "workbench.sideBar.location": "left",
-  "workbench.startupEditor": "newUntitledFile"
+  "workbench.startupEditor": "newUntitledFile",
+  "auto-build.defaultEnv.name": "Artillery_Ruby"
 }
