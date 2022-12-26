@@ -7,5 +7,6 @@ module.exports = [
   "homebrew/core",
   "homebrew/dupes",
   "homebrew/services",
+  "lotyp/homebrew-formulae",
   "mongodb/brew",
 ];

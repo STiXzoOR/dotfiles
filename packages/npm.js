@@ -11,6 +11,7 @@ module.exports = [
   "npm-check-updates",
   "npm-check",
   "npm",
+  "pnpm",
   "prettier",
   "release-it",
   "superstatic",

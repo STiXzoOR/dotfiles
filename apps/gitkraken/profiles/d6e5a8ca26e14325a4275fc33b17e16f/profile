@@ -19,12 +19,6 @@
         "type": "REPO",
         "repoName": "frontend",
         "repoPath": "/Users/stix/Work/mote/frontend/"
-      },
-      {
-        "id": "b8224859-d0d1-4d45-a899-02243ea003e9",
-        "type": "REPO",
-        "repoName": "l10n",
-        "repoPath": "/Users/stix/Work/mote/frontend/libs/l10n/"
       }
     ]
   },

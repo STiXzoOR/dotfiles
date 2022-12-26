@@ -2,13 +2,13 @@ Icons=(
   "/System/Applications/Launchpad.app"
   "/Applications/Brave Browser.app"
   "/Applications/Google Chrome.app"
-  "/Applications/Transmission.app"
   "/Applications/Slack.app"
   "/Applications/Spark.app"
   "/System/Applications/Calendar.app"
+  "/Applications/Notion.app"
   "/System/Applications/Notes.app"
-  "/Applications/Visual Studio Code.app"
-  "/Applications/iTerm.app"
+  "/Applications/WebStorm.app"
+  "/Applications/Warp.app"
   "/System/Applications/System Preferences.app"
 )
 

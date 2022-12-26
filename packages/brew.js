@@ -4,7 +4,7 @@ module.exports = [
   "bat",
   "coreutils",
   "delta",
-  "dockutil",
+  "lotyp/formulae/dockutil",
   "dpkg",
   "exa",
   "fd",
