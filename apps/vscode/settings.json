@@ -144,9 +144,7 @@
   "python.formatting.provider": "black",
   "python.languageServer": "Pylance",
   "python.linting.enabled": true,
-  "python.linting.flake8Args": [
-    "--max-line-length=120"
-  ],
+  "python.linting.flake8Args": ["--max-line-length=120"],
   "python.linting.flake8Enabled": true,
   "python.linting.lintOnSave": true,
   "python.linting.pylintEnabled": false,
@@ -192,5 +190,6 @@
   "workbench.editor.highlightModifiedTabs": true,
   "workbench.iconTheme": "vscode-icons",
   "workbench.sideBar.location": "left",
-  "workbench.startupEditor": "newUntitledFile"
+  "workbench.startupEditor": "newUntitledFile",
+  "arduino.useArduinoCli": true
 }
