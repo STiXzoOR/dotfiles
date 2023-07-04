@@ -8,7 +8,6 @@ module.exports = [
   "dpkg",
   "exa",
   "fd",
-  "fasd",
   "ffmpeg",
   "findutils",
   "fselect",

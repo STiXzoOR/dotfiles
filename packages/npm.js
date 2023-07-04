@@ -16,6 +16,7 @@ module.exports = [
   "release-it",
   "superstatic",
   "svgo",
+  "taze",
   "tldr",
   "underscore-cli",
   "vtop",

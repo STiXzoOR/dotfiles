@@ -14,5 +14,7 @@ module.exports = [
   // Spark
   '1176895641',
   // Twitter
-  '1482454543'
+  '1482454543',
+  // Tailscale
+  '1475387142'
 ]
