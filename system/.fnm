@@ -1,1 +1,7 @@
 eval "$(fnm env)"
+
+fnm_upgrade () {
+  fnm exec --using=$1 npm ls --global --json \
+    | jq -r '.dependencies | to_entries[] | .key+"@"+.value.version' \
+    | xargs npm i -g
+}

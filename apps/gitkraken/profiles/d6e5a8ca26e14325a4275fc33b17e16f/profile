@@ -15,10 +15,11 @@
         "repoPath": "/Users/stix/.dotfiles/"
       },
       {
-        "id": "b1ad76d9-a6a6-4f7a-aa41-7d9b77fce458",
+        "id": "2a7057e2-c384-4c53-bd78-a0a56e819ad4",
         "type": "REPO",
         "repoName": "frontend",
-        "repoPath": "/Users/stix/Work/mote/frontend/"
+        "repoPath": "/Users/stix/Work/mote/frontend/",
+        "skipWSLChecks": false
       }
     ]
   },
