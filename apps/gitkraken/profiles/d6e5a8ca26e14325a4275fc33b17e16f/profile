@@ -6,7 +6,7 @@
         "closed": true
       }
     },
-    "selectedTabId": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
+    "selectedTabId": "2a7057e2-c384-4c53-bd78-a0a56e819ad4",
     "tabs": [
       {
         "id": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
@@ -19,6 +19,13 @@
         "type": "REPO",
         "repoName": "frontend",
         "repoPath": "/Users/stix/Work/mote/frontend/",
+        "skipWSLChecks": false
+      },
+      {
+        "id": "86b57ae5-c331-4ed1-8116-0fb5b55e2b05",
+        "type": "REPO",
+        "repoName": "electricity_partial_bill_calculator",
+        "repoPath": "/Users/stix/Projects/electricity_partial_bill_calculator/",
         "skipWSLChecks": false
       }
     ]
@@ -41,10 +48,11 @@
   },
   "layout": {
     "CommitMessage": {
-      "rightPanelHeight": 285
+      "rightPanelHeight": 110
     },
     "RefPanel": {
-      "open": true
+      "open": true,
+      "width": 215
     },
     "DetailPanel": {
       "width": 353
