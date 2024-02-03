@@ -27,6 +27,27 @@
         "repoName": "electricity_partial_bill_calculator",
         "repoPath": "/Users/stix/Projects/electricity_partial_bill_calculator/",
         "skipWSLChecks": false
+      },
+      {
+        "id": "30193ee8-2be7-4e9f-bdc4-3a46978f5326",
+        "type": "REPO",
+        "repoName": "name_picker_roulette",
+        "repoPath": "/Users/stix/Projects/name_picker_roulette/",
+        "skipWSLChecks": false
+      },
+      {
+        "id": "3ca417fc-99d0-4f3e-bb41-e4f2b1d379e4",
+        "type": "REPO",
+        "repoName": "l10n-app",
+        "repoPath": "/Users/stix/Work/mote/frontend/l10n-app/",
+        "skipWSLChecks": false
+      },
+      {
+        "id": "26c1729c-b0e8-4868-ba0e-2444c18dfe90",
+        "type": "REPO",
+        "repoName": "artmachine-eshop",
+        "repoPath": "/Users/stix/Projects/artmachine-eshop/",
+        "skipWSLChecks": false
       }
     ]
   },
@@ -48,7 +69,7 @@
   },
   "layout": {
     "CommitMessage": {
-      "rightPanelHeight": 110
+      "rightPanelHeight": 200
     },
     "RefPanel": {
       "open": true,

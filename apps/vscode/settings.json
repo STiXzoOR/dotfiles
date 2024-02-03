@@ -197,5 +197,8 @@
     "plaintext": true,
     "markdown": false,
     "scminput": false
+  },
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python"
   }
 }
