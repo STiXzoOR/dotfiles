@@ -19,3 +19,6 @@ setopt incappendhistory    #Immediately append to the history file, not just whe
 
 # Fig post block. Keep at the bottom of this file.
 [[ -f "$HOME/.fig/shell/zprofile.post.zsh" ]] && builtin source "$HOME/.fig/shell/zprofile.post.zsh"
+
+# Added by OrbStack: command-line tools and integration
+source ~/.orbstack/shell/init.zsh 2>/dev/null || :

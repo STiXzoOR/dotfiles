@@ -4,6 +4,12 @@
       "PROJECTS": {
         "selectedProject": null,
         "closed": true
+      },
+      "FOCUS_VIEW": {
+        "closed": false,
+        "provider": null,
+        "issueTracker": null,
+        "selectedProjectId": null
       }
     },
     "selectedTabId": "2a7057e2-c384-4c53-bd78-a0a56e819ad4",
@@ -19,6 +25,13 @@
         "type": "REPO",
         "repoName": "frontend",
         "repoPath": "/Users/stix/Work/mote/frontend/",
+        "skipWSLChecks": false
+      },
+      {
+        "id": "ab5ca97e-3e63-465f-a888-d697a85acdef",
+        "type": "REPO",
+        "repoName": "backend",
+        "repoPath": "/Users/stix/Work/mote/backend/",
         "skipWSLChecks": false
       },
       {
@@ -72,7 +85,7 @@
       "rightPanelHeight": 200
     },
     "RefPanel": {
-      "open": true,
+      "open": false,
       "width": 215
     },
     "DetailPanel": {
@@ -89,7 +102,7 @@
     "useLocalAgent": false,
     "appVersion": "8.1.0"
   },
-  "organizationId": null,
+  "organizationId": "65c58fe02cebeb5ab30a423e",
   "cli": {
     "fontFamily": "\"MesloLGS Nerd Font Mono\"",
     "cursorStyle": "bar",
