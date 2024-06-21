@@ -6,11 +6,9 @@
         "closed": true
       },
       "FOCUS_VIEW": {
-        "closed": false,
-        "provider": null,
-        "issueTracker": null,
-        "selectedProjectId": null
-      }
+        "closed": false
+      },
+      "REPO_MANAGEMENT": {}
     },
     "selectedTabId": "2a7057e2-c384-4c53-bd78-a0a56e819ad4",
     "tabs": [
@@ -56,10 +54,14 @@
         "skipWSLChecks": false
       },
       {
-        "id": "26c1729c-b0e8-4868-ba0e-2444c18dfe90",
+        "id": "9c538f17-68d0-461d-ae13-9cb23178f54b",
+        "type": "NEW"
+      },
+      {
+        "id": "a68b345f-3714-4824-8537-4c0fba6a83de",
         "type": "REPO",
-        "repoName": "artmachine-eshop",
-        "repoPath": "/Users/stix/Projects/artmachine-eshop/",
+        "repoName": "react-speech-highlight",
+        "repoPath": "/Users/stix/Work/mote/react-speech-highlight/",
         "skipWSLChecks": false
       }
     ]
@@ -85,7 +87,7 @@
       "rightPanelHeight": 200
     },
     "RefPanel": {
-      "open": false,
+      "open": true,
       "width": 215
     },
     "DetailPanel": {
@@ -93,9 +95,6 @@
     }
   },
   "externalEditor": "Visual Studio Code",
-  "projectGroupNamesByDirectory": {
-    "/Users/stix/Projects": "Projects"
-  },
   "ssh": {
     "privateKey": "/Users/stix/.ssh/id_ed25519",
     "publicKey": "/Users/stix/.ssh/id_ed25519.pub",
@@ -113,6 +112,32 @@
   "zoom": 1,
   "projects": {},
   "ui": {
-    "theme": "nord-dark.jsonc"
-  }
+    "theme": "nord-dark.jsonc",
+    "repoManagementTab": {
+      "collapsedSections": {
+        "ALL_REPOS_SECTION": true
+      }
+    }
+  },
+  "focusView": {
+    "provider": "github",
+    "issueTracker": {
+      "provider": "github",
+      "settings": {
+        "azureOrganizationId": null,
+        "azureProject": null,
+        "jiraProjectId": null,
+        "jiraResourceId": null,
+        "repoId": null,
+        "trelloBoardId": null
+      }
+    },
+    "selectedProjectId": "47c2be4e11464b94a68a2880ad9eb160"
+  },
+  "recentProjects": [
+    {
+      "id": "47c2be4e11464b94a68a2880ad9eb160",
+      "name": "Mote"
+    }
+  ]
 }
