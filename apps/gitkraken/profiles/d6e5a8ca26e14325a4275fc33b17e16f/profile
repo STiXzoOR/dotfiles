@@ -1,16 +1,12 @@
 {
   "tabInfo": {
     "permanentTabs": {
-      "PROJECTS": {
-        "selectedProject": null,
-        "closed": true
-      },
       "FOCUS_VIEW": {
         "closed": false
       },
       "REPO_MANAGEMENT": {}
     },
-    "selectedTabId": "2a7057e2-c384-4c53-bd78-a0a56e819ad4",
+    "selectedTabId": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
     "tabs": [
       {
         "id": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
@@ -54,14 +50,17 @@
         "skipWSLChecks": false
       },
       {
-        "id": "9c538f17-68d0-461d-ae13-9cb23178f54b",
-        "type": "NEW"
-      },
-      {
         "id": "a68b345f-3714-4824-8537-4c0fba6a83de",
         "type": "REPO",
         "repoName": "react-speech-highlight",
         "repoPath": "/Users/stix/Work/mote/react-speech-highlight/",
+        "skipWSLChecks": false
+      },
+      {
+        "id": "f16a050f-79d9-4065-a0a8-826d1d5f0c94",
+        "type": "REPO",
+        "repoName": "ios-app",
+        "repoPath": "/Users/stix/Work/mote/ios-app/",
         "skipWSLChecks": false
       }
     ]
