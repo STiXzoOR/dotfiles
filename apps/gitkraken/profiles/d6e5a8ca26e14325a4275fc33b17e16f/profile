@@ -62,6 +62,13 @@
         "repoName": "ios-app",
         "repoPath": "/Users/stix/Work/mote/ios-app/",
         "skipWSLChecks": false
+      },
+      {
+        "id": "a343efff-c313-4016-9a81-abab15083c0d",
+        "type": "REPO",
+        "repoName": "swaptic",
+        "repoPath": "/Users/stix/Work/swaptic/swaptic/",
+        "skipWSLChecks": false
       }
     ]
   },
@@ -113,9 +120,8 @@
   "ui": {
     "theme": "nord-dark.jsonc",
     "repoManagementTab": {
-      "collapsedSections": {
-        "ALL_REPOS_SECTION": true
-      }
+      "orderedSectionIds": [],
+      "sectionsById": {}
     }
   },
   "focusView": {
@@ -138,5 +144,10 @@
       "id": "47c2be4e11464b94a68a2880ad9eb160",
       "name": "Mote"
     }
-  ]
+  ],
+  "integration": {
+    "hasConnectedIntegrationByType": {
+      "github": true
+    }
+  }
 }

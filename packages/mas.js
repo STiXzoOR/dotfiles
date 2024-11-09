@@ -7,7 +7,7 @@ module.exports = [
   '441258766',
   // Messenger
   '1480068668',
-  // Microsoft Remote Desktop
+  // Windows App
   '1295203466',
   // Paste
   '967805235',
@@ -16,5 +16,9 @@ module.exports = [
   // Twitter
   '1482454543',
   // Tailscale
-  '1475387142'
+  '1475387142',
+  // Little Snitch Mini
+  '1629008763',
+  // SponsorBlock
+  '1573461917',
 ]

@@ -28,6 +28,7 @@ prepend-path "/sbin"
 prepend-path "/usr/sbin"
 prepend-path "/usr/local/sbin"
 prepend-path "$HOME/Library/pnpm"
+prepend-path "$HOME/.cargo/bin"
 prepend-path "/Applications/Postgres.app/Contents/Versions/16/bin/psql"
 
 # Remove duplicates (preserving prepended items)

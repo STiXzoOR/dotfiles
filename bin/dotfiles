@@ -130,9 +130,6 @@ sub_install() {
   require_brew zsh
   require_brew stow
 
-  RUBY_CONFIGURE_OPTS="--with-openssl-dir=$(brew --prefix openssl) --with-readline-dir=$(brew --prefix readline) --with-libyaml-dir=$(brew --prefix libyaml)"
-  require_brew ruby
-
   CURRENTSHELL=$(dscl . -read /Users/$USER UserShell | awk '{print $2}')
   if [[ "$CURRENTSHELL" != "$HOMEBREW_PREFIX/bin/zsh" ]]; then
     bot "setting newer homebrew zsh ($HOMEBREW_PREFIX/bin/zsh) as your shell (password required)"
@@ -145,9 +142,8 @@ sub_install() {
   ok
 
   action "installing lts node..."
-  require_fnm lts
-  require_fnm lts/fermium
-  fnm default lts/fermium
+  require_fnm lts-latest
+  fnm default lts-latest
   ok
 
   pushd "$ROOT_DIR" >/dev/null 2>&1
@@ -174,7 +170,7 @@ sub_install() {
     $0 install --all
   fi
 
-  open /Applications/iTerm.app
+  open /Applications/Warp.app
   killall "Terminal" >/dev/null 2>&1
 }
 
@@ -477,10 +473,6 @@ sub_update_system() {
   npm install npm -g
   npm update -g
 
-  action "Updating gem"
-  sudo gem update --system
-  sudo gem update
-
   bot "Woot! All done. You should clean your system from any leftovers files by running:\n\n"
   echo -e "$BIN_NAME clean\n\n"
 
@@ -493,7 +485,6 @@ sub_update_system() {
 sub_clean() {
   bot "Polishing this old rusty piece of machinery!\n"
   brew cleanup
-  sudo gem cleanup
   bot "Woot! All done."
 }
 

@@ -1,5 +1,5 @@
 DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
-COMPUTER_NAME="STiXzoOR-MBP"
+COMPUTER_NAME="STiXzoOR-MB"
 
 source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
@@ -165,9 +165,9 @@ bot "Trackpad, mouse, keyboard, Bluetooth accessories, and input"
 # defaults -currentHost write NSGlobalDomain com.apple.trackpad.trackpadCornerClickBehavior -int 1
 # defaults -currentHost write NSGlobalDomain com.apple.trackpad.enableSecondaryClick -bool true;ok
 
-running "Increase sound quality for Bluetooth headphones/headsets"
-defaults write com.apple.BluetoothAudioAgent "Apple Bitpool Min (editable)" -int 40
-ok
+#running "Increase sound quality for Bluetooth headphones/headsets"
+#defaults write com.apple.BluetoothAudioAgent "Apple Bitpool Min (editable)" -int 40
+#ok
 
 running "Enable full keyboard access for all controls (e.g. enable Tab in modal dialogs)"
 defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
@@ -191,9 +191,9 @@ defaults write NSGlobalDomain KeyRepeat -int 2
 defaults write NSGlobalDomain InitialKeyRepeat -int 10
 ok
 
-running "Set language and text formats (english/GR)"
-defaults write NSGlobalDomain AppleLanguages -array "en" "el"
-defaults write NSGlobalDomain AppleLocale -string "en_GR@currency=EUR"
+running "Set language and text formats (english/CY)"
+defaults write NSGlobalDomain AppleLanguages -array "en-CY" "el-CY"
+defaults write NSGlobalDomain AppleLocale -string "en_CY@currency=EUR"
 defaults write NSGlobalDomain AppleMeasurementUnits -string "Centimeters"
 defaults write NSGlobalDomain AppleMetricUnits -bool true
 ok

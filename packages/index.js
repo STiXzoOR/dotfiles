@@ -10,7 +10,7 @@ fs.readdirSync(path.resolve(__dirname)).forEach(file => {
   }
 })
 
-const { tap, ...rest } = packages
-packages = { tap, ...rest }
+const {tap, ...rest} = packages
+packages = {tap, ...rest}
 
 module.exports = packages

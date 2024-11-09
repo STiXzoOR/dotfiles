@@ -7,6 +7,7 @@ Icons=(
   "/System/Applications/Calendar.app"
   "/Applications/Notion.app"
   "/System/Applications/Notes.app"
+  "/Applications/Figma.app"
   "/Applications/WebStorm.app"
   "/Applications/Warp.app"
   "/System/Applications/System Preferences.app"

@@ -62,10 +62,10 @@ alias mpath='echo -e ${MANPATH//:/\\n}'
 # Directory listing/traversal
 #############################################################
 
-if [ "$(command -v exa)" ]; then
-  LS_COLORS_ENABLE=$(is-supported "exa --color auto" --color)
-  LS_TIMESTYLEISO=$(is-supported "exa --time-style=long-iso" --time-style=long-iso)
-  LS_GROUPDIRSFIRST=$(is-supported "exa --group-directories-first" --group-directories-first)
+if [ "$(command -v eza)" ]; then
+  LS_COLORS_ENABLE=$(is-supported "eza --color auto" --color)
+  LS_TIMESTYLEISO=$(is-supported "eza --time-style=long-iso" --time-style=long-iso)
+  LS_GROUPDIRSFIRST=$(is-supported "eza --group-directories-first" --group-directories-first)
 
   unalias -m "ls"
   unalias -m "ll"
@@ -73,11 +73,11 @@ if [ "$(command -v exa)" ]; then
   unalias -m "lr"
   unalias -m "ld"
 
-  alias ls="exa -Ga -s type --icons $LS_COLORS_ENABLE auto"
-  alias ll="exa -la --icons $LS_COLORS_ENABLE always"
-  alias la="exa -la --icons $LS_COLORS_ENABLE always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias lr="exa -lr -s time --icons $LS_COLORS_ENABLE always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias ld="exa -ld --icons $LS_COLORS_ENABLE always */"
+  alias ls="eza -Ga -s type --icons $LS_COLORS_ENABLE auto"
+  alias ll="eza -la --icons $LS_COLORS_ENABLE always"
+  alias la="eza -la --icons $LS_COLORS_ENABLE always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
+  alias lr="eza -lr -s time --icons $LS_COLORS_ENABLE always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
+  alias ld="eza -ld --icons $LS_COLORS_ENABLE always */"
 else
   LS_COLORS_ENABLE=$(is-supported "ls -G" -G)
   LS_TIMESTYLEISO=$(is-supported "ls --time-style=long-iso" --time-style=long-iso)
