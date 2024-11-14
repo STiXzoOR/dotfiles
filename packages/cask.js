@@ -11,7 +11,7 @@ module.exports = [
   'blobsaver',
   'brave-browser',
   'camo-studio',
-  'checkra1n',
+  //'checkra1n',
   'darwindumper',
   'discord',
   'figma',

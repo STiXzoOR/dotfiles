@@ -6,7 +6,7 @@
 ###
 
 function source_brew() {
-  if ! test -v "HOMEBREW_PREFIX"; then
+  if [[ -z "${HOMEBREW_PREFIX}" ]]; then
     if is-apple-silicon; then
       HOMEBREW_PREFIX="/opt/homebrew"
     else
@@ -14,7 +14,7 @@ function source_brew() {
     fi
   fi
 
-  command-exists brew && eval "$($HOMEBREW_PREFIX/bin/brew shellenv)"
+  eval "$($HOMEBREW_PREFIX/bin/brew shellenv)"
 }
 
 function require_tap() {
