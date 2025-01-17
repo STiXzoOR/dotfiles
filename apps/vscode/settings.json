@@ -31,7 +31,7 @@
   "editor.accessibilitySupport": "off",
   "editor.bracketPairColorization.enabled": true,
   "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": true
+    "source.fixAll.eslint": "explicit"
   },
   "editor.colorDecorators": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
