@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 BIN_NAME=$(basename "$0")
-BIN_DIR=$(dirname ${BASH_SOURCE[0]})
-ROOT_DIR=$(dirname $(builtin cd $BIN_DIR && pwd))
+BIN_DIR=$(dirname "${BASH_SOURCE[0]}")
+ROOT_DIR=$(dirname "$(builtin cd "$BIN_DIR" && pwd)")
 COMMAND_NAME=$1
 SUB_COMMAND_NAME=$2
 STRIPPED_SUB_COMMAND_NAME="${SUB_COMMAND_NAME#--}"
@@ -11,7 +11,8 @@ export DOTFILES_DIR="$ROOT_DIR"
 export XDG_CONFIG_HOME="$HOME/.config"
 export STOW_DIR="$DOTFILES_DIR"
 export ACCEPT_EULA=Y
-PATH="$DOTFILES_DIR/bin:$PATH"
+HOMEBREW_PREFIX=$("$DOTFILES_DIR"/bin/is-supported "$DOTFILES_DIR"/bin/is-apple-silicon /opt/homebrew /usr/local)
+PATH="$HOMEBREW_PREFIX/bin:$DOTFILES_DIR/bin:$PATH"
 
 source "$ROOT_DIR/scripts/echos.sh"
 source "$ROOT_DIR/scripts/requirers.sh"
@@ -39,6 +40,7 @@ sub_install_help() {
   echo "   --fonts            Local fonts"
   echo "   --help             This help message"
   echo "   --hosts            Ad-blocking hosts file from someonewhocares.org"
+  echo "   --launchagents     Install LaunchAgents (mackup auto-backup)"
   echo "   --packages         3rd party packages and extensions (brew, cask, code, npm)"
   echo "   --passwordless     Run sudo without password"
   echo "   --prezto           Zsh framework"
@@ -82,22 +84,22 @@ sub_install() {
   $0 install --ssh
 
   bot "ensuring build/install tools are available"
-  if !xcode-select --print-path &>/dev/null; then
+  if ! xcode-select --print-path &>/dev/null; then
     xcode-select --install &>/dev/null
 
     until xcode-select --print-path &>/dev/null; do
       sleep 5
     done
 
-    ok 'XCode Command Line Tools Installed'
+    print_result $? ' XCode Command Line Tools Installed'
 
     sudo xcodebuild -license
-    ok 'Agree with the XCode Command Line Tools licence'
+    print_result $? 'Agree with the XCode Command Line Tools licence'
+
   fi
 
   running "checking homebrew..."
-  brew_bin=$(which brew) 2>&1 >/dev/null
-  if [[ $? != 0 ]]; then
+  if ! command-exists brew; then
     action "installing homebrew"
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     if [[ $? != 0 ]]; then
@@ -105,6 +107,7 @@ sub_install() {
       exit 2
     fi
     source_brew
+    brew analytics off
   else
     ok
     bot "Homebrew"
@@ -118,24 +121,15 @@ sub_install() {
       brew upgrade
       ok "brews upgraded"
     else
-      skip "Brew package upgrades"
+      skip "skipped brew package upgrades."
     fi
   fi
 
-  mkdir -p $HOME/Library/Caches/Homebrew/Formula
-  brew analytics off
+  mkdir -p "$HOME"/Library/Caches/Homebrew/Formula
   brew doctor
 
-  require_brew git
-  require_brew zsh
+  action "installing stow..."
   require_brew stow
-
-  CURRENTSHELL=$(dscl . -read /Users/$USER UserShell | awk '{print $2}')
-  if [[ "$CURRENTSHELL" != "$HOMEBREW_PREFIX/bin/zsh" ]]; then
-    bot "setting newer homebrew zsh ($HOMEBREW_PREFIX/bin/zsh) as your shell (password required)"
-    sudo dscl . -change /Users/$USER UserShell $SHELL $HOMEBREW_PREFIX/bin/zsh >/dev/null 2>&1
-    ok
-  fi
 
   action "installing fnm..."
   require_brew fnm
@@ -146,15 +140,6 @@ sub_install() {
   fnm default lts-latest
   ok
 
-  pushd "$ROOT_DIR" >/dev/null 2>&1
-
-  action "installing npm tools needed to run this project..."
-  source_fnm
-  npm install
-  ok
-
-  popd >/dev/null 2>&1
-
   bot "Woot. All done!. You should run the complementary commands to have your machine fully configured and ready to use:\n"
   echo "$BIN_NAME install hosts"
   echo "$BIN_NAME install prezto"
@@ -162,6 +147,7 @@ sub_install() {
   echo "$BIN_NAME install vim"
   echo "$BIN_NAME install fonts"
   echo "$BIN_NAME install packages"
+  echo "$BIN_NAME install launchagents"
   echo "$BIN_NAME configure defaults"
   echo -e "$BIN_NAME configure dock\n"
 
@@ -181,6 +167,7 @@ sub_install_all() {
   $0 install --vim
   $0 install --fonts
   $0 install --packages
+  $0 install --launchagents
   $0 configure
 }
 
@@ -229,7 +216,7 @@ sub_install_ssh() {
   echo -e "pbcopy < ~/.ssh/id_ed25519.pub\n"
   echo -e "Then follow the guide below:\n\nhttps://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account \n"
 
-  read -p "Press [ENTER] to continue... "
+  read -r -p "Press [ENTER] to continue... "
 }
 
 sub_install_prezto() {
@@ -246,15 +233,44 @@ sub_install_prezto() {
 
 sub_install_hosts() {
   bot "Hosts file install\n"
-  read -r -p "Overwrite /etc/hosts with the ad-blocking hosts file from someonewhocares.org? [y|N] " response
+  read -r -p "Overwrite /etc/hosts using the StevenBlack hosts project? (optional local entries from ./configs/hosts.local) [y|N] " response
   if [[ $response =~ (yes|y|Y) ]]; then
+    pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
     action "cp /etc/hosts /etc/hosts.backup"
     sudo cp /etc/hosts /etc/hosts.backup
     ok
-    action "cp $ROOT_DIR/system/hosts /etc/hosts"
-    sudo cp "$ROOT_DIR/system/hosts" /etc/hosts
+    action "update stevenblack-hosts repo"
+    git submodule update --init modules/stevenblack-hosts
+    (cd modules/stevenblack-hosts && git pull origin master)
+    ok
+    if [ -f ./configs/hosts.local ]; then
+      action "copy ./configs/hosts.local to ./modules/stevenblack-hosts/myhosts"
+      cp ./configs/hosts.local ./modules/stevenblack-hosts/myhosts
+      ok
+    fi
+    action "checking python3 and pip3"
+    if ! command -v python3 >/dev/null 2>&1; then
+      require_brew python
+    fi
+    if ! command -v pip3 >/dev/null 2>&1; then
+      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+      sudo python3 get-pip.py
+      rm get-pip.py
+    fi
+    action "installing python dependencies from stevenblack-hosts requirements.txt"
+    # Create a virtual environment for stevenblack-hosts
+    python3 -m venv modules/stevenblack-hosts/venv
+    source modules/stevenblack-hosts/venv/bin/activate
+    pip install -r modules/stevenblack-hosts/requirements.txt
+    deactivate
+    action "python ./modules/stevenblack-hosts/updateHostsFile.py --auto --replace"
+    source modules/stevenblack-hosts/venv/bin/activate
+    (cd modules/stevenblack-hosts && python updateHostsFile.py --auto --replace)
+    deactivate
+    (cd modules/stevenblack-hosts && git reset --hard HEAD >/dev/null 2>&1)
     ok
     bot "Your /etc/hosts file has been updated. Last version is saved in /etc/hosts.backup"
+    popd >/dev/null 2>&1 || exit
   else
     skip
   fi
@@ -274,19 +290,55 @@ sub_install_fonts() {
   fi
 }
 
+install_packages() {
+  local list_file=$1
+  local install_cmd=$2
+  local name=$3
+
+  if [[ ! -f "packages/$list_file" ]]; then
+    action "skipping $name (packages/$list_file not found)"
+    return
+  fi
+
+  # Check if file has any non-comment, non-empty lines
+  if ! grep -v '^[[:space:]]*#' "packages/$list_file" | grep -v '^[[:space:]]*$' >/dev/null 2>&1; then
+    action "skipping $name (no packages defined)"
+    return
+  fi
+
+  read -r -p "Do you want to install $name? [y|N] " response
+  if [[ $response =~ (y|yes|Y) ]]; then
+    action "installing $name"
+    while IFS= read -r package || [[ -n "$package" ]]; do
+      # Skip comments and empty lines
+      [[ $package =~ ^[[:space:]]*# ]] && continue
+      [[ -z "${package// /}" ]] && continue
+
+      $install_cmd "$package"
+    done <"packages/$list_file"
+  else
+    action "skipping $name installation"
+  fi
+}
+
 sub_install_packages() {
   bot "Packages install\n"
   read -r -p "Install packages/tools/apps? [y|N] " response
   if [[ $response =~ (y|yes|Y) ]]; then
-    action "installing packages from config.js..."
-    source_fnm
-    node "$ROOT_DIR/index.js"
-    ok
+    pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
 
-    action "cleanup homebrew"
+    install_packages "tap.list" "require_tap" "Homebrew taps"
+    install_packages "brew.list" "require_brew" "Homebrew utilities"
+    install_packages "cask.list" "require_cask" "Homebrew desktop apps"
+    install_packages "npm.list" "require_npm" "NPM global packages"
+    install_packages "mas.list" "require_mas" "Mac App Store apps"
+    install_packages "code.list" "require_code" "VS Code extensions"
+
+    running "cleanup homebrew"
     brew cleanup --force >/dev/null 2>&1
     rm -f -r /Library/Caches/Homebrew/* >/dev/null 2>&1
     xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook"
+    popd >/dev/null 2>&1 || exit
     ok
   else
     skip
@@ -302,6 +354,24 @@ sub_install_vim() {
     ok
   else
     skip
+  fi
+}
+
+sub_install_launchagents() {
+  bot "LaunchAgents Setup\n"
+  read -r -p "Do you want to install LaunchAgents (mackup auto-backup)? [y|N] " response
+  if [[ $response =~ (y|yes|Y) ]]; then
+    bot "Installing LaunchAgents..."
+    mkdir -p ~/Library/LaunchAgents
+    for plist in "$DOTFILES_DIR"/launchagents/*.plist; do
+      if [ -f "$plist" ]; then
+        plist_name=$(basename "$plist")
+        ln -sf "$plist" ~/Library/LaunchAgents/
+        launchctl unload ~/Library/LaunchAgents/"$plist_name" 2>/dev/null || true
+        launchctl load ~/Library/LaunchAgents/"$plist_name"
+        ok "Loaded $plist_name"
+      fi
+    done
   fi
 }
 
@@ -323,7 +393,7 @@ sub_configure_defaults() {
   if [[ -z $response || $response =~ ^(y|Y) ]]; then
     shopt -s nullglob
 
-    for DEFAULTS_FILE in $DOTFILES_DIR/macos/defaults*.sh; do
+    for DEFAULTS_FILE in "$DOTFILES_DIR"/macos/defaults*.sh; do
       . "$DEFAULTS_FILE"
     done
 
@@ -354,7 +424,7 @@ sub_link() {
     action "creating symlinks for project dotfiles..."
     now=$(date +"%Y.%m.%d.%H.%M.%S")
 
-    pushd "$ROOT_DIR"/runcom >/dev/null 2>&1
+    pushd "$ROOT_DIR"/runcom >/dev/null 2>&1 || exit
 
     for file in .*; do
       if [[ $file == "." || $file == ".." || $file == '.DS_Store' ]]; then
@@ -364,21 +434,23 @@ sub_link() {
       if [[ -e "$HOME/$file" ]]; then
         running "$HOME/$file"
         mkdir -p "$HOME/.dotfiles_backup/$now"
-        mv ~/$file "$HOME/.dotfiles_backup/$now/$file"
+        mv "$HOME/$file" "$HOME/.dotfiles_backup/$now/$file"
         echo "backup saved as $HOME/.dotfiles_backup/$now/$file"
       fi
 
-      unlink ~/$file >/dev/null 2>&1
+      unlink "$HOME/$file" >/dev/null 2>&1
     done
 
-    popd >/dev/null 2>&1
-    pushd "$ROOT_DIR" >/dev/null 2>&1
+    popd >/dev/null 2>&1 || exit
+    pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
 
     [[ -d "$XDG_CONFIG_HOME" ]] || mkdir -p "$XDG_CONFIG_HOME"
     stow -t "$HOME" runcom
     stow -t "$XDG_CONFIG_HOME" config
+    mkdir -p "$HOME/.local/runtime"
+    chmod 700 "$HOME/.local/runtime"
 
-    popd >/dev/null 2>&1
+    popd >/dev/null 2>&1 || exit
   else
     skip
   fi
@@ -391,22 +463,22 @@ sub_unlink() {
     exit 1
   fi
 
-  pushd "$HOME/.dotfiles_backup/$1" >/dev/null 2>&1
+  pushd "$HOME/.dotfiles_backup/$1" >/dev/null 2>&1 || exit
 
   for file in .*; do
     if [[ $file == "." || $file == ".." || $file == '.DS_Store' ]]; then
       continue
     fi
 
-    running "~/$file"
+    running "$HOME/$file"
     if [[ -e ~/$file ]]; then
-      unlink $file
+      unlink "$file"
       echo -en "project dotfile $file unlinked"
       ok
     fi
 
     if [[ -e ./$file ]]; then
-      mv ./$file ./
+      mv "./$file" ./
       echo -en "$1 backup restored"
       ok
     fi
@@ -414,28 +486,28 @@ sub_unlink() {
     ok
   done
 
-  popd >/dev/null 2>&1
-  pushd "$ROOT_DIR" >/dev/null 2>&1
+  popd >/dev/null 2>&1 || exit
+  pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
 
   stow --delete -t "$HOME" runcom
   stow --delete -t "$XDG_CONFIG_HOME" config
 
-  popd >/dev/null 2>&1
+  popd >/dev/null 2>&1 || exit
 }
 
 sub_update() {
   bot "Updating Dotfiles to latest and greatest!\n"
 
-  pushd "$ROOT_DIR" >/dev/null 2>&1
+  pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
 
   running "Enter commit message"
-  read message
+  read -r message
   echo
 
   running "Updating submodules"
   git submodule sync --recursive --quiet >/dev/null 2>&1
   git submodule init --recursive --quiet >/dev/null 2>&1
-  git submodule update --remote --recursive --merge --quiet >/dev/null 2>&1
+  git submodule update --remote --recursive --checkout --quiet >/dev/null 2>&1
   ok
 
   running "Updating remote repo"
@@ -448,7 +520,7 @@ sub_update() {
   git config --global dotfiles.lastupdate "$(date "+%F %T")" >/dev/null 2>&1
   ok
 
-  popd >/dev/null 2>&1
+  popd >/dev/null 2>&1 || exit
 
   bot "Woot! All done."
 }
@@ -489,7 +561,7 @@ sub_clean() {
 }
 
 sub_open() {
-  open $DOTFILES_DIR
+  open "$DOTFILES_DIR"
 }
 
 sub_edit() {
@@ -504,7 +576,7 @@ cmd_error() {
 
 subcmd_error() {
   error "${COMMAND_NAME}: '${SUB_COMMAND_NAME}' is not a known command or has errors." >&2
-  sub_${COMMAND_NAME}_help
+  sub_"${COMMAND_NAME}"_help
   if [ $? = 127 ]; then
     cmd_error
   fi
@@ -517,12 +589,12 @@ case $COMMAND_NAME in
   ;;
 "unlink")
   shift
-  sub_unlink $@
+  sub_unlink "$@"
   ;;
 *)
   if [[ -n $SUB_COMMAND_NAME ]]; then
     case $SUB_COMMAND_NAME in
-    --${STRIPPED_SUB_COMMAND_NAME})
+    --"${STRIPPED_SUB_COMMAND_NAME}")
       sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}
       if [ $? = 127 ]; then
         subcmd_error
@@ -533,7 +605,7 @@ case $COMMAND_NAME in
       ;;
     esac
   else
-    sub_${COMMAND_NAME}
+    sub_"${COMMAND_NAME}"
     if [ $? = 127 ]; then
       cmd_error
     fi

@@ -4,7 +4,7 @@ PLIST=$2
 ACTION=$1
 
 if [ -f "${PLIST}" ]; then
-	/usr/libexec/PlistBuddy -c "$ACTION" "${PLIST}"
+  /usr/libexec/PlistBuddy -c "$ACTION" "${PLIST}"
 fi
 
 unset PLIST ACTION

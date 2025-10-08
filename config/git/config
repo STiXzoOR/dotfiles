@@ -33,6 +33,9 @@
 [help]
 	autocorrect = 1
 
+[init]
+	defaultBranch = main
+
 [push]
 	default = simple
 	followTags = true
@@ -40,31 +43,11 @@
 [fetch]
 	prune = true
 
-[alias]
-	amend = commit --amend --reuse-message=HEAD
-	br = branch
-	ci = commit
-	co = checkout
-	contrib = shortlog --summary --numbered
-	cr = clone --recursive
-	df = diff --word-diff
-	g = grep --break --heading --line-number
-	l = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
-	ld = "!sh -c \"git log --since '${1:-1} days ago' --oneline --author $(git config user.email)\" -"
-	lg = log -p
-	ll = log --pretty=oneline --graph --abbrev-commit
-	lm = log --pretty=format:'* %s (%h)'
-	patch = !git --no-pager diff --no-color
-	p = push
-	pf = push --force
-	pr = "!f() { git fetch -fu ${2:-origin} refs/pull/$1/head:pr/$1 && git checkout pr/$1; }; f"
-	show-ignored = "! git clean -ndX | perl -pe 's/Would remove/Ignored:/'"
-	st = status
-	stl = ls-files -m -o --exclude-standard
-	sts = status -sb
-	unstage = reset --hard HEAD
-  upm = !git fetch upstream && git merge upstream/main
-  up = pull --rebase --autostash
+[pull]
+	rebase = true
+
+[rebase]
+	autoStash = true
 
 [rerere]
   enabled = 1
@@ -93,6 +76,10 @@
 	cmd = /usr/local/bin/ksdiff -w \"$LOCAL\" \"$REMOTE\"
 	path =
 
+[difftool "vscode"]
+	cmd = code --wait --diff $LOCAL $REMOTE
+	path =
+
 [merge]
 	tool = Kaleidoscope
 	conflictstyle = diff3
@@ -109,8 +96,45 @@
 	cmd = /usr/local/bin/ksdiff --merge --output \"$MERGED\" --base \"$BASE\" -- \"$LOCAL\" --snapshot \"$REMOTE\" --snapshot
 	trustExitCode = true
 
-[pull]
-	rebase = true
+[mergetool "vscode"]
+	cmd = code --wait $MERGED
+	trustExitCode = true
+
+[versionsort]
+	suffix = -alpha
+	suffix = -beta
+	suffix = -canary
+	suffix = -rc
+	suffix = -next
+
+[advice]
+	detachedHead = false
+
+[alias]
+	amend = commit --amend --reuse-message=HEAD
+	br = branch
+	ci = commit
+	co = checkout
+	contrib = shortlog --summary --numbered
+	cr = clone --recursive
+	df = diff --word-diff
+	g = grep --break --heading --line-number
+	l = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+	ld = "!sh -c \"git log --since '${1:-1} days ago' --oneline --author $(git config user.email)\" -"
+	lg = log -p
+	ll = log --pretty=oneline --graph --abbrev-commit
+	lm = log --pretty=format:'* %s (%h)'
+	patch = !git --no-pager diff --no-color
+	p = push
+	pf = push --force
+	pr = "!f() { git fetch -fu ${2:-origin} refs/pull/$1/head:pr/$1 && git checkout pr/$1; }; f"
+	show-ignored = "! git clean -ndX | perl -pe 's/Would remove/Ignored:/'"
+	st = status
+	stl = ls-files -m -o --exclude-standard
+	sts = status -sb
+	unstage = reset --hard HEAD
+  upm = !git fetch upstream && git merge upstream/main
+  up = pull --rebase --autostash
 
 [dotfiles]
-	lastupdate = 2025-01-17 14:08:48
+	lastupdate = 2025-10-06 12:15:54

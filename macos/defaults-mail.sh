@@ -4,7 +4,6 @@ source "$DOTFILES_DIR/scripts/requirers.sh"
 ###############################################################################
 bot "Mail"
 ###############################################################################
-
 running "Disable send and reply animations in Mail.app"
 defaults write com.apple.mail DisableReplyAnimations -bool true
 defaults write com.apple.mail DisableSendAnimations -bool true
@@ -30,6 +29,19 @@ ok
 
 running "Disable automatic spell checking"
 defaults write com.apple.mail SpellCheckingBehavior -string "NoSpellCheckingEnabled"
+ok
+
+running "Disable includings results from trash in search"
+defaults write com.apple.mail IndexTrash -bool false
+ok
+
+running "Automatically check for new message (not every 5 minutes)"
+defaults write com.apple.mail AutoFetch -bool true
+defaults write com.apple.mail PollTime -string "-1"
+ok
+
+running "Show most recent message at the top in conversations"
+defaults write com.apple.mail ConversationViewSortDescending -bool true
 ok
 
 killall "Mail" >/dev/null 2>&1

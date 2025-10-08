@@ -29,15 +29,16 @@ export DEFAULT_USER=$(whoami)
 # Source Prezto
 ##################################################################################################
 
-[[ -s "$DOTFILES_DIR/plugins/prezto/init.zsh" ]] && . "$DOTFILES_DIR/plugins/prezto/init.zsh"
+[[ -s "$DOTFILES_DIR/modules/prezto/init.zsh" ]] && . "$DOTFILES_DIR/modules/prezto/init.zsh"
 
 ##################################################################################################
 # Completion settings
 ##################################################################################################
 
-[[ -f "$DOTFILES_DIR/system/.completion" ]] && . "$DOTFILES_DIR/system/.completion"
+source "$DOTFILES_DIR/system/.completion"
 fpath+="$DOTFILES_DIR/completions"
 compinit
+source "$DOTFILES_DIR/system/.zoxide"
 
 ##################################################################################################
 # Recursive globbing with "**"

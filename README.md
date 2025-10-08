@@ -41,7 +41,6 @@ You don't need to install or configure anything upfront! This works with a brand
     - [Transmission](#transmission)
     - [Spotify](#spotify)
     - [Terminal](#terminal)
-    - [iTerm2](#iterm2)
   - [Software Installation](#software-installation)
     - [Taps](#taps)
     - [Utilities](#utilities)
@@ -63,17 +62,22 @@ Don't you hate getting a new laptop or joining a new team and then spending a wh
 
 \\[^_^]/ - This started as [Adam Eivy](http://adameivy.com)'s MacOS shell configuration dotfiles but has grown to a multi-developer platform for machine configuration.
 
-When I finish with your machine, you will be able to look at your command-line in full-screen mode like this (running iTerm):
+When I finish with your machine, you will have a fully configured development environment with a modern terminal emulator (Warp) and a customizable shell prompt.
 
 ![iTerm Screenshot](./resources/terminal.png)
 
-Check out how your shell prompt includes the full path, node.js version & the working git branch along with a lot of other info!
-We use powerlevel10k for command prompt, so customization of what you want is easily changable in `<DOTFILES_DIR>/system/.prompt`.
-The top terminal is using vim as a full replacement IDE.
-The bottom left is git terminal.
-The bottom right is running `vtop`.
+The shell prompt uses Starship for cross-shell prompt customization, displaying useful information like:
+- Current directory path
+- Git branch and status
+- Node.js version (via FNM)
+- Command execution time
+- And much more
 
-To launch fullscreen, hit `Command + Enter` in iTerm, then use `Command + d` and `Command + D` to create split panes.
+The dotfiles configure Vim as a terminal-based IDE using Vundle for plugin management.
+
+Modern terminal features:
+- Warp: AI-powered terminal with native text editing
+- Full-screen mode: `Command + Enter`
 
 \\[._.]/ - I'm so excited I just binaried in my pants!
 
@@ -88,27 +92,31 @@ To launch fullscreen, hit `Command + Enter` in iTerm, then use `Command + d` and
 
 1. Remote Mode: Run this script in Terminal
 
-```(shell)
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/STiXzoOR/dotfiles/blob/main/remote-install.sh)"
+```shell
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/STiXzoOR/dotfiles/main/remote-install.sh)"
 ```
 
 2. Manual Mode
 
-```(shell)
-$ git clone --recurse-submodules https://github.com/STiXzoOR/dotfiles ~/.dotfiles
-$ cd ~/.dotfiles;
-
-# run this using terminal (not iTerm, last iTerm settings get discarded on exit)
-$ ./bin/dotfiles install
+```shell
+git clone --recurse-submodules https://github.com/STiXzoOR/dotfiles ~/.dotfiles
+cd ~/.dotfiles
+./bin/dotfiles install
 ```
 
 > Note: running "dotfiles install" will install everything(zsh, apps, settings). If you want to do it manually, run "dotfiles install help" to list all the available commands.
 
 ## Restoring Dotfiles
 
-If you have existing dotfiles for configuring git, zsh, vim, etc, these will be backed-up into `~/.dotfiles_backup/$(date +"%Y.%m.%d.%H.%M.%S")` and replaced with the files from this project. You can restore your original dotfiles by using `<DOTFILES_DIR>/system/bin/dotfiles restore $RESTOREDATE` where `$RESTOREDATE` is the date folder name you want to restore.
+If you have existing dotfiles for configuring git, zsh, vim, etc., these will be backed up into `~/.dotfiles_backup/$(date +"%Y.%m.%d.%H.%M.%S")` and replaced with the files from this project. You can restore your original dotfiles by using:
 
-> The restore script does not currently restore system settings--only your original dotfiles. To restore system settings, you'll need to manually undo what you don't like (so don't forget to fork, review, tweak)
+```shell
+./bin/dotfiles unlink YYYY.MM.DD.HH.MM.SS
+```
+
+Where `YYYY.MM.DD.HH.MM.SS` is the timestamp of the backup you want to restore (check `~/.dotfiles_backup/` for available backups).
+
+> The restore script does not currently restore system settings--only your original dotfiles. To restore system settings, you'll need to manually undo what you don't like (so don't forget to fork, review, and tweak before installing)
 
 ## Additional
 
@@ -132,6 +140,7 @@ The following will only happen if you agree on the prompt
 - install vim plugins/themes
 - install fonts
 - install brew, cask, code, mas, npm packages
+- install LaunchAgents for automated tasks (mackup auto-backup every hour)
 - change system configuration
 
 ### Security
@@ -417,19 +426,13 @@ The following will only happen if you agree on the prompt
 - Only use UTF-8 in Terminal.app
 - Install nord theme in Terminal.app
 - Use nord theme by default in Terminal.app
-- Enable “focus follows mouse” for Terminal.app and all X11 apps
-
-### iTerm2
-
-- Tell iTerm2 to use the custom preferences in the directory
-- Specify the preferences directory
-- Install nord theme for iTerm (opening file)
+- Enable "focus follows mouse" for Terminal.app and all X11 apps
 
 ## Software Installation
 
-homebrew, fontconfig, git, ruby (latest), nvm (node + npm), and zsh (latest) are all installed as foundational software for running this project.
-Additional software is configured in `install` folder and can be customized in your own fork/branch (you can change everything in your own fork/brance).
-The following is the software that I have set as default:
+Homebrew, fontconfig, git, FNM (Fast Node Manager for Node.js + npm), and zsh (latest) are all installed as foundational software for running this project.
+Additional software is configured in `packages/` directory and can be customized in your own fork/branch.
+The following is the software installed by default:
 
 ### Taps
 
@@ -446,132 +449,136 @@ The following is the software that I have set as default:
 
 ### Utilities
 
-- Ack
-- Bash
-- Bat
-- Coreutils
-- Delta
-- Dockutil
-- Dpkg
-- Exa
-- Fasd
-- Ffmpeg
-- Findutils
-- Fselect
-- Fzf
-- Gawk
-- Gnu Sed
-- Gnupg
-- Grep
-- Grep
-- Grip
-- Httpie
-- Jq
-- Spicetify Cli
-- Mackup
-- Mas
-- Mongodb Community
-- Moreutils
-- Mysql
-- Neofetch
-- Nghttp2
-- Nmap
-- Psgrep
-- Python
-- Python Tk
-- Reattach To User Namespace
-- Ruby
-- Shfmt
-- Spotify Tui
-- Spotifyd
-- Ssh Copy Id
-- Thefuck
-- Tldr
-- Tree
-- Watch
-- Wget
-- Youtube Dl
+**Core/Dotfiles:**
+- ack, ag (the_silver_searcher)
+- bats-core
+- coreutils, dos2unix
+- dockutil
+- mackup, mas
+- starship (cross-shell prompt)
+- stow (dotfile symlink management)
+- thefuck
+- topgrade (universal package upgrader)
+
+**File System/Network:**
+- bat (cat replacement)
+- croc (file transfer)
+- eza (ls replacement)
+- httpie
+- ssh-copy-id
+- tree, unar
+- wget
+- zoxide (cd replacement)
+
+**Search/Grep/Diff:**
+- fd (find replacement)
+- findutils
+- fzf (fuzzy finder)
+- gawk
+- git-delta (diff viewer)
+- gnu-sed
+- grep
+- jq, yq (JSON/YAML processors)
+- psgrep
+- readline
+- ripgrep (fast grep)
+
+**Languages/Tools:**
+- cmake
+- gh (GitHub CLI)
+- go
+- python
+- shellcheck, shfmt
+
+**Media:**
+- ffmpeg
+- imagemagick
+- optipng
+- uni
+- webp
+- youtube-dl
+
+**Misc:**
+- grip (GitHub README preview)
+- sudo-touchid
 
 ### Apps
 
+**Creative & Design:**
 - Adobe Creative Cloud
-- Aerial
-- Altserver
-- Android File Transfer
-- Android Platform Tools
-- Arduino
-- Autodesk Fusion 360
-- Balenaetcher
-- Blackhole
-- Blobsaver
-- Brave Browser
-- Checkra1n
-- Darwin Dumper
-- Discord
 - Figma
+
+**Development:**
+- Arduino, Arduino IDE
+- Autodesk Fusion
+- GitKraken
+- Sourcetree
+- Visual Studio Code
+
+**Browsers:**
+- Brave Browser
 - Firefox
+- Google Chrome
+
+**Media:**
+- IINA (modern media player)
+- Spotify
+- VLC
+
+**Utilities:**
+- AltServer
+- AnyDesk
+- Apparency
+- BalenaEtcher
+- Discord
 - Flux
+- Keka (archiver)
+- KeyCastr
+- Kaleidoscope (diff tool)
+- Karabiner Elements (keyboard customizer)
+- Ngrok
+- Notion
+- ProtonVPN
+- PrusaSlicer/SuperSlicer
+- Raycast (Spotlight replacement)
+- Setapp
+- Shottr (screenshot tool)
+- Slack
+- TeamViewer
+- Telegram
+- TopNotch
+- Transmission
+- Tunnelblick
+- Zoom
+
+**Terminals:**
+- Warp
+
+**Fonts:**
 - Font Awesome Terminal Fonts
 - Font Fira Code
 - Font Fira Mono
-- Font Fira Mono For Powerline
-- Font Firacode Nerd Font
-- Font Firacode Nerd Font Mono
+- Font Fira Code Nerd Font
+- Font Fira Mono Nerd Font
 - Font Fontawesome
+- Font Geist Mono Nerd Font
 - Font Hack
 - Font Hack Nerd Font
+- Font Inter
 - Font Menlo For Powerline
 - Font Meslo For Powerline
-- Font Meslo Lg
-- Font Meslo Lg Nerd Font
-- Font Roboto
-- Font Roboto Mono
+- Font Meslo LG
+- Font Meslo LG Nerd Font
 - Font Roboto Mono Nerd Font
-- Font Roboto Mono For Powerline
-- Font Source Code Pro
-- Font Source Code Pro For Powerline
-- Fritzing
-- Github
-- Google Backup And Sync
-- Google Chrome
-- Hackintool
-- Iina
-- Iterm 2
-- Java
-- Kaleidoscope
-- Karabiner Elements
-- Keka
-- Lulu
-- Macupdater
-- Mamp
-- Mongodb Compass
-- Monitor Control
-- Mos
-- Mysql Workbench
-- Open In Code
-- Postman
-- Sketchup
-- Sourcetree
-- Spotify
-- Surfshark
-- Teamviewer
-- Telegram
-- Transmission
-- Tunnelblick
-- Ukelele
-- Ultimaker Cura
-- Virtualbox
-- Virtualbox Extension Pack
-- Visual Studio Code
-- Vlc
-- Qlcolorcode
-- Qlstephen
-- Qlmarkdown
-- Quicklook Json
-- Qlimagesize
-- Suspicious Package
-- Quicklookase
-- Qlvideo
+
+**QuickLook Plugins:**
+- qlmarkdown
+- qlstephen
+- qlvideo
+- quicklook-json
+- quicklookase
+- suspicious-package
+- syntax-highlight
 
 ### App Store
 
@@ -641,28 +648,45 @@ The following is the software that I have set as default:
 
 ### Node Packages
 
-- Doctoc
-- Eslint
-- Fkill Cli
-- Get Port Cli
-- Grunt Cli
-- Gulp Cli
-- Instant Markdown D
-- Nodemon
-- Npm
-- Npm Check
-- Npm Check Updates
-- Prettier
-- Release It
-- Spot
-- StandardJS
-- Superstatic
-- Svgo
-- Tldr
-- Underscore Cli
-- Vtop
-- Webtorrent Cli
-- Yarn
+**AI Tools:**
+- @anthropic-ai/claude-code
+- @google/gemini-cli
+
+**Package Management:**
+- npm (latest)
+- pnpm
+- yarn
+- corepack
+
+**Development Tools:**
+- eslint
+- prettier
+- detect-circular-deps
+- nodemon
+- tsx (TypeScript executor)
+
+**CLI Utilities:**
+- fkill-cli (kill processes)
+- get-port-cli
+- fast-cli (internet speed test)
+- gtop (system monitoring)
+
+**Build Tools:**
+- grunt-cli
+- gulp-cli
+
+**Maintenance:**
+- npm-check-updates
+
+**Publishing:**
+- release-it
+
+**Misc:**
+- instant-markdown-d
+- local-web-server
+- svgo (SVG optimizer)
+- tldr (simplified man pages)
+- underscore-cli
 
 ## Credits
 

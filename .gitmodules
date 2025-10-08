@@ -1,32 +1,23 @@
-[submodule "apps/iterm2/nord_theme"]
-	path = apps/iterm2/nord_theme
-	url = https://github.com/arcticicestudio/nord-iterm2
 [submodule "apps/terminal/nord_theme"]
 	path = apps/terminal/nord_theme
 	url = https://github.com/arcticicestudio/nord-terminal-app
 [submodule "apps/xcode/nord_theme"]
 	path = apps/xcode/nord_theme
 	url = https://github.com/arcticicestudio/nord-xcode
-[submodule "plugins/prezto"]
-	path = plugins/prezto
+[submodule "modules/prezto"]
+	path = modules/prezto
 	url = https://github.com/sorin-ionescu/prezto.git
-[submodule "plugins/zsh/zsh-z"]
-	path = plugins/zsh/zsh-z
-	url = https://github.com/agkozak/zsh-z.git
-[submodule "plugins/zsh/zsh-autocomplete"]
-	path = plugins/zsh/zsh-autocomplete
+[submodule "modules/zsh/zsh-autocomplete"]
+	path = modules/zsh/zsh-autocomplete
 	url = https://github.com/marlonrichert/zsh-autocomplete.git
 [submodule "runcom/.vim/bundle/Vundle.vim"]
 	path = runcom/.vim/bundle/Vundle.vim
 	url = https://github.com/VundleVim/Vundle.vim.git
-[submodule "plugins/zsh/zsh-nvm"]
-	path = plugins/zsh/zsh-nvm
-	url = https://github.com/lukechilds/zsh-nvm
 [submodule "config/spicetify/Themes"]
 	path = config/spicetify/Themes
 	url = https://github.com/morpheusthewhite/spicetify-themes
-[submodule "plugins/zsh/zsh-thefuck"]
-	path = plugins/zsh/zsh-thefuck
+[submodule "modules/zsh/zsh-thefuck"]
+	path = modules/zsh/zsh-thefuck
 	url = https://github.com/laggardkernel/zsh-thefuck
 [submodule "apps/warp/themes"]
 	path = apps/warp/themes
@@ -34,3 +25,12 @@
 [submodule "apps/gitkraken/themes"]
 	path = apps/gitkraken/themes
 	url = https://github.com/JonBunator/gitkraken-custom-themes.git
+[submodule "modules/stevenblack-hosts"]
+	path = modules/stevenblack-hosts
+	url = https://github.com/StevenBlack/hosts.git
+[submodule "modules/zsh/zsh-lazy-load"]
+	path = modules/zsh/zsh-lazy-load
+	url = https://github.com/xcv58/zsh-lazy-load.git
+[submodule "modules/prezto-contrib"]
+	path = modules/prezto-contrib
+	url = https://github.com/belak/prezto-contrib.git
