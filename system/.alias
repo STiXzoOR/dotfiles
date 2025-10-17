@@ -137,13 +137,6 @@ alias notioff="launchctl unload -w /System/Library/LaunchAgents/com.apple.notifi
 alias notion="launchctl load -w /System/Library/LaunchAgents/com.apple.notificationcenterui.plist && open /System/Library/CoreServices/NotificationCenter.app/"
 
 #############################################################
-# Brew
-#############################################################
-if test -x "$HOMEBREW_PREFIX/bin/brew"; then
-  alias brew="arch -$HOMEBREW_ARCH $HOMEBREW_PREFIX/bin/brew $@"
-fi
-
-#############################################################
 # Npm
 #############################################################
 

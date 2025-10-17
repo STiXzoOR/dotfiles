@@ -1,0 +1,59 @@
+# core/dotfiles
+ack
+ag
+bats-core
+coreutils
+dos2unix
+lotyp/formulae/dockutil
+mackup
+mas
+starship
+stow
+thefuck
+topgrade
+
+# fs/network
+bat
+croc
+eza
+httpie
+ssh-copy-id
+tree
+unar
+wget
+zoxide
+
+# search/grep/diff
+fd
+findutils
+fzf
+gawk
+git-delta
+gnu-sed
+grep
+jq
+psgrep
+readline
+ripgrep
+the_silver_searcher
+yq
+
+# languages/tools
+cmake
+gh
+go
+python
+shfmt
+shellcheck
+
+# media
+ffmpeg
+imagemagick
+optipng
+uni
+webp
+youtube-dl
+
+# misc
+grip
+sudo-touchid

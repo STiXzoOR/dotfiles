@@ -1,4 +1,4 @@
-eval "$(fnm env)"
+eval "$(fnm env --use-on-cd --corepack-enabled --shell zsh)"
 
 fnm_upgrade () {
   fnm exec --using=$1 npm ls --global --json \

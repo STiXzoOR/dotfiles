@@ -1,5 +1,10 @@
 DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
 COMPUTER_NAME="STiXzoOR-MB"
+LANGUAGES=("en-CY" "el-CY")
+LOCALE="en_CY@currency=EUR"
+TIMEZONE="Europe/Athens"
+MEASUREMENT_UNITS="Centimeters"
+SCREENSHOTS_FOLDER="${HOME}/Desktop/Screenshots"
 
 source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
@@ -42,6 +47,11 @@ running "Disable wake-on modem"
 sudo systemsetup -setwakeonmodem off
 ok
 
+# Disable wake-on LAN
+running "Disable wake-on LAN"
+sudo systemsetup -setwakeonnetworkaccess off
+ok
+
 running "Disable guest account login"
 sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false
 ok
@@ -50,14 +60,46 @@ ok
 bot "General UI/UX"
 ################################################
 running "Set computer name (as done via System Preferences → Sharing)"
-sudo scutil --set ComputerName $COMPUTER_NAME
-sudo scutil --set HostName $COMPUTER_NAME
-sudo scutil --set LocalHostName $COMPUTER_NAME
-sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string $COMPUTER_NAME
+sudo scutil --set ComputerName "$COMPUTER_NAME"
+sudo scutil --set HostName "$COMPUTER_NAME"
+sudo scutil --set LocalHostName "$COMPUTER_NAME"
+sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "$COMPUTER_NAME"
+ok
+
+running "Set language and text formats (english/CY)"
+defaults write NSGlobalDomain AppleLanguages -array "${LANGUAGES[@]}"
+defaults write NSGlobalDomain AppleLocale -string "$LOCALE"
+defaults write NSGlobalDomain AppleMeasurementUnits -string "$MEASUREMENT_UNITS"
+defaults write NSGlobalDomain AppleMetricUnits -bool true
+ok
+
+running "Set timezone to $TIMEZONE;" #see `sudo systemsetup -listtimezones` for other values
+sudo systemsetup -settimezone "$TIMEZONE" >/dev/null
 ok
 
 running "Disable the sound effects on boot"
 sudo nvram SystemAudioVolume=" "
+sudo nvram StartupMute=%01
+ok
+
+running "Restart automatically if the computer freezes"
+sudo systemsetup -setrestartfreeze on 2>/dev/null
+ok
+
+running "Set standby delay to 24 hours (default is 1 hour)"
+sudo pmset -a standbydelay 86400
+ok
+
+running "Disable Sudden Motion Sensor"
+sudo pmset -a sms 0
+ok
+
+running "Disable audio feedback when volume is changed"
+defaults write com.apple.sound.beep.feedback -bool false
+ok
+
+running "Show battery percentage"
+defaults write com.apple.menuextra.battery ShowPercent YES
 ok
 
 running "Set highlight color to steel blue"
@@ -130,6 +172,14 @@ running "Reveal IP, hostname, OS, etc. when clicking clock in login window"
 sudo defaults write /Library/Preferences/com.apple.loginwindow AdminHostInfo HostName
 ok
 
+running "Disable the crash reporter"
+defaults write com.apple.CrashReporter DialogType -string "none"
+ok
+
+###############################################################################
+bot "Keyboard & Input"
+###############################################################################
+
 running "Disable automatic capitalization as it’s annoying when typing code"
 defaults write NSGlobalDomain NSAutomaticCapitalizationEnabled -bool false
 ok
@@ -150,8 +200,29 @@ running "Disable auto-correct"
 defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
 ok
 
+running "Enable full keyboard access for all controls (e.g. enable Tab in modal dialogs)"
+defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
+ok
+
+running "Disable press-and-hold for keys in favor of key repeat"
+defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
+ok
+
+running "Set a blazingly fast keyboard repeat rate"
+defaults write NSGlobalDomain KeyRepeat -int 1
+defaults write NSGlobalDomain InitialKeyRepeat -int 15
+ok
+
+running "Automatically illuminate built-in MacBook keyboard in low light"
+defaults write com.apple.BezelServices kDim -bool true
+ok
+
+running "Turn off keyboard illumination when computer is not used for 5 minutes"
+defaults write com.apple.BezelServices kDimTime -int 300
+ok
+
 ###############################################################################
-bot "Trackpad, mouse, keyboard, Bluetooth accessories, and input"
+bot "Trackpad, mouse, Bluetooth accessories"
 ###############################################################################
 
 # running "Trackpad: enable tap to click for this user and for the login screen"
@@ -169,10 +240,6 @@ bot "Trackpad, mouse, keyboard, Bluetooth accessories, and input"
 #defaults write com.apple.BluetoothAudioAgent "Apple Bitpool Min (editable)" -int 40
 #ok
 
-running "Enable full keyboard access for all controls (e.g. enable Tab in modal dialogs)"
-defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
-ok
-
 running "Use scroll gesture with the Ctrl (^) modifier key to zoom"
 defaults write com.apple.universalaccess closeViewScrollWheelToggle -bool true
 defaults write com.apple.universalaccess HIDScrollZoomModifierMask -int 262144
@@ -182,72 +249,8 @@ running "Follow the keyboard focus while zoomed in"
 defaults write com.apple.universalaccess closeViewZoomFollowsFocus -bool true
 ok
 
-running "Disable press-and-hold for keys in favor of key repeat"
-defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
-ok
-
-running "Set a blazingly fast keyboard repeat rate"
-defaults write NSGlobalDomain KeyRepeat -int 2
-defaults write NSGlobalDomain InitialKeyRepeat -int 10
-ok
-
-running "Set language and text formats (english/CY)"
-defaults write NSGlobalDomain AppleLanguages -array "en-CY" "el-CY"
-defaults write NSGlobalDomain AppleLocale -string "en_CY@currency=EUR"
-defaults write NSGlobalDomain AppleMeasurementUnits -string "Centimeters"
-defaults write NSGlobalDomain AppleMetricUnits -bool true
-ok
-
-running "Set timezone to Europe/Athens;" #see `sudo systemsetup -listtimezones` for other values
-sudo systemsetup -settimezone "Europe/Athens" >/dev/null
-ok
-
-###############################################################################
-bot "Energy saving"
-###############################################################################
-
-running "Disable auto power off"
-sudo pmset -a autopoweroff 0
-ok
-
-running "Disable auto restart on power loss"
-sudo pmset -a autorestart 0
-ok
-
-running "Sleep the display after 60 minutes"
-sudo pmset -a displaysleep 60
-ok
-
-running "Set standby delay to 24 hours (default is 1 hour)"
-sudo pmset -a standbydelay 86400
-ok
-
-running "Disable wake from iPhone/Watch (eg. When iPhone or Apple Watch come near)"
-sudo pmset -a proximitywake 0
-ok
-
-running "Disable periodically wake of machine for network and updates"
-sudo pmset -a powernap 0
-ok
-
-# Hibernation mode
-# 0: Disable hibernation (speeds up entering sleep mode)
-# 3: Copy RAM to disk so the system state can still be restored in case of a
-#    power failure.
-running "Disable hibernation (speeds up entering sleep mode)"
-sudo pmset -a hibernatemode 0
-ok
-
-running "Remove the sleep image file to save disk space"
-sudo rm /private/var/vm/sleepimage
-ok
-
-running "Create a zero-byte file instead…"
-sudo touch /private/var/vm/sleepimage
-ok
-
-running "…and make sure it can’t be rewritten"
-sudo chflags uchg /private/var/vm/sleepimage
+running "Auto-play videos when opened with QuickTime Player"
+defaults write com.apple.QuickTimePlayerX MGPlayMovieOnOpen -bool true
 ok
 
 ###############################################################################
@@ -260,7 +263,8 @@ defaults write com.apple.screensaver askForPasswordDelay -int 0
 ok
 
 running "Save screenshots to the desktop"
-defaults write com.apple.screencapture location -string "${HOME}/Desktop"
+mkdir -p "${SCREENSHOTS_FOLDER}"
+defaults write com.apple.screencapture location -string "$SCREENSHOTS_FOLDER"
 ok
 
 running "Save screenshots in PNG format (other options: BMP, GIF, JPG, PDF, TIFF)"
@@ -273,12 +277,12 @@ ok
 
 running "Enable subpixel font rendering on non-Apple LCDs"
 # Reference: https://github.com/kevinSuttle/macOS-Defaults/issues/17#issuecomment-266633501
-defaults write NSGlobalDomain AppleFontSmoothing -int 1
+defaults write NSGlobalDomain AppleFontSmoothing -int 2
 ok
 
-running "Enable HiDPI display modes (requires restart)"
-sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
-ok
+#running "Enable HiDPI display modes (requires restart)"
+#sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
+#ok
 
 ###############################################################################
 bot "Finder"
@@ -321,6 +325,14 @@ running "Show path bar"
 defaults write com.apple.finder ShowPathbar -bool true
 ok
 
+running "Allow text selection in Quick Look"
+defaults write com.apple.finder QLEnableTextSelection -bool true
+ok
+
+running "Display full POSIX path as Finder window title"
+defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
+ok
+
 running "Keep folders on top when sorting by name"
 defaults write com.apple.finder _FXSortFoldersFirst -bool true
 
@@ -355,34 +367,6 @@ running "Automatically open a new Finder window when a volume is mounted"
 defaults write com.apple.frameworks.diskimages auto-open-ro-root -bool true
 defaults write com.apple.frameworks.diskimages auto-open-rw-root -bool true
 defaults write com.apple.finder OpenWindowForNewRemovableDisk -bool true
-ok
-
-running "Show item info near icons on the desktop and in other icon views"
-plistbuddy "Set :DesktopViewSettings:IconViewSettings:showItemInfo true" ~/Library/Preferences/com.apple.finder.plist
-plistbuddy "Set :FK_StandardViewSettings:IconViewSettings:showItemInfo true" ~/Library/Preferences/com.apple.finder.plist
-plistbuddy "Set :StandardViewSettings:IconViewSettings:showItemInfo true" ~/Library/Preferences/com.apple.finder.plist
-ok
-
-running "Show item info to the right of the icons on the desktop"
-plistbuddy "Set DesktopViewSettings:IconViewSettings:labelOnBottom false" ~/Library/Preferences/com.apple.finder.plist
-ok
-
-running "Enable snap-to-grid for icons on the desktop and in other icon views"
-plistbuddy "Set :DesktopViewSettings:IconViewSettings:arrangeBy grid" ~/Library/Preferences/com.apple.finder.plist
-plistbuddy "Set :FK_StandardViewSettings:IconViewSettings:arrangeBy grid" ~/Library/Preferences/com.apple.finder.plist
-plistbuddy "Set :StandardViewSettings:IconViewSettings:arrangeBy grid" ~/Library/Preferences/com.apple.finder.plist
-ok
-
-running "Increase grid spacing for icons on the desktop and in other icon views"
-plistbuddy "Set :DesktopViewSettings:IconViewSettings:gridSpacing 100" ~/Library/Preferences/com.apple.finder.plist
-plistbuddy "Set :FK_StandardViewSettings:IconViewSettings:gridSpacing 100" ~/Library/Preferences/com.apple.finder.plist
-plistbuddy "Set :StandardViewSettings:IconViewSettings:gridSpacing 100" ~/Library/Preferences/com.apple.finder.plist
-ok
-
-running "Increase the size of icons on the desktop and in other icon views"
-plistbuddy "Set :DesktopViewSettings:IconViewSettings:iconSize 80" ~/Library/Preferences/com.apple.finder.plist
-plistbuddy "Set :FK_StandardViewSettings:IconViewSettings:iconSize 80" ~/Library/Preferences/com.apple.finder.plist
-plistbuddy "Set :StandardViewSettings:IconViewSettings:iconSize 80" ~/Library/Preferences/com.apple.finder.plist
 ok
 
 running "Use column list view in all Finder windows by default"
@@ -490,57 +474,16 @@ defaults write com.apple.dock wvous-bl-corner -int 5
 defaults write com.apple.dock wvous-bl-modifier -int 0
 
 ###############################################################################
-# bot "Spotlight"
+bot "Spotlight"
 ###############################################################################
 
-# running "Hide Spotlight tray-icon (and subsequent helper)"
-# sudo chmod 600 /System/Library/CoreServices/Search.bundle/Contents/MacOS/Search;ok
+running "Load new settings before rebuilding the index"
+killall mds >/dev/null 2>&1
+ok
 
-# Issue on macOS Mojave:
-# Rich Trouton covers the move of /Volumes to no longer being world writable as of Sierra (10.12)
-# https://derflounder.wordpress.com/2016/09/21/macos-sierras-volumes-folder-is-no-longer-world-writable
-# running "Disable Spotlight indexing for any volume that gets mounted and has not yet been indexed"
-# Use `sudo mdutil -i off "/Volumes/foo"` to stop indexing any volume.
-# sudo defaults write /.Spotlight-V100/VolumeConfiguration Exclusions -array "/Volumes";ok
-# running "Change indexing order and disable some file types from being indexed"
-# defaults write com.apple.spotlight orderedItems -array \
-#   '{"enabled" = 1;"name" = "APPLICATIONS";}' \
-#   '{"enabled" = 1;"name" = "SYSTEM_PREFS";}' \
-#   '{"enabled" = 1;"name" = "DIRECTORIES";}' \
-#   '{"enabled" = 1;"name" = "PDF";}' \
-#   '{"enabled" = 1;"name" = "FONTS";}' \
-#   '{"enabled" = 0;"name" = "DOCUMENTS";}' \
-#   '{"enabled" = 0;"name" = "MESSAGES";}' \
-#   '{"enabled" = 0;"name" = "CONTACT";}' \
-#   '{"enabled" = 0;"name" = "EVENT_TODO";}' \
-#   '{"enabled" = 0;"name" = "IMAGES";}' \
-#   '{"enabled" = 0;"name" = "BOOKMARKS";}' \
-#   '{"enabled" = 0;"name" = "MUSIC";}' \
-#   '{"enabled" = 0;"name" = "MOVIES";}' \
-#   '{"enabled" = 0;"name" = "PRESENTATIONS";}' \
-#   '{"enabled" = 0;"name" = "SPREADSHEETS";}' \
-#   '{"enabled" = 0;"name" = "SOURCE";}' \
-#   '{"enabled" = 0;"name" = "MENU_DEFINITION";}' \
-#   '{"enabled" = 0;"name" = "MENU_OTHER";}' \
-#   '{"enabled" = 0;"name" = "MENU_CONVERSION";}' \
-#   '{"enabled" = 0;"name" = "MENU_EXPRESSION";}' \
-#   '{"enabled" = 0;"name" = "MENU_WEBSEARCH";}' \
-#   '{"enabled" = 0;"name" = "MENU_SPOTLIGHT_SUGGESTIONS";}'
-# ok
-
-# running "Load new settings before rebuilding the index"
-# killall mds >/dev/null 2>&1
-# ok
-
-# running "Make sure indexing is enabled for the main volume"
-# sudo mdutil -i on / >/dev/null
-# ok
-
-# running "Rebuild the index from scratch"
-# sudo mdutil -E / >/dev/null
-# ok
-
-# Spotlight is replaced by Raycast, nothing to do.
+running "Make sure indexing is enabled for the main volume"
+sudo mdutil -i on / >/dev/null
+ok
 
 ###############################################################################
 bot "Time Machine"
@@ -550,45 +493,10 @@ running "Prevent Time Machine from prompting to use new hard drives as backup vo
 defaults write com.apple.TimeMachine DoNotOfferNewDisksForBackup -bool true
 ok
 
-running "Disable local Time Machine backups"
-hash tmutil &>/dev/null && sudo tmutil disablelocal
-ok
+#running "Disable local Time Machine backups"
+#hash tmutil &>/dev/null && sudo tmutil disablelocal
+#ok
 
-###############################################################################
-bot "Address Book, Dashboard, iCal, TextEdit, and Disk Utility"
-###############################################################################
-
-running "Enable the debug menu in Address Book"
-defaults write com.apple.addressbook ABShowDebugMenu -bool true
-ok
-
-running "Enable Dashboard dev mode (allows keeping widgets on the desktop)"
-defaults write com.apple.dashboard devmode -bool true
-ok
-
-running "Use plain text mode for new TextEdit documents"
-defaults write com.apple.TextEdit RichText -int 0
-ok
-
-running "Open and save files as UTF-8 in TextEdit"
-defaults write com.apple.TextEdit PlainTextEncoding -int 4
-defaults write com.apple.TextEdit PlainTextEncodingForWrite -int 4
-ok
-
-running "Use Meslo LGS Nerd Font in TextEdit"
-defaults write com.apple.TextEdit NSFixedPitchFont "MesloLGSNer-Regular"
-defaults write com.apple.TextEdit NSFixedPitchFontSize 14
-ok
-
-running "Enable the debug menu in Disk Utility"
-defaults write com.apple.DiskUtility DUDebugMenuEnabled -bool true
-defaults write com.apple.DiskUtility advanced-image-options -bool true
-ok
-
-running "Auto-play videos when opened with QuickTime Player"
-defaults write com.apple.QuickTimePlayerX MGPlayMovieOnOpen -bool true
-ok
-
-for app in "Address Book" "Calendar" "Contacts" "cfprefsd" "Dock" "Finder" "SystemUIServer" "Karabiner-Menu"; do
+for app in "Calendar" "Contacts" "cfprefsd" "Dock" "Finder" "SystemUIServer" "Karabiner-Menu"; do
   killall "${app}" >/dev/null 2>&1
 done

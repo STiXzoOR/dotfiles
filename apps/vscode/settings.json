@@ -58,7 +58,7 @@
   "emmet.triggerExpansionOnTab": true,
   "eslint.alwaysShowStatus": true,
   "eslint.enable": true,
-  "eslint.runtime": "/Users/stix/.local/state/fnm_multishells/42572_1750946614970/bin/node",
+  "eslint.runtime": "/Users/stix/Library/Caches/fnm_multishells/3609_1760341349431/bin/node",
   "eslint.validate": [
     "javascript",
     "javascriptreact",

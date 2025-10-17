@@ -30,23 +30,6 @@ defaults write com.apple.terminal FocusFollowsMouse -bool true
 ok
 
 ###############################################################################
-bot "iTerm2"
-###############################################################################
-
-running "Tell iTerm2 to use the custom preferences in the directory"
-defaults write com.googlecode.iterm2.plist LoadPrefsFromCustomFolder -bool true
-ok
-
-running "Specify the preferences directory"
-defaults write com.googlecode.iterm2.plist PrefsCustomFolder -string "$DOTFILES_DIR/apps/iterm2"
-ok
-
-running "Install nord theme for iTerm (opening file)"
-open "$DOTFILES_DIR/apps/iterm2/nord_theme/src/xml/Nord.itermcolors"
-sleep 1
-ok
-
-###############################################################################
 bot "Warp"
 ###############################################################################
 
@@ -61,6 +44,4 @@ cp "$DOTFILES_DIR/apps/warp/themes/standard/*.yaml" "$CUSTOM_THEME_DIR/" 2>/dev/
 cp "$DOTFILES_DIR/apps/warp/themes/base16/*.yaml" "$CUSTOM_THEME_DIR/" 2>/dev/null
 ok
 
-for app in "iTerm2" "Warp"; do
-  killall "${app}" >/dev/null 2>&1
-done
+killall "Warp" >/dev/null 2>&1
