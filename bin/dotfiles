@@ -39,7 +39,7 @@ sub_install_help() {
   echo "   --all              Run all below commands"
   echo "   --fonts            Local fonts"
   echo "   --help             This help message"
-  echo "   --hosts            Ad-blocking hosts file from someonewhocares.org"
+  echo "   --hosts            Ad-blocking hosts file from StevenBlack project"
   echo "   --launchagents     Install LaunchAgents (mackup auto-backup)"
   echo "   --packages         3rd party packages and extensions (brew, cask, code, npm)"
   echo "   --passwordless     Run sudo without password"
@@ -243,9 +243,14 @@ sub_install_hosts() {
     git submodule update --init modules/stevenblack-hosts
     (cd modules/stevenblack-hosts && git pull origin master)
     ok
-    if [ -f ./configs/hosts.local ]; then
-      action "copy ./configs/hosts.local to ./modules/stevenblack-hosts/myhosts"
-      cp ./configs/hosts.local ./modules/stevenblack-hosts/myhosts
+    if [ -f ./system/hosts.local ]; then
+      action "copy ./system/hosts.local to ./modules/stevenblack-hosts/myhosts"
+      cp ./system/hosts.local ./modules/stevenblack-hosts/myhosts
+      ok
+    fi
+    if [ -f ./system/hosts.whitelist ]; then
+      action "copy ./system/hosts.whitelist to ./modules/stevenblack-hosts/whitelist"
+      cp ./system/hosts.whitelist ./modules/stevenblack-hosts/whitelist
       ok
     fi
     action "checking python3 and pip3"

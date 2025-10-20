@@ -98,6 +98,9 @@ cd ~/.dotfiles
   - `zsh/` - Additional zsh plugins (zsh-autocomplete, zsh-thefuck, zsh-lazy-load)
   - `stevenblack-hosts/` - Unified hosts file for ad-blocking
 
+- **`system/`** - System-level configuration files
+  - `hosts.whitelist` - Whitelist for domains that should not be blocked by hosts file
+
 - **`apps/`** - Application-specific themes and configurations
   - `terminal/` - Terminal.app Nord theme
   - `xcode/` - Xcode Nord theme
@@ -136,6 +139,7 @@ Most commands prompt for confirmation before making changes. The `--all` flag by
 - The installation process will open Warp terminal and close Terminal.app at the end
 - Original dotfiles are backed up to `~/.dotfiles_backup/` with timestamp before being replaced
 - The `/etc/hosts` installation uses StevenBlack's unified hosts file with Python virtual environment to avoid system-level pip pollution
+- Custom whitelist support: Add domains to `system/hosts.whitelist` (one per line) to prevent them from being blocked. The whitelist is copied to the stevenblack-hosts module as `whitelist` during the hosts installation process
 - Submodules must be initialized: `git submodule update --init --recursive`
 - The repository uses Prezto instead of Oh My Zsh for better performance
 - The shell prompt uses Starship for cross-shell prompt customization
@@ -166,4 +170,14 @@ git submodule update --remote --recursive --merge
 Edit appropriate script in `macos/` directory, then run:
 ```bash
 ./bin/dotfiles configure --defaults
+```
+
+**Managing hosts whitelist:**
+Add domains to whitelist to prevent them from being blocked:
+```bash
+# Add domain to whitelist
+echo "example.com" >> system/hosts.whitelist
+
+# Reinstall hosts file with updated whitelist
+./bin/dotfiles install --hosts
 ```

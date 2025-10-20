@@ -118,6 +118,21 @@ Where `YYYY.MM.DD.HH.MM.SS` is the timestamp of the backup you want to restore (
 
 > The restore script does not currently restore system settings--only your original dotfiles. To restore system settings, you'll need to manually undo what you don't like (so don't forget to fork, review, and tweak before installing)
 
+## Managing Hosts Whitelist
+
+The `/etc/hosts` installation blocks ads and tracking domains using StevenBlack's unified hosts file. If you need to whitelist certain domains (prevent them from being blocked), you can add them to `system/hosts.whitelist`:
+
+```shell
+# Add a domain to the whitelist
+echo "amplitude.com" >> ~/.dotfiles/system/hosts.whitelist
+
+# Reinstall the hosts file with updated whitelist
+cd ~/.dotfiles
+./bin/dotfiles install --hosts
+```
+
+Each domain should be on its own line in the whitelist file. The whitelist is automatically applied during the hosts installation process.
+
 ## Additional
 
 ### VIM as Terminal IDE
@@ -134,7 +149,7 @@ Here is the current list:
 The following will only happen if you agree on the prompt
 
 - make sudo command passwordless
-- overwrite your /etc/hosts file with a copy from someonewhocares.org
+- overwrite your /etc/hosts file with a copy from someonewhocares.org (supports custom whitelist via `system/hosts.whitelist`)
 - install prezto zsh framework
 - link dotfiles
 - install vim plugins/themes
