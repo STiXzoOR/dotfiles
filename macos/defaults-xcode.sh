@@ -13,6 +13,7 @@ mkdir -p "$CUSTOM_THEME_DIR/"
 ok
 
 running "Install nord theme"
+rm -f "$CUSTOM_THEME_DIR/Nord.xccolortheme" 2>/dev/null
 ln -s "$DOTFILES_DIR/apps/xcode/nord_theme/src/Nord.xccolortheme" "$CUSTOM_THEME_DIR/Nord.xccolortheme"
 ok
 

@@ -100,7 +100,7 @@
       "width": 353
     }
   },
-  "externalEditor": "Visual Studio Code",
+  "externalEditor": "VS Code",
   "ssh": {
     "privateKey": "/Users/stix/.ssh/id_ed25519",
     "publicKey": "/Users/stix/.ssh/id_ed25519.pub",
@@ -148,6 +148,11 @@
   "integration": {
     "hasConnectedIntegrationByType": {
       "github": true
+    },
+    "accessTokenMetadata": {
+      "github": {
+        "version": "legacy"
+      }
     }
   }
 }

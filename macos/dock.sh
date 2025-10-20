@@ -19,6 +19,6 @@ for icon in "${Icons[@]}"; do
   dockutil --no-restart --add "$icon"
 done
 
-dockutil --no-restart --add '~/Downloads' --view fan --display stack
+dockutil --no-restart --add "$HOME/Downloads" --view fan --display stack
 
 killall "Dock" >/dev/null 2>&1
