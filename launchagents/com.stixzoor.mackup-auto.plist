@@ -9,7 +9,7 @@
       <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>mackup backup -f && mackup uninstall --force</string>
+        <string>mackup backup --force</string>
       </array>
 
       <key>StartInterval</key>

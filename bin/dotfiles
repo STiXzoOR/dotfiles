@@ -384,7 +384,7 @@ sub_configure() {
   read -r -p "Do you want to update the system configurations? [y|N] " response
   if [[ -z $response || $response =~ ^(y|Y) ]]; then
     echo
-    $0 configure --system
+    $0 configure --defaults
     $0 configure --dock
   else
     skip

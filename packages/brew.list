@@ -1,4 +1,3 @@
-# core/dotfiles
 ack
 ag
 bats-core
@@ -11,8 +10,6 @@ starship
 stow
 thefuck
 topgrade
-
-# fs/network
 bat
 croc
 eza
@@ -22,8 +19,6 @@ tree
 unar
 wget
 zoxide
-
-# search/grep/diff
 fd
 findutils
 fzf
@@ -37,23 +32,17 @@ readline
 ripgrep
 the_silver_searcher
 yq
-
-# languages/tools
 cmake
 gh
 go
 python
 shfmt
 shellcheck
-
-# media
 ffmpeg
 imagemagick
 optipng
 uni
 webp
-youtube-dl
-
-# misc
+yt-dlp
 grip
-sudo-touchid
+artginzburg/tap/sudo-touchid

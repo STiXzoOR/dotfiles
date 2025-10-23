@@ -11,15 +11,18 @@
       {
         "id": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
         "type": "REPO",
+        "isWorktree": false,
         "repoName": ".dotfiles",
-        "repoPath": "/Users/stix/.dotfiles/"
+        "repoPath": "/Users/stix/.dotfiles/",
+        "skipWSLChecks": false
       },
       {
         "id": "2a7057e2-c384-4c53-bd78-a0a56e819ad4",
+        "isWorktree": false,
         "type": "REPO",
         "repoName": "frontend",
         "repoPath": "/Users/stix/Work/mote/frontend/",
-        "skipWSLChecks": false
+        "skipWSLChecks": null
       },
       {
         "id": "ab5ca97e-3e63-465f-a888-d697a85acdef",
@@ -154,5 +157,24 @@
         "version": "legacy"
       }
     }
+  },
+  "externalTools": {
+    "editor": {
+      "externalEditorType": "custom",
+      "externalEditorName": null,
+      "customEditor": {
+        "path": "/Applications/WebStorm.app/Contents/MacOS/webstorm"
+      }
+    },
+    "terminal": {
+      "externalTerminalType": "custom",
+      "externalTerminalName": null,
+      "customTerminal": {
+        "path": "/Applications/Warp.app"
+      }
+    }
+  },
+  "repoInit": {
+    "lastOpenedRepoPath": "/Users/stix/Work/mote/frontend"
   }
 }

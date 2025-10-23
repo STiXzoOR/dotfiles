@@ -10,7 +10,7 @@ Icons=(
   "/Applications/Figma.app"
   "/Applications/WebStorm.app"
   "/Applications/Warp.app"
-  "/System/Applications/System Preferences.app"
+  "/System/Applications/System Settings.app"
 )
 
 dockutil --no-restart --remove all
