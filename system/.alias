@@ -27,27 +27,24 @@ alias psgrep="psgrep -i"
 alias mzsh="arch -arm64 zsh"
 alias izsh="arch -x86_64 zsh"
 
-if [ "$(command -v bat)" ]; then
+# bat as cat replacement (using zsh built-in check, no subprocess)
+(( $+commands[bat] )) && {
   unalias -m 'cat'
   alias cat='bat -pp --theme="Nord"'
-fi
+}
 
 #############################################################
-# Global aliases
+# Global aliases (zsh-only features, no subprocess check needed)
 #############################################################
 
-if $(is-supported "alias -g"); then
-  alias -g G="| grep -i"
-  alias -g H="| head"
-  alias -g T="| tail"
-  alias -g L="| less"
-fi
+alias -g G="| grep -i"
+alias -g H="| head"
+alias -g T="| tail"
+alias -g L="| less"
 
-if $(is-supported "alias -s"); then
-  alias -s git="git clone --depth 1"
-  alias -s html="cat"
-  alias -s {js,jsx,ts,tsx}="code"
-fi
+alias -s git="git clone --depth 1"
+alias -s html="cat"
+alias -s {js,jsx,ts,tsx}="code"
 
 #############################################################
 # List declared aliases, functions, paths
@@ -62,32 +59,22 @@ alias mpath='echo -e ${MANPATH//:/\\n}'
 # Directory listing/traversal
 #############################################################
 
-if [ "$(command -v eza)" ]; then
-  LS_COLORS_ENABLE=$(is-supported "eza --color auto" --color)
-  LS_TIMESTYLEISO=$(is-supported "eza --time-style=long-iso" --time-style=long-iso)
-  LS_GROUPDIRSFIRST=$(is-supported "eza --group-directories-first" --group-directories-first)
-
-  unalias -m "ls"
-  unalias -m "ll"
-  unalias -m "la"
-  unalias -m "lr"
-  unalias -m "ld"
-
-  alias ls="eza -Ga -s type --icons $LS_COLORS_ENABLE auto"
-  alias ll="eza -la --icons $LS_COLORS_ENABLE always"
-  alias la="eza -la --icons $LS_COLORS_ENABLE always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias lr="eza -lr -s time --icons $LS_COLORS_ENABLE always $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias ld="eza -ld --icons $LS_COLORS_ENABLE always */"
+# Using zsh built-in $+commands check (no subprocess)
+if (( $+commands[eza] )); then
+  # eza supports these options on all platforms
+  unalias -m "ls" "ll" "la" "lr" "ld" 2>/dev/null
+  alias ls="eza -Ga -s type --icons --color=auto"
+  alias ll="eza -la --icons --color=always"
+  alias la="eza -la --icons --color=always --time-style=long-iso --group-directories-first"
+  alias lr="eza -lr -s time --icons --color=always --time-style=long-iso --group-directories-first"
+  alias ld="eza -ld --icons --color=always */"
 else
-  LS_COLORS_ENABLE=$(is-supported "ls -G" -G)
-  LS_TIMESTYLEISO=$(is-supported "ls --time-style=long-iso" --time-style=long-iso)
-  LS_GROUPDIRSFIRST=$(is-supported "ls --group-directories-first" --group-directories-first)
-
-  alias ls="ls $LS_COLORS_ENABLE"
-  alias ll="ls -lA $LS_COLORS_ENABLE"
-  alias la="ls -lahA $LS_COLORS_ENABLE $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias lr="ls -lhAtr $LS_COLORS_ENABLE $LS_TIMESTYLEISO $LS_GROUPDIRSFIRST"
-  alias ld="ls -ld $LS_COLORS_ENABLE */"
+  # Fallback to ls with GNU coreutils options (installed via brew)
+  alias ls="ls --color=auto"
+  alias ll="ls -lA --color=auto"
+  alias la="ls -lahA --color=auto --time-style=long-iso --group-directories-first"
+  alias lr="ls -lhAtr --color=auto --time-style=long-iso --group-directories-first"
+  alias ld="ls -ld --color=auto */"
 fi
 
 alias ..="cd .."
@@ -117,13 +104,16 @@ alias ip="curl -s ipinfo.io | jq -r '.ip'"
 alias ipl="ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1'"
 
 # Request using GET, POST, etc. method
-for METHOD in GET HEAD POST PUT DELETE TRACE OPTIONS; do
-  alias "$METHOD"="lwp-request -m '$METHOD'"
-done
-unset METHOD
+alias GET="lwp-request -m 'GET'"
+alias HEAD="lwp-request -m 'HEAD'"
+alias POST="lwp-request -m 'POST'"
+alias PUT="lwp-request -m 'PUT'"
+alias DELETE="lwp-request -m 'DELETE'"
+alias TRACE="lwp-request -m 'TRACE'"
+alias OPTIONS="lwp-request -m 'OPTIONS'"
 
 #############################################################
-#Spotlight
+# Spotlight
 #############################################################
 
 alias spoton="sudo mdutil -a -i on"

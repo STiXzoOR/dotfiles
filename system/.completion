@@ -1,37 +1,37 @@
-if [ -z "$HOMEBREW_PREFIX" ] && is-executable brew; then
-  HOMEBREW_PREFIX=$(brew --prefix)
-fi
+# Completion configuration
+# Note: compinit is handled by Prezto's completion module
 
-# Dotfiles
-_dotfiles_completions() {
-  compadd 'clean configure dock edit help install link macos open unlink update'
-}
-
-compdef _dotfiles_completions dotfiles
-
-# npm
-if command-exists npm; then
-  . <(npm completion)
-fi
-
-# fzf
-if command-exists fzf; then
-  export FZF_COMPLETION_TRIGGER=',,'
-  . "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh"
-fi
-
-# Git
-
-if is-executable git; then
-  if [ -f "/usr/share/git/completion/git-completion.bash" ]; then
-    . "/usr/share/git/completion/git-completion.bash"
-  elif [ -n "$HOMEBREW_PREFIX" ] && [ -f "$HOMEBREW_PREFIX/etc/bash_completion.d/git-completion.bash" ]; then
-    . "$HOMEBREW_PREFIX/etc/bash_completion.d/git-completion.bash"
+# Cache HOMEBREW_PREFIX if not set (avoid repeated brew calls)
+if [[ -z "$HOMEBREW_PREFIX" ]]; then
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    HOMEBREW_PREFIX="/opt/homebrew"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    HOMEBREW_PREFIX="/usr/local"
   fi
 fi
 
-# pnpm (https://pnpm.io/completion)
+# Dotfiles completion
+_dotfiles_completions() {
+  compadd 'clean' 'configure' 'dock' 'edit' 'help' 'install' 'link' 'macos' 'open' 'unlink' 'update'
+}
+compdef _dotfiles_completions dotfiles
 
+# npm completion - cached for performance
+# Regenerate with: npm completion > ~/.cache/npm-completion.zsh
+_npm_completion_file="${XDG_CACHE_HOME:-$HOME/.cache}/npm-completion.zsh"
+if [[ ! -f "$_npm_completion_file" ]] && command -v npm &>/dev/null; then
+  mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+  npm completion > "$_npm_completion_file" 2>/dev/null
+fi
+[[ -f "$_npm_completion_file" ]] && source "$_npm_completion_file"
+unset _npm_completion_file
+
+# fzf completion trigger (completions loaded via .fzf using fzf --zsh)
+export FZF_COMPLETION_TRIGGER=',,'
+
+# Git completion is handled by Prezto's git module - removed redundant loading
+
+# pnpm completion
 _pnpm_completion() {
   local reply
   local si=$IFS
@@ -45,12 +45,4 @@ _pnpm_completion() {
     _describe 'values' reply
   fi
 }
-# When called by the Zsh completion system, this will end with
-# "loadautofunc" when initially autoloaded and "shfunc" later on, otherwise,
-# the script was "eval"-ed so use "compdef" to register it with the
-# completion system
-if [[ $zsh_eval_context == *func ]]; then
-  _pnpm_completion "$@"
-else
-  compdef _pnpm_completion pnpm
-fi
+compdef _pnpm_completion pnpm

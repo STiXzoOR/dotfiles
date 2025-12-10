@@ -35,9 +35,13 @@ export DEFAULT_USER=$(whoami)
 # Completion settings
 ##################################################################################################
 
+# Add completions to fpath BEFORE compinit (Prezto handles compinit)
+fpath=("$DOTFILES_DIR/completions" $fpath)
+
+# Source completion config (without redundant compinit)
 source "$DOTFILES_DIR/system/.completion"
-fpath+="$DOTFILES_DIR/completions"
-compinit
+
+# Zoxide (lazy-loaded in .zoxide for performance)
 source "$DOTFILES_DIR/system/.zoxide"
 
 ##################################################################################################

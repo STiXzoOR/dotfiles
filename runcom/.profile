@@ -15,7 +15,15 @@ for DOTFILE in "$DOTFILES_DIR"/system/.{function,function_*,path,env,alias,stars
   [[ -f "$DOTFILE" ]] && . "$DOTFILE"
 done
 
-eval "$(dircolors -b "$DOTFILES_DIR"/system/.dir_colors)"
+# dircolors - cached for performance
+_dircolors_cache="${XDG_CACHE_HOME:-$HOME/.cache}/dircolors.zsh"
+_dircolors_src="$DOTFILES_DIR/system/.dir_colors"
+if [[ ! -f "$_dircolors_cache" ]] || [[ "$_dircolors_src" -nt "$_dircolors_cache" ]]; then
+  mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+  dircolors -b "$_dircolors_src" > "$_dircolors_cache" 2>/dev/null
+fi
+[[ -f "$_dircolors_cache" ]] && source "$_dircolors_cache"
+unset _dircolors_cache _dircolors_src
 
 unset DOTFILE
 export DOTFILES_DIR

@@ -3,10 +3,10 @@ prepend-path() {
   [ -d $1 ] && PATH="$1:$PATH"
 }
 
-# Get named var
+# Get named var (zsh-compatible indirect expansion)
 # usage: get "VAR_NAME"
 get() {
-  echo "${!1}"
+  echo "${(P)1}"
 }
 
 # Generate .gitignore file
@@ -53,20 +53,12 @@ function hide-hidden-files() {
   osascript -e 'tell application "Finder" to activate'
 }
 
-# Deduplicate path variables
+# Deduplicate path variables using zsh native typeset (no subprocess)
+# usage: dedup-pathvar PATH
 function dedup-pathvar() {
-  function get-var() {
-    eval 'printf "%s\n" "${'"$1"'}"'
-  }
-
-  function set-var() {
-    eval "$1=\"\$2\""
-  }
-
-  pathvar_name="$1"
-  pathvar_value="$(get-var "$pathvar_name")"
-  deduped_path="$(echo -n $PATH | awk -v RS=: '{ if (!arr[$0]++) {printf("%s%s",!ln++?"":":",$0)}}')"
-  set-var "$pathvar_name" "$deduped_path"
+  local pathvar_name="$1"
+  # Use zsh's typeset -U to deduplicate (works with PATH, MANPATH, etc.)
+  typeset -U "${pathvar_name}"
 }
 
 # Show 256 TERM colors
