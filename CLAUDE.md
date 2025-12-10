@@ -33,6 +33,8 @@ cd ~/.dotfiles
 ./bin/dotfiles clean                   # Clean up caches (brew, npm, etc.)
 ./bin/dotfiles open                    # Open dotfiles directory in Finder
 ./bin/dotfiles edit                    # Open dotfiles in IDE ($DOTFILES_IDE)
+./bin/dotfiles test                    # Run test suite to validate configuration
+./bin/dotfiles test --verbose          # Run tests with detailed output
 ```
 
 ### Selective Installation
@@ -65,6 +67,7 @@ cd ~/.dotfiles
 
 - **`bin/`** - Utility scripts and main `dotfiles` command
   - `dotfiles` - Main entry point for all operations
+  - `dotfiles-test` - Test suite for validating shell configuration
   - `is-apple-silicon` - Detect Apple Silicon Macs
   - `is-macos` - Detect macOS system
   - `is-executable` - Check if file is executable
@@ -220,4 +223,32 @@ echo "example.com" >> system/hosts.whitelist
 
 # Reinstall hosts file with updated whitelist
 ./bin/dotfiles install --hosts
+```
+
+## Testing
+
+The repository includes a comprehensive test suite to validate shell configuration:
+
+```bash
+./bin/dotfiles test              # Run all tests
+./bin/dotfiles test --verbose    # Show detailed output
+./bin/dotfiles test --quick      # Skip slow tests (startup timing)
+```
+
+**Test Categories:**
+- **Syntax Validation** - Checks all zsh/bash files for syntax errors
+- **Cache Generation** - Validates that all cached initializations work (fnm, zoxide, fzf, etc.)
+- **Function Tests** - Tests core functions like `prepend-path`, `get`, `dedup-pathvar`
+- **Alias Tests** - Verifies aliases are properly defined
+- **Environment Tests** - Checks XDG and essential environment variables
+- **Shell Startup** - Measures shell startup time (target: <1000ms)
+- **File Structure** - Validates required directories and files exist
+- **Prezto Configuration** - Checks Prezto submodule and configuration
+
+**Refreshing Caches:**
+Shell initialization outputs are cached for performance. To refresh:
+```bash
+rm ~/.cache/*.zsh     # Clear all shell caches
+fnm_refresh           # Refresh fnm cache specifically
+exec $SHELL           # Restart shell to regenerate caches
 ```

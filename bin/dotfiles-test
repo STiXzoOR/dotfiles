@@ -1,0 +1,567 @@
+#!/usr/bin/env zsh
+#
+# dotfiles-test - Test suite for dotfiles shell configuration
+#
+# Usage: dotfiles-test [--verbose] [--quick]
+#
+# Options:
+#   --verbose   Show detailed output for each test
+#   --quick     Skip slow tests (shell startup timing)
+#
+
+set -o pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Test counters
+TESTS_RUN=0
+TESTS_PASSED=0
+TESTS_FAILED=0
+TESTS_SKIPPED=0
+
+# Options
+VERBOSE=false
+QUICK=false
+
+# Parse arguments
+for arg in "$@"; do
+  case $arg in
+    --verbose|-v) VERBOSE=true ;;
+    --quick|-q) QUICK=true ;;
+    --help|-h)
+      echo "Usage: dotfiles-test [--verbose] [--quick]"
+      echo ""
+      echo "Options:"
+      echo "  --verbose, -v   Show detailed output for each test"
+      echo "  --quick, -q     Skip slow tests (shell startup timing)"
+      exit 0
+      ;;
+  esac
+done
+
+# Get dotfiles directory
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+if [[ ! -d "$DOTFILES_DIR" ]]; then
+  # Try to find it relative to this script
+  DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+fi
+
+# Test result functions
+pass() {
+  ((TESTS_PASSED++))
+  ((TESTS_RUN++))
+  echo -e "${GREEN}✓${NC} $1"
+}
+
+fail() {
+  ((TESTS_FAILED++))
+  ((TESTS_RUN++))
+  echo -e "${RED}✗${NC} $1"
+  if [[ -n "$2" ]] && $VERBOSE; then
+    echo -e "  ${RED}Error: $2${NC}"
+  fi
+}
+
+skip() {
+  ((TESTS_SKIPPED++))
+  echo -e "${YELLOW}○${NC} $1 (skipped)"
+}
+
+section() {
+  echo ""
+  echo -e "${BLUE}━━━ $1 ━━━${NC}"
+}
+
+#############################################################################
+# SYNTAX VALIDATION TESTS
+#############################################################################
+
+test_zsh_syntax() {
+  section "Zsh Syntax Validation"
+
+  local files=(
+    "$DOTFILES_DIR/runcom/.zshrc"
+    "$DOTFILES_DIR/runcom/.zprofile"
+    "$DOTFILES_DIR/runcom/.zlogin"
+    "$DOTFILES_DIR/runcom/.profile"
+    "$DOTFILES_DIR/system/.alias"
+    "$DOTFILES_DIR/system/.bindings"
+    "$DOTFILES_DIR/system/.completion"
+    "$DOTFILES_DIR/system/.env"
+    "$DOTFILES_DIR/system/.fix"
+    "$DOTFILES_DIR/system/.fnm"
+    "$DOTFILES_DIR/system/.function"
+    "$DOTFILES_DIR/system/.function_fs"
+    "$DOTFILES_DIR/system/.function_fun"
+    "$DOTFILES_DIR/system/.function_network"
+    "$DOTFILES_DIR/system/.function_text"
+    "$DOTFILES_DIR/system/.fzf"
+    "$DOTFILES_DIR/system/.grep"
+    "$DOTFILES_DIR/system/.path"
+    "$DOTFILES_DIR/system/.pnpm"
+    "$DOTFILES_DIR/system/.starship"
+    "$DOTFILES_DIR/system/.zoxide"
+  )
+
+  for file in "${files[@]}"; do
+    if [[ -f "$file" ]]; then
+      local basename="${file##*/}"
+      if zsh -n "$file" 2>/dev/null; then
+        pass "Syntax OK: $basename"
+      else
+        local error=$(zsh -n "$file" 2>&1)
+        fail "Syntax error: $basename" "$error"
+      fi
+    fi
+  done
+}
+
+test_bash_syntax() {
+  section "Bash Script Syntax Validation"
+
+  local files=(
+    "$DOTFILES_DIR/bin/dotfiles"
+    "$DOTFILES_DIR/scripts/echos.sh"
+    "$DOTFILES_DIR/scripts/requirers.sh"
+  )
+
+  for file in "${files[@]}"; do
+    if [[ -f "$file" ]]; then
+      local basename="${file##*/}"
+      if bash -n "$file" 2>/dev/null; then
+        pass "Syntax OK: $basename"
+      else
+        local error=$(bash -n "$file" 2>&1)
+        fail "Syntax error: $basename" "$error"
+      fi
+    fi
+  done
+}
+
+#############################################################################
+# CACHE GENERATION TESTS
+#############################################################################
+
+test_cache_generation() {
+  section "Cache Generation Tests"
+
+  local test_cache_dir=$(mktemp -d)
+  local old_cache="${XDG_CACHE_HOME:-$HOME/.cache}"
+  export XDG_CACHE_HOME="$test_cache_dir"
+
+  # Test fnm cache generation
+  if command -v fnm &>/dev/null; then
+    if fnm env --use-on-cd --corepack-enabled --shell zsh > "$test_cache_dir/fnm-env.zsh" 2>/dev/null; then
+      if [[ -s "$test_cache_dir/fnm-env.zsh" ]]; then
+        pass "fnm cache generation"
+      else
+        fail "fnm cache generation" "Empty output"
+      fi
+    else
+      fail "fnm cache generation" "Command failed"
+    fi
+  else
+    skip "fnm cache generation (fnm not installed)"
+  fi
+
+  # Test zoxide cache generation
+  if command -v zoxide &>/dev/null; then
+    if zoxide init zsh > "$test_cache_dir/zoxide-init.zsh" 2>/dev/null; then
+      if [[ -s "$test_cache_dir/zoxide-init.zsh" ]]; then
+        pass "zoxide cache generation"
+      else
+        fail "zoxide cache generation" "Empty output"
+      fi
+    else
+      fail "zoxide cache generation" "Command failed"
+    fi
+  else
+    skip "zoxide cache generation (zoxide not installed)"
+  fi
+
+  # Test thefuck cache generation
+  if command -v thefuck &>/dev/null; then
+    if thefuck --alias fix > "$test_cache_dir/thefuck-alias.zsh" 2>/dev/null; then
+      if [[ -s "$test_cache_dir/thefuck-alias.zsh" ]]; then
+        pass "thefuck cache generation"
+      else
+        fail "thefuck cache generation" "Empty output"
+      fi
+    else
+      fail "thefuck cache generation" "Command failed"
+    fi
+  else
+    skip "thefuck cache generation (thefuck not installed)"
+  fi
+
+  # Test fzf cache generation
+  if command -v fzf &>/dev/null; then
+    if fzf --zsh > "$test_cache_dir/fzf-init.zsh" 2>/dev/null; then
+      if [[ -s "$test_cache_dir/fzf-init.zsh" ]]; then
+        pass "fzf cache generation"
+      else
+        fail "fzf cache generation" "Empty output"
+      fi
+    else
+      fail "fzf cache generation" "Command failed"
+    fi
+  else
+    skip "fzf cache generation (fzf not installed)"
+  fi
+
+  # Test brew shellenv cache generation
+  if command -v brew &>/dev/null; then
+    if brew shellenv > "$test_cache_dir/brew-shellenv.zsh" 2>/dev/null; then
+      if [[ -s "$test_cache_dir/brew-shellenv.zsh" ]]; then
+        pass "brew shellenv cache generation"
+      else
+        fail "brew shellenv cache generation" "Empty output"
+      fi
+    else
+      fail "brew shellenv cache generation" "Command failed"
+    fi
+  else
+    skip "brew shellenv cache generation (brew not installed)"
+  fi
+
+  # Test dircolors cache generation
+  if command -v dircolors &>/dev/null && [[ -f "$DOTFILES_DIR/system/.dir_colors" ]]; then
+    if dircolors -b "$DOTFILES_DIR/system/.dir_colors" > "$test_cache_dir/dircolors.zsh" 2>/dev/null; then
+      if [[ -s "$test_cache_dir/dircolors.zsh" ]]; then
+        pass "dircolors cache generation"
+      else
+        fail "dircolors cache generation" "Empty output"
+      fi
+    else
+      fail "dircolors cache generation" "Command failed"
+    fi
+  else
+    skip "dircolors cache generation (dircolors not installed or .dir_colors missing)"
+  fi
+
+  # Test npm completion cache generation
+  if command -v npm &>/dev/null; then
+    if npm completion > "$test_cache_dir/npm-completion.zsh" 2>/dev/null; then
+      if [[ -s "$test_cache_dir/npm-completion.zsh" ]]; then
+        pass "npm completion cache generation"
+      else
+        fail "npm completion cache generation" "Empty output"
+      fi
+    else
+      fail "npm completion cache generation" "Command failed"
+    fi
+  else
+    skip "npm completion cache generation (npm not installed)"
+  fi
+
+  # Cleanup
+  rm -rf "$test_cache_dir"
+  export XDG_CACHE_HOME="$old_cache"
+}
+
+#############################################################################
+# FUNCTION TESTS
+#############################################################################
+
+test_functions() {
+  section "Function Tests"
+
+  # Source the function file
+  source "$DOTFILES_DIR/system/.function"
+
+  # Test prepend-path function
+  local test_path="/test/path/that/does/not/exist"
+  local old_path="$PATH"
+  prepend-path "$test_path"
+  if [[ "$PATH" == "$old_path" ]]; then
+    pass "prepend-path: correctly skips non-existent directory"
+  else
+    fail "prepend-path: should not add non-existent directory"
+    PATH="$old_path"
+  fi
+
+  prepend-path "/usr"
+  if [[ "$PATH" == "/usr:$old_path" ]]; then
+    pass "prepend-path: correctly adds existing directory"
+    PATH="$old_path"
+  else
+    fail "prepend-path: failed to add existing directory"
+    PATH="$old_path"
+  fi
+
+  # Test get function (zsh indirect expansion)
+  local TEST_VAR="hello_world"
+  local result=$(get "TEST_VAR")
+  if [[ "$result" == "hello_world" ]]; then
+    pass "get: zsh indirect expansion works"
+  else
+    fail "get: zsh indirect expansion failed" "Expected 'hello_world', got '$result'"
+  fi
+
+  # Test dedup-pathvar function
+  PATH="/usr/bin:/usr/bin:/usr/local/bin:/usr/bin"
+  dedup-pathvar PATH
+  local count=$(echo "$PATH" | tr ':' '\n' | grep -c "^/usr/bin$")
+  if [[ "$count" -eq 1 ]]; then
+    pass "dedup-pathvar: removes duplicates"
+  else
+    fail "dedup-pathvar: failed to remove duplicates" "Found $count occurrences of /usr/bin"
+  fi
+  PATH="$old_path"
+}
+
+#############################################################################
+# ALIAS TESTS
+#############################################################################
+
+test_aliases() {
+  section "Alias Tests"
+
+  # Source required files
+  source "$DOTFILES_DIR/system/.function"
+  source "$DOTFILES_DIR/system/.alias"
+
+  # Test that basic aliases are defined
+  local basic_aliases=("g" "rr" "_" "reload" ".." "..." "....")
+  for a in "${basic_aliases[@]}"; do
+    if alias "$a" &>/dev/null; then
+      pass "Alias defined: $a"
+    else
+      fail "Alias missing: $a"
+    fi
+  done
+
+  # Test global aliases (zsh-specific)
+  if alias -g G &>/dev/null; then
+    pass "Global alias defined: G"
+  else
+    fail "Global alias missing: G"
+  fi
+
+  # Test suffix aliases (zsh-specific)
+  if alias -s git &>/dev/null; then
+    pass "Suffix alias defined: .git"
+  else
+    fail "Suffix alias missing: .git"
+  fi
+
+  # Test conditional aliases
+  if (( $+commands[eza] )); then
+    if alias ls | grep -q "eza"; then
+      pass "Conditional alias: ls uses eza"
+    else
+      fail "Conditional alias: ls should use eza when available"
+    fi
+  else
+    if alias ls | grep -q "ls"; then
+      pass "Conditional alias: ls fallback works"
+    else
+      fail "Conditional alias: ls fallback failed"
+    fi
+  fi
+}
+
+#############################################################################
+# SHELL STARTUP TESTS
+#############################################################################
+
+test_shell_startup() {
+  section "Shell Startup Tests"
+
+  if $QUICK; then
+    skip "Shell startup timing (use --verbose for full tests)"
+    return
+  fi
+
+  # Test that zsh can start without errors
+  local startup_output
+  startup_output=$(ZDOTDIR="$DOTFILES_DIR/runcom" zsh -i -c 'echo "STARTUP_OK"' 2>&1)
+
+  if echo "$startup_output" | grep -q "STARTUP_OK"; then
+    pass "Shell starts successfully"
+  else
+    fail "Shell startup failed" "$startup_output"
+  fi
+
+  # Measure startup time
+  local start_time end_time duration
+  start_time=$(date +%s%N)
+  ZDOTDIR="$DOTFILES_DIR/runcom" zsh -i -c 'exit' 2>/dev/null
+  end_time=$(date +%s%N)
+  duration=$(( (end_time - start_time) / 1000000 )) # Convert to ms
+
+  if [[ $duration -lt 500 ]]; then
+    pass "Shell startup time: ${duration}ms (excellent)"
+  elif [[ $duration -lt 1000 ]]; then
+    pass "Shell startup time: ${duration}ms (good)"
+  elif [[ $duration -lt 2000 ]]; then
+    echo -e "${YELLOW}⚠${NC} Shell startup time: ${duration}ms (could be faster)"
+    ((TESTS_RUN++))
+    ((TESTS_PASSED++))
+  else
+    fail "Shell startup time: ${duration}ms (too slow, target <1000ms)"
+  fi
+}
+
+#############################################################################
+# ENVIRONMENT TESTS
+#############################################################################
+
+test_environment() {
+  section "Environment Variable Tests"
+
+  source "$DOTFILES_DIR/system/.env"
+
+  # Test XDG directories
+  local xdg_vars=("XDG_CONFIG_HOME" "XDG_CACHE_HOME" "XDG_DATA_HOME" "XDG_STATE_HOME")
+  for var in "${xdg_vars[@]}"; do
+    if [[ -n "${(P)var}" ]]; then
+      pass "Environment: $var is set"
+    else
+      fail "Environment: $var is not set"
+    fi
+  done
+
+  # Test essential variables
+  if [[ -n "$EDITOR" ]]; then
+    pass "Environment: EDITOR is set ($EDITOR)"
+  else
+    fail "Environment: EDITOR is not set"
+  fi
+
+  if [[ -n "$LANG" ]]; then
+    pass "Environment: LANG is set ($LANG)"
+  else
+    fail "Environment: LANG is not set"
+  fi
+}
+
+#############################################################################
+# FILE STRUCTURE TESTS
+#############################################################################
+
+test_file_structure() {
+  section "File Structure Tests"
+
+  # Test essential directories exist
+  local dirs=("bin" "runcom" "system" "scripts" "config" "packages" "modules")
+  for dir in "${dirs[@]}"; do
+    if [[ -d "$DOTFILES_DIR/$dir" ]]; then
+      pass "Directory exists: $dir/"
+    else
+      fail "Directory missing: $dir/"
+    fi
+  done
+
+  # Test essential files exist
+  local files=(
+    "runcom/.zshrc"
+    "runcom/.zprofile"
+    "runcom/.zpreztorc"
+    "system/.alias"
+    "system/.function"
+    "system/.path"
+    "bin/dotfiles"
+  )
+  for file in "${files[@]}"; do
+    if [[ -f "$DOTFILES_DIR/$file" ]]; then
+      pass "File exists: $file"
+    else
+      fail "File missing: $file"
+    fi
+  done
+
+  # Test bin scripts are executable
+  for script in "$DOTFILES_DIR"/bin/*; do
+    if [[ -f "$script" ]]; then
+      local basename="${script##*/}"
+      if [[ -x "$script" ]]; then
+        pass "Executable: bin/$basename"
+      else
+        fail "Not executable: bin/$basename"
+      fi
+    fi
+  done
+}
+
+#############################################################################
+# PREZTO TESTS
+#############################################################################
+
+test_prezto() {
+  section "Prezto Configuration Tests"
+
+  local prezto_dir="$DOTFILES_DIR/modules/prezto"
+
+  if [[ -d "$prezto_dir" ]]; then
+    pass "Prezto submodule exists"
+  else
+    fail "Prezto submodule missing"
+    return
+  fi
+
+  if [[ -f "$prezto_dir/init.zsh" ]]; then
+    pass "Prezto init.zsh exists"
+  else
+    fail "Prezto init.zsh missing"
+  fi
+
+  # Validate zpreztorc has valid module list
+  local zpreztorc="$DOTFILES_DIR/runcom/.zpreztorc"
+  if [[ -f "$zpreztorc" ]]; then
+    if grep -q "pmodule" "$zpreztorc"; then
+      pass "zpreztorc has module configuration"
+    else
+      fail "zpreztorc missing module configuration"
+    fi
+  fi
+}
+
+#############################################################################
+# MAIN
+#############################################################################
+
+main() {
+  echo ""
+  echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
+  echo -e "${BLUE}║     Dotfiles Test Suite                ║${NC}"
+  echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
+  echo ""
+  echo "Testing: $DOTFILES_DIR"
+
+  # Run all tests
+  test_file_structure
+  test_zsh_syntax
+  test_bash_syntax
+  test_cache_generation
+  test_functions
+  test_aliases
+  test_environment
+  test_prezto
+  test_shell_startup
+
+  # Summary
+  echo ""
+  echo -e "${BLUE}━━━ Summary ━━━${NC}"
+  echo ""
+  echo -e "  ${GREEN}Passed:${NC}  $TESTS_PASSED"
+  echo -e "  ${RED}Failed:${NC}  $TESTS_FAILED"
+  echo -e "  ${YELLOW}Skipped:${NC} $TESTS_SKIPPED"
+  echo -e "  Total:   $TESTS_RUN"
+  echo ""
+
+  if [[ $TESTS_FAILED -eq 0 ]]; then
+    echo -e "${GREEN}All tests passed!${NC}"
+    exit 0
+  else
+    echo -e "${RED}Some tests failed.${NC}"
+    exit 1
+  fi
+}
+
+main "$@"

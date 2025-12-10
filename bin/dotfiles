@@ -28,6 +28,7 @@ sub_help() {
   echo "   install          Bootstrap system"
   echo "   link             Link dotfiles to ~/"
   echo "   open             Open dotfiles in Finder"
+  echo "   test             Run test suite to validate configuration"
   echo "   unlink           Restore dotfiles from ~/.dotfiles_backup"
   echo "   update           Update dotfiles (submodules)"
 }
@@ -571,6 +572,19 @@ sub_open() {
 
 sub_edit() {
   sh -c "$DOTFILES_IDE $DOTFILES_DIR"
+}
+
+sub_test() {
+  "$DOTFILES_DIR/bin/dotfiles-test" "$@"
+}
+
+sub_test_help() {
+  echo -e "\nUsage: $BIN_NAME test [options]"
+  echo
+  echo "Options:"
+  echo "   --verbose, -v    Show detailed output for each test"
+  echo "   --quick, -q      Skip slow tests (shell startup timing)"
+  echo "   --help, -h       Show this help message"
 }
 
 cmd_error() {
