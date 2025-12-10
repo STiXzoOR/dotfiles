@@ -27,20 +27,23 @@ cd ~/.dotfiles
 ./bin/dotfiles install                 # Bootstrap system (interactive)
 ./bin/dotfiles install --all           # Install everything non-interactively
 ./bin/dotfiles link                    # Symlink dotfiles to ~/
+./bin/dotfiles unlink YYYY.MM.DD...    # Restore dotfiles from backup
 ./bin/dotfiles configure               # Apply system defaults and dock settings
 ./bin/dotfiles update                  # Update submodules and push changes
 ./bin/dotfiles clean                   # Clean up caches (brew, npm, etc.)
+./bin/dotfiles open                    # Open dotfiles directory in Finder
+./bin/dotfiles edit                    # Open dotfiles in IDE ($DOTFILES_IDE)
 ```
 
 ### Selective Installation
 ```bash
 ./bin/dotfiles install --hosts         # Update /etc/hosts with ad-blocking
 ./bin/dotfiles install --prezto        # Install Prezto zsh framework
-./bin/dotfiles install --vim           # Install vim plugins
+./bin/dotfiles install --vim           # Install Vim plugins via Vundle
 ./bin/dotfiles install --fonts         # Install powerline fonts
 ./bin/dotfiles install --packages      # Install brew/cask/npm/mas/vscode packages
 ./bin/dotfiles install --launchagents  # Install LaunchAgents (mackup auto-backup)
-./bin/dotfiles install --ssh           # Generate SSH key
+./bin/dotfiles install --ssh           # Generate SSH key (ed25519)
 ./bin/dotfiles install --passwordless  # Make sudo passwordless
 ```
 
@@ -62,8 +65,12 @@ cd ~/.dotfiles
 
 - **`bin/`** - Utility scripts and main `dotfiles` command
   - `dotfiles` - Main entry point for all operations
-  - `is-*` - Helper scripts for system detection (Apple Silicon, macOS, etc.)
+  - `is-apple-silicon` - Detect Apple Silicon Macs
+  - `is-macos` - Detect macOS system
+  - `is-executable` - Check if file is executable
+  - `is-supported` - Conditional execution helper (runs command based on condition)
   - `command-exists` - Check if command is available
+  - `plistbuddy` - Helper for editing plist files
 
 - **`scripts/`** - Core installation and utility scripts
   - `echos.sh` - Colorized output functions (bot, ok, error, etc.)
@@ -85,12 +92,24 @@ cd ~/.dotfiles
 
 - **`runcom/`** - Dotfiles symlinked to `~/` using GNU Stow
   - `.zshrc`, `.zprofile`, `.zlogin` - Zsh configuration
-  - `.vimrc` - Vim configuration
-  - `.gemrc`, `.mackup.cfg` - Tool configurations
   - `.zpreztorc` - Prezto configuration
+  - `.profile` - POSIX shell profile
+  - `.vimrc` - Vim configuration
+  - `.vim/` - Vim directory (contains Vundle as a submodule)
+  - `.vim-spell-en.utf-8.add` - Custom vim spell file
+  - `.gemrc` - Ruby gem configuration
+  - `.mackup.cfg` - Mackup backup configuration
+  - `.hushlogin` - Suppress login message
+  - `.huskyrc` - Husky git hooks configuration
 
 - **`config/`** - XDG config files symlinked to `~/.config/` using GNU Stow
-  - Contains application-specific configurations (Karabiner, Spicetify, etc.)
+  - `git/` - Git configuration (aliases, settings)
+  - `husky/` - Husky git hooks configuration
+  - `karabiner/` - Karabiner-Elements keyboard customization
+  - `prettier/` - Prettier code formatter configuration
+  - `spicetify/` - Spotify customization
+  - `starship/` - Starship prompt configuration
+  - `thefuck/` - TheFuck command correction settings
 
 - **`modules/`** - Git submodules for external dependencies
   - `prezto/` - Prezto zsh framework
@@ -98,7 +117,21 @@ cd ~/.dotfiles
   - `zsh/` - Additional zsh plugins (zsh-autocomplete, zsh-thefuck, zsh-lazy-load)
   - `stevenblack-hosts/` - Unified hosts file for ad-blocking
 
-- **`system/`** - System-level configuration files
+- **`system/`** - Shell configuration files sourced by `.zshrc`
+  - `.alias` - Shell aliases
+  - `.bindings` - Key bindings
+  - `.completion` - Shell completion settings
+  - `.dir_colors` - Directory colors for ls
+  - `.env` - Environment variables
+  - `.fnm` - FNM (Fast Node Manager) configuration
+  - `.function`, `.function_*` - Shell functions (general, filesystem, network, text, fun)
+  - `.fzf` - FZF fuzzy finder configuration
+  - `.grep` - Grep configuration
+  - `.path` - PATH environment setup
+  - `.pnpm` - PNPM configuration
+  - `.prompt` - Prompt configuration (fallback)
+  - `.starship` - Starship prompt loader
+  - `.zoxide` - Zoxide directory jumper configuration
   - `hosts.whitelist` - Whitelist for domains that should not be blocked by hosts file
 
 - **`apps/`** - Application-specific themes and configurations
@@ -107,9 +140,16 @@ cd ~/.dotfiles
   - `warp/` - Warp terminal themes (base16 and others)
   - `gitkraken/` - GitKraken custom themes
   - `vlc/` - VLC settings and preferences
+  - `vscode/` - VS Code themes and settings
 
 - **`fonts/`** - Powerline fonts for terminal
   - `install.sh` - Font installation script
+
+- **`completions/`** - Shell completion scripts
+  - `_fnm` - FNM (Fast Node Manager) zsh completions
+
+- **`resources/`** - Documentation resources
+  - `terminal.png` - Terminal screenshot for README
 
 - **`launchagents/`** - macOS LaunchAgents for automated tasks
   - `com.user.mackup-auto.plist` - Auto-backup mackup settings every hour
