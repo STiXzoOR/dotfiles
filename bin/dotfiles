@@ -23,8 +23,10 @@ sub_help() {
   echo "Commands:"
   echo "   clean            Clean up caches (brew, nvm, gem)"
   echo "   configure        Configure system (defaults, dock)"
+  echo "   doctor           Diagnose common issues"
   echo "   edit             Open dotfiles in IDE ($DOTFILES_IDE)"
   echo "   help             This help message"
+  echo "   hooks            Install git pre-commit hooks"
   echo "   install          Bootstrap system"
   echo "   link             Link dotfiles to ~/"
   echo "   open             Open dotfiles in Finder"
@@ -329,10 +331,58 @@ install_packages() {
 
 sub_install_packages() {
   bot "Packages install\n"
-  read -r -p "Install packages/tools/apps? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
-    pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
 
+  pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
+
+  # Check if Brewfile exists (preferred method)
+  if [[ -f "Brewfile" ]]; then
+    read -r -p "Install packages using Brewfile (brew bundle)? [y|N] " response
+    if [[ $response =~ (y|yes|Y) ]]; then
+      action "Installing packages via brew bundle..."
+      brew bundle install --file=Brewfile
+      ok "Homebrew packages installed"
+
+      # Handle npm packages separately (not in Brewfile)
+      if [[ -f "packages/npm.list" ]]; then
+        read -r -p "Install NPM global packages? [y|N] " npm_response
+        if [[ $npm_response =~ (y|yes|Y) ]]; then
+          action "Installing NPM packages..."
+          while IFS= read -r package || [[ -n "$package" ]]; do
+            [[ $package =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${package// /}" ]] && continue
+            require_npm "$package"
+          done <"packages/npm.list"
+          ok "NPM packages installed"
+        fi
+      fi
+
+      # Handle VS Code extensions separately
+      if [[ -f "packages/code.list" ]]; then
+        read -r -p "Install VS Code extensions? [y|N] " code_response
+        if [[ $code_response =~ (y|yes|Y) ]]; then
+          action "Installing VS Code extensions..."
+          while IFS= read -r extension || [[ -n "$extension" ]]; do
+            [[ $extension =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${extension// /}" ]] && continue
+            require_code "$extension"
+          done <"packages/code.list"
+          ok "VS Code extensions installed"
+        fi
+      fi
+
+      running "cleanup homebrew"
+      brew cleanup --force >/dev/null 2>&1
+      rm -f -r /Library/Caches/Homebrew/* >/dev/null 2>&1
+      xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook" 2>/dev/null
+      popd >/dev/null 2>&1 || exit
+      ok
+      return
+    fi
+  fi
+
+  # Fallback to legacy .list files
+  read -r -p "Install packages using legacy .list files? [y|N] " response
+  if [[ $response =~ (y|yes|Y) ]]; then
     install_packages "tap.list" "require_tap" "Homebrew taps"
     install_packages "brew.list" "require_brew" "Homebrew utilities"
     install_packages "cask.list" "require_cask" "Homebrew desktop apps"
@@ -343,7 +393,7 @@ sub_install_packages() {
     running "cleanup homebrew"
     brew cleanup --force >/dev/null 2>&1
     rm -f -r /Library/Caches/Homebrew/* >/dev/null 2>&1
-    xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook"
+    xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook" 2>/dev/null
     popd >/dev/null 2>&1 || exit
     ok
   else
@@ -585,6 +635,28 @@ sub_test_help() {
   echo "   --verbose, -v    Show detailed output for each test"
   echo "   --quick, -q      Skip slow tests (shell startup timing)"
   echo "   --help, -h       Show this help message"
+}
+
+sub_doctor() {
+  "$DOTFILES_DIR/bin/dotfiles-doctor" "$@"
+}
+
+sub_doctor_help() {
+  echo -e "\nUsage: $BIN_NAME doctor [options]"
+  echo
+  echo "Options:"
+  echo "   --fix            Attempt to automatically fix issues"
+  echo "   --help, -h       Show this help message"
+}
+
+sub_hooks() {
+  bot "Git Hooks Setup\n"
+  action "Configuring git to use .githooks directory..."
+  git -C "$DOTFILES_DIR" config core.hooksPath .githooks
+  ok "Git hooks installed!"
+  echo ""
+  echo "The following hooks are now active:"
+  echo "  - pre-commit: Validates shell syntax and runs shellcheck"
 }
 
 cmd_error() {

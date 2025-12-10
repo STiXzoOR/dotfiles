@@ -1,0 +1,26 @@
+# Work Machine Profile
+# Copy to work.zsh and customize
+
+# Work Git configuration
+# export GIT_AUTHOR_EMAIL="you@company.com"
+# export GIT_COMMITTER_EMAIL="you@company.com"
+
+# Work-specific aliases
+# alias vpn="open /Applications/CompanyVPN.app"
+# alias jira="open https://company.atlassian.net"
+# alias slack="open -a Slack"
+
+# Work proxy settings (if needed)
+# export http_proxy="http://proxy.company.com:8080"
+# export https_proxy="http://proxy.company.com:8080"
+# export no_proxy="localhost,127.0.0.1,.company.com"
+
+# Work-specific paths
+# prepend-path "$HOME/work/scripts"
+# prepend-path "$HOME/work/bin"
+
+# Work Node.js version
+# fnm use 18
+
+# Load work Brewfile additions
+# export HOMEBREW_BUNDLE_FILE_WORK="$DOTFILES_DIR/profiles/Brewfile.work"

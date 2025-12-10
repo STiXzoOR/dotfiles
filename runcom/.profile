@@ -27,3 +27,6 @@ unset _dircolors_cache _dircolors_src
 
 unset DOTFILE
 export DOTFILES_DIR
+
+# Load machine-specific profile
+[[ -f "$DOTFILES_DIR/system/.profile_loader" ]] && source "$DOTFILES_DIR/system/.profile_loader"

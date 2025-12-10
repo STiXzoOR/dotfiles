@@ -35,6 +35,9 @@ cd ~/.dotfiles
 ./bin/dotfiles edit                    # Open dotfiles in IDE ($DOTFILES_IDE)
 ./bin/dotfiles test                    # Run test suite to validate configuration
 ./bin/dotfiles test --verbose          # Run tests with detailed output
+./bin/dotfiles doctor                  # Diagnose common issues
+./bin/dotfiles doctor --fix            # Auto-fix issues where possible
+./bin/dotfiles hooks                   # Install git pre-commit hooks
 ```
 
 ### Selective Installation
@@ -68,6 +71,7 @@ cd ~/.dotfiles
 - **`bin/`** - Utility scripts and main `dotfiles` command
   - `dotfiles` - Main entry point for all operations
   - `dotfiles-test` - Test suite for validating shell configuration
+  - `dotfiles-doctor` - Health check and diagnostics tool
   - `is-apple-silicon` - Detect Apple Silicon Macs
   - `is-macos` - Detect macOS system
   - `is-executable` - Check if file is executable
@@ -157,10 +161,25 @@ cd ~/.dotfiles
 - **`launchagents/`** - macOS LaunchAgents for automated tasks
   - `com.user.mackup-auto.plist` - Auto-backup mackup settings every hour
 
+- **`profiles/`** - Machine-specific configurations
+  - `default.zsh` - Base settings loaded on all machines
+  - `personal.zsh` / `work.zsh` - Machine-specific profiles
+  - `local.zsh` - Machine-specific overrides (gitignored)
+
+- **`.github/workflows/`** - GitHub Actions CI/CD
+  - `ci.yml` - Automated testing on push/PR
+
+- **`.githooks/`** - Git hooks for development
+  - `pre-commit` - Validates shell syntax and runs shellcheck
+
+- **`Brewfile`** - Homebrew bundle manifest for all packages
+  - Taps, formulae, casks, and Mac App Store apps
+  - Install with: `brew bundle install`
+
 ### Key Technical Details
 
 **Package Management Flow:**
-The `install_packages()` function in `bin/dotfiles` reads package lists and uses corresponding `require_*` functions from `scripts/requirers.sh`. Each package type has idempotent installation logic that checks if already installed before attempting installation.
+The preferred method is using the `Brewfile` with `brew bundle install`. This handles taps, formulae, casks, and Mac App Store apps in one command. Legacy `.list` files in `packages/` are still supported as a fallback. NPM packages and VS Code extensions are installed separately via `packages/npm.list` and `packages/code.list`.
 
 **Dotfile Linking:**
 Uses GNU Stow for symlink management. Running `./bin/dotfiles link` will:
@@ -252,3 +271,64 @@ rm ~/.cache/*.zsh     # Clear all shell caches
 fnm_refresh           # Refresh fnm cache specifically
 exec $SHELL           # Restart shell to regenerate caches
 ```
+
+## Machine Profiles
+
+Support for machine-specific configurations (work vs personal):
+
+```bash
+# Set profile via environment variable
+export DOTFILES_PROFILE="work"
+
+# Or create a profile matching your hostname
+cp profiles/work.zsh.example profiles/$(hostname -s).zsh
+```
+
+**Profile Loading Order:**
+1. `profiles/default.zsh` - Always loaded
+2. `profiles/$DOTFILES_PROFILE.zsh` or `profiles/$(hostname).zsh`
+3. `profiles/local.zsh` - Machine-specific overrides (gitignored)
+
+See `profiles/README.md` for detailed documentation.
+
+## Doctor Command
+
+Diagnose common dotfiles issues:
+
+```bash
+./bin/dotfiles doctor          # Check for issues
+./bin/dotfiles doctor --fix    # Auto-fix where possible
+```
+
+**Checks performed:**
+- Symlink status (dotfiles properly linked)
+- Git submodules initialized
+- Shell configuration (zsh, prezto, starship)
+- Homebrew status and outdated packages
+- Cache file status and age
+- Essential tools installed
+- Node.js environment (fnm, npm, pnpm)
+- Git configuration and SSH keys
+- macOS-specific settings
+
+## CI/CD
+
+GitHub Actions automatically run on push/PR:
+- Shell syntax validation (bash and zsh)
+- Shellcheck linting
+- Test suite execution
+- Brewfile validation
+
+## Git Hooks
+
+Install pre-commit hooks for development:
+
+```bash
+./bin/dotfiles hooks
+```
+
+**Pre-commit checks:**
+- Bash syntax validation
+- Zsh syntax validation
+- Shellcheck linting
+- Secret detection (prevents committing passwords/keys)

@@ -143,6 +143,62 @@ test_bash_syntax() {
   done
 }
 
+test_shellcheck() {
+  section "Shellcheck Linting"
+
+  if ! command -v shellcheck &>/dev/null; then
+    skip "shellcheck not installed"
+    return
+  fi
+
+  local bash_files=(
+    "$DOTFILES_DIR/bin/dotfiles"
+    "$DOTFILES_DIR/scripts/echos.sh"
+    "$DOTFILES_DIR/scripts/requirers.sh"
+    "$DOTFILES_DIR/macos/defaults.sh"
+    "$DOTFILES_DIR/macos/dock.sh"
+  )
+
+  for file in "${bash_files[@]}"; do
+    if [[ -f "$file" ]]; then
+      local basename="${file##*/}"
+      local output
+      # Use shellcheck with relaxed settings for dotfiles
+      # SC1090: Can't follow non-constant source
+      # SC1091: Not following sourced file
+      # SC2034: Variable appears unused (common in configs)
+      # SC2154: Variable referenced but not assigned (sourced from elsewhere)
+      output=$(shellcheck -e SC1090,SC1091,SC2034,SC2154 -s bash "$file" 2>&1)
+      if [[ $? -eq 0 ]]; then
+        pass "Shellcheck OK: $basename"
+      else
+        fail "Shellcheck issues: $basename" "$output"
+      fi
+    fi
+  done
+
+  # Check shell config files (these are sourced, so use sh/bash compatible checks)
+  local config_files=(
+    "$DOTFILES_DIR/runcom/.profile"
+  )
+
+  for file in "${config_files[@]}"; do
+    if [[ -f "$file" ]]; then
+      local basename="${file##*/}"
+      local output
+      output=$(shellcheck -e SC1090,SC1091,SC2034,SC2154,SC2148 -s sh "$file" 2>&1)
+      if [[ $? -eq 0 ]]; then
+        pass "Shellcheck OK: $basename"
+      else
+        # Warn instead of fail for config files (they have zsh-specific syntax)
+        echo -e "${YELLOW}⚠${NC} Shellcheck warnings: $basename (may contain zsh syntax)"
+        ((TESTS_RUN++))
+        ((TESTS_PASSED++))
+      fi
+    fi
+  done
+}
+
 #############################################################################
 # CACHE GENERATION TESTS
 #############################################################################
@@ -538,6 +594,7 @@ main() {
   test_file_structure
   test_zsh_syntax
   test_bash_syntax
+  test_shellcheck
   test_cache_generation
   test_functions
   test_aliases

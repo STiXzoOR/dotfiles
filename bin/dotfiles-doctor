@@ -1,0 +1,375 @@
+#!/usr/bin/env zsh
+#
+# dotfiles-doctor - Diagnose common dotfiles issues
+#
+# Usage: dotfiles-doctor [--fix]
+#
+# Options:
+#   --fix    Attempt to automatically fix issues
+#
+
+set -o pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Options
+FIX_MODE=false
+[[ "$1" == "--fix" ]] && FIX_MODE=true
+
+# Get dotfiles directory
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+if [[ ! -d "$DOTFILES_DIR" ]]; then
+  DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+fi
+
+# Counters
+ISSUES=0
+WARNINGS=0
+FIXED=0
+
+#############################################################################
+# Helper Functions
+#############################################################################
+
+ok() {
+  echo -e "${GREEN}✓${NC} $1"
+}
+
+warn() {
+  echo -e "${YELLOW}⚠${NC} $1"
+  ((WARNINGS++))
+}
+
+error() {
+  echo -e "${RED}✗${NC} $1"
+  ((ISSUES++))
+}
+
+fix() {
+  echo -e "${BLUE}→${NC} $1"
+  ((FIXED++))
+}
+
+section() {
+  echo ""
+  echo -e "${BLUE}━━━ $1 ━━━${NC}"
+}
+
+#############################################################################
+# Checks
+#############################################################################
+
+check_dotfiles_linked() {
+  section "Symlink Status"
+
+  local files=(".zshrc" ".zprofile" ".zpreztorc" ".vimrc" ".gitconfig")
+  local all_linked=true
+
+  for file in "${files[@]}"; do
+    if [[ -L "$HOME/$file" ]]; then
+      local target=$(readlink "$HOME/$file")
+      if [[ "$target" == *"$DOTFILES_DIR"* ]] || [[ "$target" == *".dotfiles"* ]]; then
+        ok "$file → $target"
+      else
+        warn "$file linked to unexpected location: $target"
+      fi
+    elif [[ -f "$HOME/$file" ]]; then
+      error "$file exists but is not a symlink (run: dotfiles link)"
+      all_linked=false
+    else
+      warn "$file not found"
+    fi
+  done
+
+  # Check .config directory
+  if [[ -d "$HOME/.config" ]]; then
+    local config_dirs=("git" "starship" "karabiner")
+    for dir in "${config_dirs[@]}"; do
+      if [[ -L "$HOME/.config/$dir" ]]; then
+        ok ".config/$dir is linked"
+      elif [[ -d "$HOME/.config/$dir" ]]; then
+        warn ".config/$dir exists but is not a symlink"
+      fi
+    done
+  fi
+}
+
+check_submodules() {
+  section "Git Submodules"
+
+  pushd "$DOTFILES_DIR" >/dev/null 2>&1
+
+  local submodules=("modules/prezto" "modules/prezto-contrib" "modules/stevenblack-hosts")
+  for submodule in "${submodules[@]}"; do
+    if [[ -d "$submodule" && -n "$(ls -A "$submodule" 2>/dev/null)" ]]; then
+      ok "$submodule initialized"
+    else
+      error "$submodule not initialized"
+      if $FIX_MODE; then
+        fix "Initializing submodules..."
+        git submodule update --init --recursive
+      fi
+    fi
+  done
+
+  popd >/dev/null 2>&1
+}
+
+check_homebrew() {
+  section "Homebrew"
+
+  if command -v brew &>/dev/null; then
+    ok "Homebrew installed: $(brew --version | head -1)"
+
+    # Check for issues
+    local brew_issues=$(brew doctor 2>&1 | grep -c "Warning")
+    if [[ $brew_issues -gt 0 ]]; then
+      warn "brew doctor reports $brew_issues warning(s)"
+    else
+      ok "brew doctor: no issues"
+    fi
+
+    # Check outdated packages
+    local outdated=$(brew outdated --quiet | wc -l | tr -d ' ')
+    if [[ $outdated -gt 0 ]]; then
+      warn "$outdated outdated package(s) (run: brew upgrade)"
+    else
+      ok "All packages up to date"
+    fi
+  else
+    error "Homebrew not installed"
+    if $FIX_MODE; then
+      fix "Installing Homebrew..."
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+  fi
+}
+
+check_shell() {
+  section "Shell Configuration"
+
+  # Check default shell
+  if [[ "$SHELL" == *"zsh"* ]]; then
+    ok "Default shell is zsh"
+  else
+    warn "Default shell is not zsh: $SHELL"
+    if $FIX_MODE; then
+      fix "Changing default shell to zsh..."
+      chsh -s $(which zsh)
+    fi
+  fi
+
+  # Check ZDOTDIR
+  if [[ -n "$ZDOTDIR" ]]; then
+    ok "ZDOTDIR is set: $ZDOTDIR"
+  fi
+
+  # Check prezto
+  if [[ -f "$DOTFILES_DIR/modules/prezto/init.zsh" ]]; then
+    ok "Prezto is available"
+  else
+    error "Prezto init.zsh not found"
+  fi
+
+  # Check starship
+  if command -v starship &>/dev/null; then
+    ok "Starship installed: $(starship --version)"
+  else
+    warn "Starship not installed"
+  fi
+}
+
+check_cache() {
+  section "Cache Status"
+
+  local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
+  local caches=(
+    "fnm-env.zsh:fnm"
+    "zoxide-init.zsh:zoxide"
+    "thefuck-alias.zsh:thefuck"
+    "fzf-init.zsh:fzf"
+    "brew-shellenv.zsh:brew"
+    "npm-completion.zsh:npm"
+    "dircolors.zsh:dircolors"
+  )
+
+  for cache_info in "${caches[@]}"; do
+    local cache_file="${cache_info%%:*}"
+    local tool="${cache_info##*:}"
+
+    if [[ -f "$cache_dir/$cache_file" ]]; then
+      local age=$(( ($(date +%s) - $(stat -f %m "$cache_dir/$cache_file" 2>/dev/null || stat -c %Y "$cache_dir/$cache_file" 2>/dev/null)) / 86400 ))
+      if [[ $age -gt 7 ]]; then
+        warn "$cache_file is $age days old (consider refreshing)"
+      else
+        ok "$cache_file exists (${age}d old)"
+      fi
+    else
+      if command -v "$tool" &>/dev/null; then
+        warn "$cache_file missing (will be created on next shell start)"
+      fi
+    fi
+  done
+
+  if $FIX_MODE; then
+    read -r -p "Regenerate all caches? [y/N] " response
+    if [[ $response =~ (y|yes|Y) ]]; then
+      fix "Clearing caches..."
+      rm -f "$cache_dir"/*.zsh
+      echo "Caches cleared. Restart your shell to regenerate."
+    fi
+  fi
+}
+
+check_tools() {
+  section "Essential Tools"
+
+  local tools=(
+    "git:Version control"
+    "stow:Symlink manager"
+    "fzf:Fuzzy finder"
+    "zoxide:Smart cd"
+    "eza:Modern ls"
+    "bat:Better cat"
+    "fd:Better find"
+    "rg:Ripgrep"
+    "jq:JSON processor"
+    "fnm:Node version manager"
+  )
+
+  for tool_info in "${tools[@]}"; do
+    local tool="${tool_info%%:*}"
+    local desc="${tool_info##*:}"
+
+    if command -v "$tool" &>/dev/null; then
+      ok "$tool ($desc)"
+    else
+      warn "$tool not installed ($desc)"
+    fi
+  done
+}
+
+check_node() {
+  section "Node.js Environment"
+
+  if command -v fnm &>/dev/null; then
+    ok "fnm installed"
+
+    if command -v node &>/dev/null; then
+      ok "Node.js: $(node --version)"
+      ok "npm: $(npm --version)"
+    else
+      warn "No Node.js version active (run: fnm install --lts)"
+    fi
+
+    if command -v pnpm &>/dev/null; then
+      ok "pnpm: $(pnpm --version)"
+    else
+      warn "pnpm not installed"
+    fi
+  else
+    warn "fnm not installed"
+  fi
+}
+
+check_git_config() {
+  section "Git Configuration"
+
+  if [[ -n "$(git config --global user.name)" ]]; then
+    ok "Git user.name: $(git config --global user.name)"
+  else
+    warn "Git user.name not configured"
+  fi
+
+  if [[ -n "$(git config --global user.email)" ]]; then
+    ok "Git user.email: $(git config --global user.email)"
+  else
+    warn "Git user.email not configured"
+  fi
+
+  if [[ -f "$HOME/.ssh/id_ed25519" ]]; then
+    ok "SSH key exists"
+  elif [[ -f "$HOME/.ssh/id_rsa" ]]; then
+    ok "SSH key exists (RSA - consider upgrading to ed25519)"
+  else
+    warn "No SSH key found (run: dotfiles install --ssh)"
+  fi
+}
+
+check_macos() {
+  section "macOS Settings"
+
+  if [[ "$(uname)" != "Darwin" ]]; then
+    ok "Not macOS - skipping"
+    return
+  fi
+
+  # Check if Xcode CLI tools are installed
+  if xcode-select -p &>/dev/null; then
+    ok "Xcode CLI tools installed"
+  else
+    error "Xcode CLI tools not installed"
+    if $FIX_MODE; then
+      fix "Installing Xcode CLI tools..."
+      xcode-select --install
+    fi
+  fi
+
+  # Check TouchID for sudo
+  if grep -q "pam_tid.so" /etc/pam.d/sudo 2>/dev/null; then
+    ok "TouchID for sudo enabled"
+  else
+    warn "TouchID for sudo not enabled"
+  fi
+}
+
+#############################################################################
+# Main
+#############################################################################
+
+main() {
+  echo ""
+  echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
+  echo -e "${BLUE}║     Dotfiles Doctor                    ║${NC}"
+  echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
+  echo ""
+  echo "Checking: $DOTFILES_DIR"
+  $FIX_MODE && echo -e "${YELLOW}Fix mode enabled${NC}"
+
+  check_dotfiles_linked
+  check_submodules
+  check_shell
+  check_homebrew
+  check_cache
+  check_tools
+  check_node
+  check_git_config
+  check_macos
+
+  # Summary
+  echo ""
+  echo -e "${BLUE}━━━ Summary ━━━${NC}"
+  echo ""
+
+  if [[ $ISSUES -eq 0 && $WARNINGS -eq 0 ]]; then
+    echo -e "${GREEN}Everything looks good!${NC}"
+  else
+    [[ $ISSUES -gt 0 ]] && echo -e "${RED}Issues:${NC}   $ISSUES"
+    [[ $WARNINGS -gt 0 ]] && echo -e "${YELLOW}Warnings:${NC} $WARNINGS"
+    [[ $FIXED -gt 0 ]] && echo -e "${BLUE}Fixed:${NC}    $FIXED"
+  fi
+
+  echo ""
+
+  if [[ $ISSUES -gt 0 ]]; then
+    echo "Run with --fix to attempt automatic fixes."
+    exit 1
+  fi
+}
+
+main "$@"
