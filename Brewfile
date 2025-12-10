@@ -199,3 +199,12 @@ mas "Windows App", id: 1295203466
 # ============================================================================
 # Note: VS Code extensions are managed via packages/code.list
 # Install with: cat packages/code.list | xargs -L 1 code --install-extension
+
+# ============================================================================
+# NPM Global Packages (managed separately via npm.list)
+# ============================================================================
+# Note: NPM packages are managed via packages/npm.list
+# Install with: cat packages/npm.list | xargs npm install -g
+#
+# These cannot be in Brewfile because they require Node.js/npm to be installed
+# and configured via fnm first.
