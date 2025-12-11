@@ -21,6 +21,7 @@ sub_help() {
   echo -e "\nUsage: $BIN_NAME <command>"
   echo
   echo "Commands:"
+  echo "   cheatsheet       Show aliases and functions cheatsheet"
   echo "   clean            Clean up caches (brew, nvm, gem)"
   echo "   configure        Configure system (defaults, dock)"
   echo "   doctor           Diagnose common issues"
@@ -30,6 +31,9 @@ sub_help() {
   echo "   install          Bootstrap system"
   echo "   link             Link dotfiles to ~/"
   echo "   open             Open dotfiles in Finder"
+  echo "   profiler         Profile shell startup time"
+  echo "   secrets          Manage secrets (macOS Keychain)"
+  echo "   setup            Run interactive setup wizard"
   echo "   test             Run test suite to validate configuration"
   echo "   unlink           Restore dotfiles from ~/.dotfiles_backup"
   echo "   update           Update dotfiles (submodules)"
@@ -657,6 +661,62 @@ sub_hooks() {
   echo ""
   echo "The following hooks are now active:"
   echo "  - pre-commit: Validates shell syntax and runs shellcheck"
+}
+
+sub_profiler() {
+  "$DOTFILES_DIR/bin/dotfiles-profiler" "$@"
+}
+
+sub_profiler_help() {
+  echo -e "\nUsage: $BIN_NAME profiler [options]"
+  echo
+  echo "Options:"
+  echo "   --detailed, -d    Show detailed breakdown of sourced files"
+  echo "   --compare, -c     Compare startup with/without caches"
+  echo "   --help, -h        Show this help message"
+}
+
+sub_cheatsheet() {
+  "$DOTFILES_DIR/bin/dotfiles-cheatsheet" "$@"
+}
+
+sub_cheatsheet_help() {
+  echo -e "\nUsage: $BIN_NAME cheatsheet [options]"
+  echo
+  echo "Options:"
+  echo "   --aliases, -a     Show only aliases"
+  echo "   --functions, -f   Show only functions"
+  echo "   --search, -s      Search for specific command"
+  echo "   --markdown, -m    Output in markdown format"
+  echo "   --help, -h        Show this help message"
+}
+
+sub_secrets() {
+  "$DOTFILES_DIR/bin/dotfiles-secrets" "$@"
+}
+
+sub_secrets_help() {
+  echo -e "\nUsage: $BIN_NAME secrets <command> [options]"
+  echo
+  echo "Commands:"
+  echo "   set <name>        Store a secret in Keychain"
+  echo "   get <name>        Retrieve a secret"
+  echo "   delete <name>     Delete a secret"
+  echo "   list              List all dotfiles secrets"
+  echo "   export <file>     Export secrets to encrypted file"
+  echo "   import <file>     Import secrets from encrypted file"
+  echo "   --help, -h        Show detailed help message"
+}
+
+sub_setup() {
+  "$DOTFILES_DIR/bin/dotfiles-setup" "$@"
+}
+
+sub_setup_help() {
+  echo -e "\nUsage: $BIN_NAME setup"
+  echo
+  echo "Run the interactive setup wizard to install and configure dotfiles."
+  echo "This is recommended for first-time setup on a new machine."
 }
 
 cmd_error() {

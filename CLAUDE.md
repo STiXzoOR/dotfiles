@@ -24,6 +24,7 @@ cd ~/.dotfiles
 ### Development Commands
 ```bash
 ./bin/dotfiles help                    # Show all available commands
+./bin/dotfiles setup                   # Run interactive setup wizard (recommended for new machines)
 ./bin/dotfiles install                 # Bootstrap system (interactive)
 ./bin/dotfiles install --all           # Install everything non-interactively
 ./bin/dotfiles link                    # Symlink dotfiles to ~/
@@ -38,6 +39,12 @@ cd ~/.dotfiles
 ./bin/dotfiles doctor                  # Diagnose common issues
 ./bin/dotfiles doctor --fix            # Auto-fix issues where possible
 ./bin/dotfiles hooks                   # Install git pre-commit hooks
+./bin/dotfiles profiler                # Profile shell startup time
+./bin/dotfiles profiler --detailed     # Show detailed file-by-file breakdown
+./bin/dotfiles cheatsheet              # Show aliases and functions cheatsheet
+./bin/dotfiles secrets set <name>      # Store a secret in macOS Keychain
+./bin/dotfiles secrets get <name>      # Retrieve a secret
+./bin/dotfiles secrets list            # List all stored secrets
 ```
 
 ### Selective Installation
@@ -72,6 +79,10 @@ cd ~/.dotfiles
   - `dotfiles` - Main entry point for all operations
   - `dotfiles-test` - Test suite for validating shell configuration
   - `dotfiles-doctor` - Health check and diagnostics tool
+  - `dotfiles-profiler` - Shell startup time profiler
+  - `dotfiles-cheatsheet` - Aliases and functions cheatsheet generator
+  - `dotfiles-secrets` - Secrets management using macOS Keychain
+  - `dotfiles-setup` - Interactive setup wizard
   - `is-apple-silicon` - Detect Apple Silicon Macs
   - `is-macos` - Detect macOS system
   - `is-executable` - Check if file is executable
@@ -113,6 +124,7 @@ cd ~/.dotfiles
   - `git/` - Git configuration (aliases, settings)
   - `husky/` - Husky git hooks configuration
   - `karabiner/` - Karabiner-Elements keyboard customization
+  - `nvim/` - Neovim configuration with lazy.nvim
   - `prettier/` - Prettier code formatter configuration
   - `spicetify/` - Spotify customization
   - `starship/` - Starship prompt configuration
@@ -332,3 +344,109 @@ Install pre-commit hooks for development:
 - Zsh syntax validation
 - Shellcheck linting
 - Secret detection (prevents committing passwords/keys)
+
+## Shell Startup Profiler
+
+Profile and optimize shell startup time:
+
+```bash
+./bin/dotfiles profiler                # Basic timing (average of 5 runs)
+./bin/dotfiles profiler --detailed     # Show file-by-file breakdown
+./bin/dotfiles profiler --compare      # Compare with/without caches
+```
+
+**Features:**
+- Measures average startup time across multiple runs
+- Shows cache file status and age
+- Rates performance (Excellent < 200ms, Good < 500ms, etc.)
+- Detailed mode shows time spent in each sourced file
+- Compare mode shows cache impact on startup time
+
+## Cheatsheet
+
+View all available aliases and functions:
+
+```bash
+./bin/dotfiles cheatsheet              # Show all aliases and functions
+./bin/dotfiles cheatsheet --aliases    # Show only aliases
+./bin/dotfiles cheatsheet --functions  # Show only functions
+./bin/dotfiles cheatsheet --search git # Search for specific commands
+./bin/dotfiles cheatsheet --markdown   # Output in markdown format
+```
+
+## Secrets Management
+
+Securely store and retrieve secrets using macOS Keychain:
+
+```bash
+./bin/dotfiles secrets set github_token     # Store a secret (prompts for value)
+./bin/dotfiles secrets get github_token     # Retrieve a secret
+./bin/dotfiles secrets delete github_token  # Delete a secret
+./bin/dotfiles secrets list                 # List all stored secrets
+./bin/dotfiles secrets export ~/secrets.enc # Export secrets to encrypted file
+./bin/dotfiles secrets import ~/secrets.enc # Import secrets from encrypted file
+```
+
+**Usage in shell scripts:**
+```bash
+# Load secret into environment variable
+export GITHUB_TOKEN=$(dotfiles-secrets get github_token)
+
+# Or use the env command
+eval "$(dotfiles-secrets env github_token GITHUB_TOKEN)"
+```
+
+**Security notes:**
+- Secrets are stored in macOS Keychain (encrypted at rest)
+- Requires user authentication to access
+- Never commit secrets to git
+- Export files are encrypted with AES-256
+
+## Neovim Configuration
+
+Modern Neovim setup using lazy.nvim as the package manager:
+
+**Structure:**
+```
+config/nvim/
+├── init.lua              # Entry point
+└── lua/
+    ├── config/
+    │   ├── autocmds.lua  # Auto commands
+    │   ├── keymaps.lua   # Key mappings
+    │   ├── lazy.lua      # lazy.nvim bootstrap
+    │   └── options.lua   # Neovim options
+    └── plugins/
+        ├── colorscheme.lua  # Catppuccin, Nord, TokyoNight
+        ├── editor.lua       # File explorer, fuzzy finder, etc.
+        ├── git.lua          # Git integration
+        ├── lsp.lua          # LSP, completion, Mason
+        ├── treesitter.lua   # Syntax highlighting
+        └── ui.lua           # Status line, bufferline, dashboard
+```
+
+**Key bindings (Leader = Space):**
+- `<leader>ff` - Find files
+- `<leader>fg` - Live grep
+- `<leader>ee` - Toggle file explorer
+- `<leader>gg` - LazyGit
+- `<leader>ca` - Code actions
+- `<leader>cr` - Rename symbol
+
+## Interactive Setup Wizard
+
+For new machines, use the interactive setup wizard:
+
+```bash
+./bin/dotfiles setup
+```
+
+**Features:**
+- System detection (macOS/Linux, Intel/Apple Silicon)
+- Prerequisite validation
+- Package installation with multiple presets (essential, development, full)
+- Shell configuration (Prezto, default shell)
+- Dotfile linking with backup
+- macOS system defaults
+- SSH key generation
+- Visual progress indicators and colored output

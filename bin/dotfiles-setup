@@ -1,0 +1,710 @@
+#!/usr/bin/env bash
+#
+# dotfiles-setup - Interactive dotfiles installer
+#
+# A modern, user-friendly installation wizard for setting up
+# your development environment with visual feedback and menus.
+#
+
+set -euo pipefail
+
+#############################################################################
+# Configuration
+#############################################################################
+
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+LOG_FILE="/tmp/dotfiles-setup.log"
+
+# Detect system
+IS_MACOS=false
+IS_LINUX=false
+IS_APPLE_SILICON=false
+
+[[ "$(uname)" == "Darwin" ]] && IS_MACOS=true
+[[ "$(uname)" == "Linux" ]] && IS_LINUX=true
+$IS_MACOS && [[ "$(uname -m)" == "arm64" ]] && IS_APPLE_SILICON=true
+
+#############################################################################
+# Colors & Styling
+#############################################################################
+
+# Check for color support
+if [[ -t 1 ]] && [[ -n "${TERM:-}" ]] && command -v tput &>/dev/null; then
+  BOLD=$(tput bold 2>/dev/null || echo '')
+  DIM=$(tput dim 2>/dev/null || echo '')
+  UNDERLINE=$(tput smul 2>/dev/null || echo '')
+  RESET=$(tput sgr0 2>/dev/null || echo '')
+  RED=$(tput setaf 1 2>/dev/null || echo '')
+  GREEN=$(tput setaf 2 2>/dev/null || echo '')
+  YELLOW=$(tput setaf 3 2>/dev/null || echo '')
+  BLUE=$(tput setaf 4 2>/dev/null || echo '')
+  MAGENTA=$(tput setaf 5 2>/dev/null || echo '')
+  CYAN=$(tput setaf 6 2>/dev/null || echo '')
+  WHITE=$(tput setaf 7 2>/dev/null || echo '')
+else
+  BOLD='' DIM='' UNDERLINE='' RESET=''
+  RED='' GREEN='' YELLOW='' BLUE='' MAGENTA='' CYAN='' WHITE=''
+fi
+
+# Unicode symbols
+CHECKMARK="${GREEN}✓${RESET}"
+CROSSMARK="${RED}✗${RESET}"
+ARROW="${CYAN}→${RESET}"
+BULLET="${BLUE}•${RESET}"
+SPINNER_CHARS='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+
+#############################################################################
+# Logging & Output
+#############################################################################
+
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+}
+
+print_header() {
+  clear
+  echo ""
+  echo "${BLUE}${BOLD}"
+  cat << 'EOF'
+    ██████╗  ██████╗ ████████╗███████╗██╗██╗     ███████╗███████╗
+    ██╔══██╗██╔═══██╗╚══██╔══╝██╔════╝██║██║     ██╔════╝██╔════╝
+    ██║  ██║██║   ██║   ██║   █████╗  ██║██║     █████╗  ███████╗
+    ██║  ██║██║   ██║   ██║   ██╔══╝  ██║██║     ██╔══╝  ╚════██║
+    ██████╔╝╚██████╔╝   ██║   ██║     ██║███████╗███████╗███████║
+    ╚═════╝  ╚═════╝    ╚═╝   ╚═╝     ╚═╝╚══════╝╚══════╝╚══════╝
+EOF
+  echo "${RESET}"
+  echo "    ${DIM}Interactive Setup Wizard${RESET}"
+  echo ""
+}
+
+print_section() {
+  echo ""
+  echo "${CYAN}${BOLD}━━━ $1 ━━━${RESET}"
+  echo ""
+}
+
+print_step() {
+  echo "  ${ARROW} $1"
+}
+
+print_success() {
+  echo "  ${CHECKMARK} $1"
+}
+
+print_error() {
+  echo "  ${CROSSMARK} ${RED}$1${RESET}"
+  log "ERROR: $1"
+}
+
+print_warning() {
+  echo "  ${YELLOW}⚠${RESET} $1"
+}
+
+print_info() {
+  echo "  ${BULLET} ${DIM}$1${RESET}"
+}
+
+#############################################################################
+# Spinner & Progress
+#############################################################################
+
+spinner_pid=""
+
+start_spinner() {
+  local msg="$1"
+  printf "  ${CYAN}⠋${RESET} %s" "$msg"
+  (
+    local i=0
+    while true; do
+      printf "\r  ${CYAN}${SPINNER_CHARS:$i:1}${RESET} %s" "$msg"
+      i=$(( (i + 1) % ${#SPINNER_CHARS} ))
+      sleep 0.1
+    done
+  ) &
+  spinner_pid=$!
+}
+
+stop_spinner() {
+  local success=${1:-true}
+  local msg="${2:-}"
+
+  if [[ -n "$spinner_pid" ]]; then
+    kill "$spinner_pid" 2>/dev/null || true
+    wait "$spinner_pid" 2>/dev/null || true
+    spinner_pid=""
+  fi
+
+  if $success; then
+    printf "\r  ${CHECKMARK} %s\n" "$msg"
+  else
+    printf "\r  ${CROSSMARK} %s\n" "$msg"
+  fi
+}
+
+progress_bar() {
+  local current=$1
+  local total=$2
+  local width=40
+  local percent=$((current * 100 / total))
+  local filled=$((current * width / total))
+  local empty=$((width - filled))
+
+  printf "\r  ["
+  printf "%${filled}s" | tr ' ' '█'
+  printf "%${empty}s" | tr ' ' '░'
+  printf "] %3d%%" "$percent"
+}
+
+#############################################################################
+# User Input
+#############################################################################
+
+ask_yes_no() {
+  local prompt="$1"
+  local default="${2:-n}"
+  local yn_prompt
+
+  if [[ "$default" == "y" ]]; then
+    yn_prompt="${GREEN}Y${RESET}/n"
+  else
+    yn_prompt="y/${GREEN}N${RESET}"
+  fi
+
+  while true; do
+    printf "  ${ARROW} %s [%s]: " "$prompt" "$yn_prompt"
+    read -r response
+    response=${response:-$default}
+
+    case "$response" in
+      [Yy]|[Yy][Ee][Ss]) return 0 ;;
+      [Nn]|[Nn][Oo]) return 1 ;;
+      *) print_warning "Please answer yes or no" ;;
+    esac
+  done
+}
+
+ask_input() {
+  local prompt="$1"
+  local default="${2:-}"
+  local value
+
+  if [[ -n "$default" ]]; then
+    printf "  ${ARROW} %s [${DIM}%s${RESET}]: " "$prompt" "$default"
+  else
+    printf "  ${ARROW} %s: " "$prompt"
+  fi
+
+  read -r value
+  echo "${value:-$default}"
+}
+
+ask_menu() {
+  local prompt="$1"
+  shift
+  local options=("$@")
+  local selected=0
+  local key
+
+  echo ""
+  echo "  ${CYAN}${prompt}${RESET}"
+  echo ""
+
+  # Print options
+  for i in "${!options[@]}"; do
+    if [[ $i -eq $selected ]]; then
+      echo "  ${GREEN}▸${RESET} ${options[$i]}"
+    else
+      echo "    ${options[$i]}"
+    fi
+  done
+
+  echo ""
+  echo "  ${DIM}Use arrow keys to select, Enter to confirm${RESET}"
+
+  # Read selection (simplified - just use numbers for compatibility)
+  while true; do
+    printf "\r  Selection (1-%d): " "${#options[@]}"
+    read -r key
+    if [[ "$key" =~ ^[0-9]+$ ]] && [[ "$key" -ge 1 ]] && [[ "$key" -le "${#options[@]}" ]]; then
+      selected=$((key - 1))
+      break
+    fi
+  done
+
+  echo "$selected"
+}
+
+ask_checklist() {
+  local prompt="$1"
+  shift
+  local options=("$@")
+  local selected=()
+
+  # Initialize all as selected
+  for i in "${!options[@]}"; do
+    selected[$i]=1
+  done
+
+  echo ""
+  echo "  ${CYAN}${prompt}${RESET}"
+  echo "  ${DIM}Enter numbers to toggle, 'a' for all, 'n' for none, Enter when done${RESET}"
+  echo ""
+
+  while true; do
+    # Print options
+    for i in "${!options[@]}"; do
+      local num=$((i + 1))
+      if [[ ${selected[$i]} -eq 1 ]]; then
+        echo "  ${GREEN}[✓]${RESET} ${num}. ${options[$i]}"
+      else
+        echo "  ${DIM}[ ]${RESET} ${num}. ${options[$i]}"
+      fi
+    done
+
+    echo ""
+    printf "  Toggle: "
+    read -r input
+
+    case "$input" in
+      "")
+        # Done selecting
+        break
+        ;;
+      a|A)
+        for i in "${!options[@]}"; do selected[$i]=1; done
+        ;;
+      n|N)
+        for i in "${!options[@]}"; do selected[$i]=0; done
+        ;;
+      *)
+        if [[ "$input" =~ ^[0-9]+$ ]] && [[ "$input" -ge 1 ]] && [[ "$input" -le "${#options[@]}" ]]; then
+          local idx=$((input - 1))
+          selected[$idx]=$((1 - selected[$idx]))
+        fi
+        ;;
+    esac
+
+    # Clear and reprint
+    for _ in "${options[@]}"; do
+      printf "\033[A\033[2K"
+    done
+    printf "\033[A\033[2K\033[A\033[2K"
+  done
+
+  # Return selected indices
+  local result=()
+  for i in "${!options[@]}"; do
+    if [[ ${selected[$i]} -eq 1 ]]; then
+      result+=("$i")
+    fi
+  done
+  echo "${result[*]}"
+}
+
+#############################################################################
+# System Detection & Validation
+#############################################################################
+
+detect_system() {
+  print_section "System Detection"
+
+  print_info "Detecting your system..."
+
+  if $IS_MACOS; then
+    print_success "macOS detected ($(sw_vers -productVersion))"
+    if $IS_APPLE_SILICON; then
+      print_success "Apple Silicon (M-series) detected"
+    else
+      print_success "Intel processor detected"
+    fi
+  elif $IS_LINUX; then
+    if [[ -f /etc/os-release ]]; then
+      local distro=$(grep "^PRETTY_NAME=" /etc/os-release | cut -d'"' -f2)
+      print_success "Linux detected: $distro"
+    else
+      print_success "Linux detected"
+    fi
+  else
+    print_error "Unsupported operating system"
+    exit 1
+  fi
+
+  echo ""
+}
+
+check_prerequisites() {
+  print_section "Checking Prerequisites"
+
+  local missing=()
+
+  # Check for git
+  if command -v git &>/dev/null; then
+    print_success "Git installed ($(git --version | cut -d' ' -f3))"
+  else
+    print_error "Git not found"
+    missing+=("git")
+  fi
+
+  # Check for curl
+  if command -v curl &>/dev/null; then
+    print_success "curl installed"
+  else
+    print_error "curl not found"
+    missing+=("curl")
+  fi
+
+  # Check for zsh
+  if command -v zsh &>/dev/null; then
+    print_success "Zsh installed ($(zsh --version | cut -d' ' -f2))"
+  else
+    print_warning "Zsh not found (will be installed)"
+  fi
+
+  # macOS specific
+  if $IS_MACOS; then
+    if xcode-select -p &>/dev/null; then
+      print_success "Xcode Command Line Tools installed"
+    else
+      print_warning "Xcode Command Line Tools not found (will be installed)"
+    fi
+  fi
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    print_error "Missing required tools: ${missing[*]}"
+    exit 1
+  fi
+
+  echo ""
+}
+
+#############################################################################
+# Installation Functions
+#############################################################################
+
+install_homebrew() {
+  print_section "Homebrew Installation"
+
+  if command -v brew &>/dev/null; then
+    print_success "Homebrew already installed"
+    if ask_yes_no "Update Homebrew?"; then
+      start_spinner "Updating Homebrew..."
+      brew update &>> "$LOG_FILE"
+      stop_spinner true "Homebrew updated"
+    fi
+  else
+    print_step "Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+    # Source brew for this session
+    if $IS_APPLE_SILICON; then
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+    else
+      eval "$(/usr/local/bin/brew shellenv)"
+    fi
+
+    print_success "Homebrew installed"
+  fi
+}
+
+install_packages() {
+  print_section "Package Installation"
+
+  if [[ ! -f "$ROOT_DIR/Brewfile" ]]; then
+    print_warning "Brewfile not found, skipping package installation"
+    return
+  fi
+
+  local options=(
+    "Essential tools only (git, zsh, starship, fnm)"
+    "Development setup (adds languages, editors, databases)"
+    "Full installation (all packages in Brewfile)"
+    "Custom selection"
+    "Skip package installation"
+  )
+
+  local choice=$(ask_menu "Select installation type:" "${options[@]}")
+
+  case $choice in
+    0)
+      # Essential only
+      start_spinner "Installing essential packages..."
+      brew install git zsh starship fnm stow &>> "$LOG_FILE"
+      stop_spinner true "Essential packages installed"
+      ;;
+    1)
+      # Development setup
+      start_spinner "Installing development packages..."
+      brew install git zsh starship fnm stow vim neovim python node go rust \
+                   ripgrep fd bat eza fzf zoxide &>> "$LOG_FILE"
+      stop_spinner true "Development packages installed"
+      ;;
+    2)
+      # Full installation
+      start_spinner "Installing all packages from Brewfile..."
+      brew bundle install --file="$ROOT_DIR/Brewfile" &>> "$LOG_FILE"
+      stop_spinner true "All packages installed"
+      ;;
+    3)
+      # Custom - show categories
+      print_info "Custom selection coming soon. Running full install."
+      start_spinner "Installing packages..."
+      brew bundle install --file="$ROOT_DIR/Brewfile" &>> "$LOG_FILE"
+      stop_spinner true "Packages installed"
+      ;;
+    4)
+      print_info "Skipping package installation"
+      ;;
+  esac
+}
+
+setup_shell() {
+  print_section "Shell Configuration"
+
+  # Install Prezto if not present
+  if [[ ! -d "$HOME/.zprezto" ]]; then
+    if ask_yes_no "Install Prezto (Zsh framework)?"; then
+      start_spinner "Installing Prezto..."
+      git clone --recursive https://github.com/sorin-ionescu/prezto.git "$HOME/.zprezto" &>> "$LOG_FILE"
+      stop_spinner true "Prezto installed"
+    fi
+  else
+    print_success "Prezto already installed"
+  fi
+
+  # Change default shell
+  local current_shell=$(basename "$SHELL")
+  if [[ "$current_shell" != "zsh" ]]; then
+    if ask_yes_no "Change default shell to Zsh?"; then
+      local zsh_path=$(which zsh)
+      if ! grep -q "$zsh_path" /etc/shells; then
+        echo "$zsh_path" | sudo tee -a /etc/shells &>> "$LOG_FILE"
+      fi
+      chsh -s "$zsh_path"
+      print_success "Default shell changed to Zsh"
+    fi
+  else
+    print_success "Zsh is already your default shell"
+  fi
+}
+
+link_dotfiles() {
+  print_section "Dotfiles Linking"
+
+  local backup_dir="$HOME/.dotfiles_backup/$(date +%Y.%m.%d.%H.%M.%S)"
+
+  print_info "Existing dotfiles will be backed up to: $backup_dir"
+
+  if ! ask_yes_no "Link dotfiles to home directory?"; then
+    print_info "Skipping dotfile linking"
+    return
+  fi
+
+  mkdir -p "$backup_dir"
+
+  # Backup existing files
+  start_spinner "Backing up existing dotfiles..."
+  pushd "$ROOT_DIR/runcom" &>/dev/null
+  for file in .*; do
+    [[ "$file" == "." || "$file" == ".." || "$file" == ".DS_Store" ]] && continue
+    if [[ -e "$HOME/$file" ]] && [[ ! -L "$HOME/$file" ]]; then
+      mv "$HOME/$file" "$backup_dir/" 2>/dev/null || true
+    fi
+  done
+  popd &>/dev/null
+  stop_spinner true "Backup complete"
+
+  # Link dotfiles using stow
+  start_spinner "Linking dotfiles..."
+  pushd "$ROOT_DIR" &>/dev/null
+
+  [[ -d "$HOME/.config" ]] || mkdir -p "$HOME/.config"
+  stow -t "$HOME" runcom 2>> "$LOG_FILE"
+  stow -t "$HOME/.config" config 2>> "$LOG_FILE"
+
+  popd &>/dev/null
+  stop_spinner true "Dotfiles linked"
+}
+
+configure_macos() {
+  if ! $IS_MACOS; then
+    return
+  fi
+
+  print_section "macOS Configuration"
+
+  if ! ask_yes_no "Apply macOS system defaults?"; then
+    print_info "Skipping macOS configuration"
+    return
+  fi
+
+  start_spinner "Applying system defaults..."
+  for file in "$ROOT_DIR/macos"/defaults*.sh; do
+    [[ -f "$file" ]] && source "$file" &>> "$LOG_FILE"
+  done
+  stop_spinner true "System defaults applied"
+
+  if ask_yes_no "Configure Dock?"; then
+    start_spinner "Configuring Dock..."
+    [[ -f "$ROOT_DIR/macos/dock.sh" ]] && source "$ROOT_DIR/macos/dock.sh" &>> "$LOG_FILE"
+    stop_spinner true "Dock configured"
+  fi
+}
+
+setup_node() {
+  print_section "Node.js Setup"
+
+  if command -v fnm &>/dev/null; then
+    print_success "fnm (Fast Node Manager) found"
+
+    if ask_yes_no "Install Node.js LTS?"; then
+      start_spinner "Installing Node.js LTS..."
+      eval "$(fnm env)"
+      fnm install --lts &>> "$LOG_FILE"
+      fnm default lts-latest &>> "$LOG_FILE"
+      stop_spinner true "Node.js LTS installed"
+    fi
+  else
+    print_warning "fnm not found, skipping Node.js setup"
+  fi
+}
+
+setup_vim() {
+  print_section "Editor Setup"
+
+  if [[ -f "$HOME/.vimrc" ]] && [[ -d "$HOME/.vim/bundle/Vundle.vim" ]]; then
+    if ask_yes_no "Install Vim plugins?"; then
+      start_spinner "Installing Vim plugins..."
+      vim +PluginInstall +qall &>> "$LOG_FILE" 2>&1
+      stop_spinner true "Vim plugins installed"
+    fi
+  fi
+
+  if command -v nvim &>/dev/null && [[ -d "$HOME/.config/nvim" ]]; then
+    if ask_yes_no "Setup Neovim plugins (lazy.nvim)?"; then
+      start_spinner "Installing Neovim plugins..."
+      nvim --headless "+Lazy! sync" +qa &>> "$LOG_FILE" 2>&1 || true
+      stop_spinner true "Neovim plugins installed"
+    fi
+  fi
+}
+
+generate_ssh_key() {
+  print_section "SSH Key Setup"
+
+  if [[ -f "$HOME/.ssh/id_ed25519" ]]; then
+    print_success "SSH key already exists"
+    return
+  fi
+
+  if ! ask_yes_no "Generate new SSH key?"; then
+    print_info "Skipping SSH key generation"
+    return
+  fi
+
+  local email=$(ask_input "Enter email for SSH key")
+
+  start_spinner "Generating SSH key..."
+  ssh-keygen -t ed25519 -C "$email" -f "$HOME/.ssh/id_ed25519" -N "" &>> "$LOG_FILE"
+  stop_spinner true "SSH key generated"
+
+  # Start ssh-agent and add key
+  eval "$(ssh-agent -s)" &>> "$LOG_FILE"
+  ssh-add "$HOME/.ssh/id_ed25519" &>> "$LOG_FILE" 2>&1 || true
+
+  print_info "Your public key:"
+  echo ""
+  cat "$HOME/.ssh/id_ed25519.pub"
+  echo ""
+  print_info "Add this key to GitHub: https://github.com/settings/keys"
+}
+
+#############################################################################
+# Summary & Finish
+#############################################################################
+
+print_summary() {
+  print_section "Setup Complete!"
+
+  echo "  ${CHECKMARK} Dotfiles installed to: ${CYAN}$DOTFILES_DIR${RESET}"
+  echo "  ${CHECKMARK} Configuration linked to: ${CYAN}$HOME${RESET}"
+  echo "  ${CHECKMARK} Log file: ${CYAN}$LOG_FILE${RESET}"
+  echo ""
+
+  print_info "Next steps:"
+  echo "    1. Restart your terminal or run: ${CYAN}exec \$SHELL${RESET}"
+  echo "    2. Run ${CYAN}dotfiles doctor${RESET} to verify setup"
+  echo "    3. Run ${CYAN}dotfiles cheatsheet${RESET} to see available commands"
+  echo ""
+
+  if [[ -f "$HOME/.ssh/id_ed25519.pub" ]]; then
+    print_info "Don't forget to add your SSH key to GitHub!"
+  fi
+
+  echo ""
+  echo "  ${GREEN}${BOLD}Happy coding! 🎉${RESET}"
+  echo ""
+}
+
+#############################################################################
+# Main
+#############################################################################
+
+main() {
+  # Initialize log file
+  echo "=== Dotfiles Setup $(date) ===" > "$LOG_FILE"
+
+  print_header
+
+  # Welcome message
+  echo "  Welcome to the dotfiles interactive setup wizard!"
+  echo "  This will guide you through setting up your development environment."
+  echo ""
+
+  if ! ask_yes_no "Ready to begin?" "y"; then
+    echo ""
+    print_info "Setup cancelled. Run again when you're ready!"
+    exit 0
+  fi
+
+  # Run setup steps
+  detect_system
+  check_prerequisites
+
+  if $IS_MACOS; then
+    install_homebrew
+  fi
+
+  install_packages
+  setup_shell
+  link_dotfiles
+
+  if $IS_MACOS; then
+    configure_macos
+  fi
+
+  setup_node
+  setup_vim
+  generate_ssh_key
+
+  print_summary
+}
+
+# Handle arguments
+case "${1:-}" in
+  -h|--help)
+    echo "Usage: dotfiles-setup"
+    echo ""
+    echo "Interactive setup wizard for dotfiles installation."
+    echo ""
+    echo "Options:"
+    echo "  -h, --help    Show this help message"
+    echo ""
+    exit 0
+    ;;
+  *)
+    main
+    ;;
+esac

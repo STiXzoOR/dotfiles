@@ -1,0 +1,385 @@
+#!/usr/bin/env zsh
+#
+# dotfiles-cheatsheet - Display aliases and functions cheatsheet
+#
+# Usage: dotfiles-cheatsheet [--aliases] [--functions] [--search TERM] [--markdown]
+#
+# Options:
+#   --aliases, -a      Show only aliases
+#   --functions, -f    Show only functions
+#   --search, -s TERM  Search for specific command
+#   --markdown, -m     Output in markdown format
+#
+
+set -o pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+DIM='\033[2m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+SHOW_ALIASES=true
+SHOW_FUNCTIONS=true
+SEARCH_TERM=""
+MARKDOWN=false
+
+for arg in "$@"; do
+  case $arg in
+    --aliases|-a) SHOW_ALIASES=true; SHOW_FUNCTIONS=false ;;
+    --functions|-f) SHOW_FUNCTIONS=true; SHOW_ALIASES=false ;;
+    --markdown|-m) MARKDOWN=true ;;
+    --search|-s)
+      shift
+      SEARCH_TERM="$1"
+      ;;
+    --help|-h)
+      echo "Usage: dotfiles-cheatsheet [--aliases] [--functions] [--search TERM] [--markdown]"
+      echo ""
+      echo "Options:"
+      echo "  --aliases, -a      Show only aliases"
+      echo "  --functions, -f    Show only functions"
+      echo "  --search, -s TERM  Search for specific command"
+      echo "  --markdown, -m     Output in markdown format"
+      exit 0
+      ;;
+  esac
+  shift 2>/dev/null
+done
+
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+
+#############################################################################
+# Parsing Functions
+#############################################################################
+
+# Extract aliases with their comments
+parse_aliases() {
+  local file="$1"
+  local category="${2:-General}"
+  local current_comment=""
+
+  while IFS= read -r line; do
+    # Capture comments that precede aliases
+    if [[ "$line" =~ ^[[:space:]]*#[[:space:]]*(.*) ]]; then
+      # Skip shebang and file header comments
+      [[ "$line" =~ ^#! ]] && continue
+      [[ "$line" =~ ^#-+ ]] && continue
+      current_comment="${match[1]}"
+      continue
+    fi
+
+    # Match alias definitions
+    if [[ "$line" =~ ^[[:space:]]*alias[[:space:]]+([^=]+)=[\'\""]?(.*)[\'\""']?[[:space:]]*$ ]]; then
+      local name="${match[1]}"
+      local value="${match[2]}"
+      # Clean up the value
+      value="${value%\"}"
+      value="${value%\'}"
+      value="${value#\"}"
+      value="${value#\'}"
+
+      # Apply search filter
+      if [[ -n "$SEARCH_TERM" ]]; then
+        if [[ ! "$name" =~ "$SEARCH_TERM" ]] && [[ ! "$value" =~ "$SEARCH_TERM" ]] && [[ ! "$current_comment" =~ "$SEARCH_TERM" ]]; then
+          current_comment=""
+          continue
+        fi
+      fi
+
+      echo "$category|$name|$value|$current_comment"
+      current_comment=""
+    else
+      # Reset comment if line is not an alias
+      [[ -n "$line" && ! "$line" =~ ^[[:space:]]*$ ]] && current_comment=""
+    fi
+  done < "$file"
+}
+
+# Extract functions with their comments
+parse_functions() {
+  local file="$1"
+  local category="${2:-General}"
+  local current_comment=""
+  local in_function=false
+  local func_name=""
+  local func_body=""
+  local brace_count=0
+
+  while IFS= read -r line; do
+    # Capture comments that precede functions
+    if [[ "$line" =~ ^[[:space:]]*#[[:space:]]*(.*) ]] && ! $in_function; then
+      [[ "$line" =~ ^#! ]] && continue
+      [[ "$line" =~ ^#-+ ]] && continue
+      current_comment="${match[1]}"
+      continue
+    fi
+
+    # Match function definitions: func_name() { or function func_name {
+    if ! $in_function; then
+      if [[ "$line" =~ ^[[:space:]]*([a-zA-Z_][a-zA-Z0-9_-]*)\(\)[[:space:]]*\{?[[:space:]]*$ ]] || \
+         [[ "$line" =~ ^[[:space:]]*function[[:space:]]+([a-zA-Z_][a-zA-Z0-9_-]*)[[:space:]]*\{?[[:space:]]*$ ]]; then
+        func_name="${match[1]}"
+        in_function=true
+        brace_count=1
+        func_body=""
+        [[ "$line" =~ \{ ]] || brace_count=0
+        continue
+      fi
+    fi
+
+    # Track function body
+    if $in_function; then
+      # Count braces
+      local open_braces="${line//[^\{]/}"
+      local close_braces="${line//[^\}]/}"
+      brace_count=$((brace_count + ${#open_braces} - ${#close_braces}))
+
+      # Accumulate function body (first few lines for description)
+      if [[ ${#func_body} -lt 200 ]]; then
+        func_body+="$line"$'\n'
+      fi
+
+      # Function ended
+      if [[ $brace_count -le 0 ]]; then
+        in_function=false
+
+        # Skip internal/private functions (starting with _)
+        if [[ "$func_name" =~ ^_ ]]; then
+          current_comment=""
+          continue
+        fi
+
+        # Apply search filter
+        if [[ -n "$SEARCH_TERM" ]]; then
+          if [[ ! "$func_name" =~ "$SEARCH_TERM" ]] && [[ ! "$current_comment" =~ "$SEARCH_TERM" ]]; then
+            current_comment=""
+            continue
+          fi
+        fi
+
+        echo "$category|$func_name|$current_comment"
+        current_comment=""
+      fi
+    else
+      # Reset comment if line is not a function start
+      [[ -n "$line" && ! "$line" =~ ^[[:space:]]*$ ]] && current_comment=""
+    fi
+  done < "$file"
+}
+
+#############################################################################
+# Display Functions
+#############################################################################
+
+print_header() {
+  local title="$1"
+  if $MARKDOWN; then
+    echo ""
+    echo "## $title"
+    echo ""
+  else
+    echo ""
+    echo -e "${BLUE}━━━ $title ━━━${NC}"
+    echo ""
+  fi
+}
+
+print_subheader() {
+  local title="$1"
+  if $MARKDOWN; then
+    echo ""
+    echo "### $title"
+    echo ""
+  else
+    echo -e "\n${CYAN}▸ $title${NC}\n"
+  fi
+}
+
+print_alias() {
+  local name="$1"
+  local value="$2"
+  local comment="$3"
+
+  if $MARKDOWN; then
+    if [[ -n "$comment" ]]; then
+      echo "- \`$name\` → \`$value\` - $comment"
+    else
+      echo "- \`$name\` → \`$value\`"
+    fi
+  else
+    if [[ -n "$comment" ]]; then
+      printf "  ${GREEN}%-20s${NC} ${DIM}→${NC} %-40s ${DIM}# %s${NC}\n" "$name" "$value" "$comment"
+    else
+      printf "  ${GREEN}%-20s${NC} ${DIM}→${NC} %s\n" "$name" "$value"
+    fi
+  fi
+}
+
+print_function() {
+  local name="$1"
+  local description="$2"
+
+  if $MARKDOWN; then
+    if [[ -n "$description" ]]; then
+      echo "- \`$name\` - $description"
+    else
+      echo "- \`$name\`"
+    fi
+  else
+    if [[ -n "$description" ]]; then
+      printf "  ${MAGENTA}%-25s${NC} ${DIM}%s${NC}\n" "$name" "$description"
+    else
+      printf "  ${MAGENTA}%s${NC}\n" "$name"
+    fi
+  fi
+}
+
+#############################################################################
+# Main
+#############################################################################
+
+main() {
+  if ! $MARKDOWN; then
+    echo ""
+    echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║     Dotfiles Cheatsheet                ║${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
+  else
+    echo "# Dotfiles Cheatsheet"
+  fi
+
+  if [[ -n "$SEARCH_TERM" ]]; then
+    if $MARKDOWN; then
+      echo ""
+      echo "_Searching for: $SEARCH_TERM_"
+    else
+      echo -e "\n${DIM}Searching for: ${YELLOW}$SEARCH_TERM${NC}\n"
+    fi
+  fi
+
+  #---------------------------------------------------------------------------
+  # Aliases
+  #---------------------------------------------------------------------------
+  if $SHOW_ALIASES; then
+    print_header "Aliases"
+
+    # Navigation & Files
+    if [[ -f "$DOTFILES_DIR/system/.alias" ]]; then
+      local aliases_data=$(parse_aliases "$DOTFILES_DIR/system/.alias" "General")
+
+      if [[ -n "$aliases_data" ]]; then
+        # Group by common patterns
+        local nav_aliases=$(echo "$aliases_data" | grep -E '\|cd|\|ls|\|ll|\|la|\|\.\.' || true)
+        local git_aliases=$(echo "$aliases_data" | grep -E '\|g[a-z]|\|git' || true)
+        local editor_aliases=$(echo "$aliases_data" | grep -E '\|vim|\|vi|\|e\||\|edit' || true)
+        local util_aliases=$(echo "$aliases_data" | grep -vE '\|cd|\|ls|\|ll|\|la|\|\.\.|\|g[a-z]|\|git|\|vim|\|vi|\|e\||\|edit' || true)
+
+        if [[ -n "$nav_aliases" ]]; then
+          print_subheader "Navigation & Files"
+          echo "$nav_aliases" | while IFS='|' read -r cat name value comment; do
+            print_alias "$name" "$value" "$comment"
+          done
+        fi
+
+        if [[ -n "$git_aliases" ]]; then
+          print_subheader "Git"
+          echo "$git_aliases" | while IFS='|' read -r cat name value comment; do
+            print_alias "$name" "$value" "$comment"
+          done
+        fi
+
+        if [[ -n "$editor_aliases" ]]; then
+          print_subheader "Editors"
+          echo "$editor_aliases" | while IFS='|' read -r cat name value comment; do
+            print_alias "$name" "$value" "$comment"
+          done
+        fi
+
+        if [[ -n "$util_aliases" ]]; then
+          print_subheader "Utilities"
+          echo "$util_aliases" | while IFS='|' read -r cat name value comment; do
+            print_alias "$name" "$value" "$comment"
+          done
+        fi
+      fi
+    fi
+  fi
+
+  #---------------------------------------------------------------------------
+  # Functions
+  #---------------------------------------------------------------------------
+  if $SHOW_FUNCTIONS; then
+    print_header "Functions"
+
+    local function_files=(
+      "$DOTFILES_DIR/system/.function:General"
+      "$DOTFILES_DIR/system/.function_fs:Filesystem"
+      "$DOTFILES_DIR/system/.function_network:Network"
+      "$DOTFILES_DIR/system/.function_text:Text Processing"
+      "$DOTFILES_DIR/system/.function_macos:macOS"
+      "$DOTFILES_DIR/system/.function_fun:Fun"
+    )
+
+    for entry in "${function_files[@]}"; do
+      local file="${entry%%:*}"
+      local category="${entry##*:}"
+
+      if [[ -f "$file" ]]; then
+        local funcs_data=$(parse_functions "$file" "$category")
+
+        if [[ -n "$funcs_data" ]]; then
+          print_subheader "$category"
+          echo "$funcs_data" | while IFS='|' read -r cat name desc; do
+            print_function "$name" "$desc"
+          done
+        fi
+      fi
+    done
+  fi
+
+  #---------------------------------------------------------------------------
+  # Quick Reference
+  #---------------------------------------------------------------------------
+  if ! $MARKDOWN && [[ -z "$SEARCH_TERM" ]]; then
+    echo ""
+    echo -e "${BLUE}━━━ Quick Reference ━━━${NC}"
+    echo ""
+    echo -e "  ${BOLD}Shell:${NC}"
+    echo -e "    ${GREEN}reload${NC}        Reload shell configuration"
+    echo -e "    ${GREEN}path${NC}          Show PATH entries (one per line)"
+    echo -e "    ${GREEN}h${NC}             Search history"
+    echo ""
+    echo -e "  ${BOLD}Navigation:${NC}"
+    echo -e "    ${GREEN}..${NC}            Go up one directory"
+    echo -e "    ${GREEN}...${NC}           Go up two directories"
+    echo -e "    ${GREEN}z <dir>${NC}       Jump to directory (zoxide)"
+    echo ""
+    echo -e "  ${BOLD}Files:${NC}"
+    echo -e "    ${GREEN}ll${NC}            Long list with details"
+    echo -e "    ${GREEN}la${NC}            List all including hidden"
+    echo -e "    ${GREEN}lt${NC}            List sorted by time"
+    echo ""
+    echo -e "  ${BOLD}Git:${NC}"
+    echo -e "    ${GREEN}gs${NC}            Git status"
+    echo -e "    ${GREEN}ga${NC}            Git add"
+    echo -e "    ${GREEN}gc${NC}            Git commit"
+    echo -e "    ${GREEN}gp${NC}            Git push"
+    echo -e "    ${GREEN}gl${NC}            Git pull"
+    echo ""
+    echo -e "  ${BOLD}Dotfiles:${NC}"
+    echo -e "    ${GREEN}dotfiles help${NC}       Show all commands"
+    echo -e "    ${GREEN}dotfiles doctor${NC}     Check system health"
+    echo -e "    ${GREEN}dotfiles test${NC}       Run test suite"
+    echo -e "    ${GREEN}dotfiles profiler${NC}   Profile shell startup"
+  fi
+
+  echo ""
+}
+
+main "$@"
