@@ -17,14 +17,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="/tmp/dotfiles-setup.log"
 
-# Detect system
-IS_MACOS=false
-IS_LINUX=false
-IS_APPLE_SILICON=false
+# Require macOS
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "Error: This dotfiles setup is designed for macOS only."
+  exit 1
+fi
 
-[[ "$(uname)" == "Darwin" ]] && IS_MACOS=true
-[[ "$(uname)" == "Linux" ]] && IS_LINUX=true
-$IS_MACOS && [[ "$(uname -m)" == "arm64" ]] && IS_APPLE_SILICON=true
+IS_APPLE_SILICON=false
+[[ "$(uname -m)" == "arm64" ]] && IS_APPLE_SILICON=true
 
 #############################################################################
 # Colors & Styling
@@ -313,23 +313,11 @@ detect_system() {
 
   print_info "Detecting your system..."
 
-  if $IS_MACOS; then
-    print_success "macOS detected ($(sw_vers -productVersion))"
-    if $IS_APPLE_SILICON; then
-      print_success "Apple Silicon (M-series) detected"
-    else
-      print_success "Intel processor detected"
-    fi
-  elif $IS_LINUX; then
-    if [[ -f /etc/os-release ]]; then
-      local distro=$(grep "^PRETTY_NAME=" /etc/os-release | cut -d'"' -f2)
-      print_success "Linux detected: $distro"
-    else
-      print_success "Linux detected"
-    fi
+  print_success "macOS detected ($(sw_vers -productVersion))"
+  if $IS_APPLE_SILICON; then
+    print_success "Apple Silicon (M-series) detected"
   else
-    print_error "Unsupported operating system"
-    exit 1
+    print_success "Intel processor detected"
   fi
 
   echo ""
@@ -363,13 +351,11 @@ check_prerequisites() {
     print_warning "Zsh not found (will be installed)"
   fi
 
-  # macOS specific
-  if $IS_MACOS; then
-    if xcode-select -p &>/dev/null; then
-      print_success "Xcode Command Line Tools installed"
-    else
-      print_warning "Xcode Command Line Tools not found (will be installed)"
-    fi
+  # Check Xcode Command Line Tools
+  if xcode-select -p &>/dev/null; then
+    print_success "Xcode Command Line Tools installed"
+  else
+    print_warning "Xcode Command Line Tools not found (will be installed)"
   fi
 
   if [[ ${#missing[@]} -gt 0 ]]; then
@@ -529,10 +515,6 @@ link_dotfiles() {
 }
 
 configure_macos() {
-  if ! $IS_MACOS; then
-    return
-  fi
-
   print_section "macOS Configuration"
 
   if ! ask_yes_no "Apply macOS system defaults?"; then
@@ -672,23 +654,14 @@ main() {
   # Run setup steps
   detect_system
   check_prerequisites
-
-  if $IS_MACOS; then
-    install_homebrew
-  fi
-
+  install_homebrew
   install_packages
   setup_shell
   link_dotfiles
-
-  if $IS_MACOS; then
-    configure_macos
-  fi
-
+  configure_macos
   setup_node
   setup_vim
   generate_ssh_key
-
   print_summary
 }
 

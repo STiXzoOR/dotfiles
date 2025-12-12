@@ -442,11 +442,11 @@ For new machines, use the interactive setup wizard:
 ```
 
 **Features:**
-- System detection (macOS/Linux, Intel/Apple Silicon)
-- Prerequisite validation
+- System detection (Intel vs Apple Silicon)
+- Prerequisite validation (Xcode CLI tools, git, curl, zsh)
 - Package installation with multiple presets (essential, development, full)
 - Shell configuration (Prezto, default shell)
 - Dotfile linking with backup
-- macOS system defaults
+- macOS system defaults and Dock configuration
 - SSH key generation
 - Visual progress indicators and colored output
