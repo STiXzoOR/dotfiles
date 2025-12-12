@@ -25,7 +25,8 @@ bot "Configuring System"
 # Close any open System Preferences panes, to prevent them from overriding
 # settings we’re about to change
 running "closing any system preferences to prevent issues with automated changes"
-osascript -e 'tell application "System Preferences" to quit'
+# Use "System Settings" for macOS Ventura+ or fall back to "System Preferences"
+osascript -e 'tell application "System Settings" to quit' 2>/dev/null || osascript -e 'tell application "System Preferences" to quit' 2>/dev/null
 ok
 
 ###############################################################################
@@ -90,17 +91,15 @@ running "Set standby delay to 24 hours (default is 1 hour)"
 sudo pmset -a standbydelay 86400
 ok
 
-running "Disable Sudden Motion Sensor"
-sudo pmset -a sms 0
-ok
+# Note: Sudden Motion Sensor (sms) setting removed - only relevant for HDDs, not SSDs
+# All modern Macs use SSDs, so this setting is obsolete
 
 running "Disable audio feedback when volume is changed"
 defaults write com.apple.sound.beep.feedback -bool false
 ok
 
-running "Show battery percentage"
-defaults write com.apple.menuextra.battery ShowPercent YES
-ok
+# Note: Battery percentage setting removed - deprecated in macOS Big Sur+
+# Now controlled via System Settings > Control Center > Battery
 
 running "Set highlight color to steel blue"
 defaults write NSGlobalDomain AppleHighlightColor -string "0.172549019607843 0.349019607843137 0,501960784313725"
@@ -160,9 +159,8 @@ running "Disable Resume system-wide"
 defaults write NSGlobalDomain NSQuitAlwaysKeepsWindows -bool false
 ok
 
-running "Disable automatic termination of inactive apps"
-defaults write NSGlobalDomain NSDisableAutomaticTermination -bool true
-ok
+# Note: NSDisableAutomaticTermination removed - disabling automatic termination
+# prevents macOS from freeing RAM and negatively impacts system performance
 
 running "Set Help Viewer windows to non-floating mode"
 defaults write com.apple.helpviewer DevMode -bool true
@@ -213,13 +211,8 @@ defaults write NSGlobalDomain KeyRepeat -int 1
 defaults write NSGlobalDomain InitialKeyRepeat -int 15
 ok
 
-running "Automatically illuminate built-in MacBook keyboard in low light"
-defaults write com.apple.BezelServices kDim -bool true
-ok
-
-running "Turn off keyboard illumination when computer is not used for 5 minutes"
-defaults write com.apple.BezelServices kDimTime -int 300
-ok
+# Note: BezelServices keyboard illumination settings removed - deprecated in modern macOS
+# Keyboard backlight is now managed automatically by the system
 
 ###############################################################################
 bot "Trackpad, mouse, Bluetooth accessories"
@@ -275,10 +268,8 @@ running "Disable shadow in screenshots"
 defaults write com.apple.screencapture disable-shadow -bool true
 ok
 
-running "Enable subpixel font rendering on non-Apple LCDs"
-# Reference: https://github.com/kevinSuttle/macOS-Defaults/issues/17#issuecomment-266633501
-defaults write NSGlobalDomain AppleFontSmoothing -int 2
-ok
+# Note: AppleFontSmoothing (subpixel rendering) removed - deprecated since macOS Mojave
+# Retina displays don't benefit from subpixel antialiasing
 
 #running "Enable HiDPI display modes (requires restart)"
 #sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
@@ -325,9 +316,7 @@ running "Show path bar"
 defaults write com.apple.finder ShowPathbar -bool true
 ok
 
-running "Allow text selection in Quick Look"
-defaults write com.apple.finder QLEnableTextSelection -bool true
-ok
+# Note: QLEnableTextSelection removed - text selection is now enabled by default in Quick Look
 
 running "Display full POSIX path as Finder window title"
 defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
@@ -382,9 +371,8 @@ running "Disable the warning before emptying the Trash"
 defaults write com.apple.finder WarnOnEmptyTrash -bool false
 ok
 
-running "Empty Trash securely by default"
-defaults write com.apple.finder EmptyTrashSecurely -bool true
-ok
+# Note: EmptyTrashSecurely removed - secure delete was removed in El Capitan
+# SSDs don't benefit from secure erase due to wear leveling
 
 running "Show the ~/Library folder"
 chflags nohidden ~/Library && xattr -d com.apple.FinderInfo ~/Library

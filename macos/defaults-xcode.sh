@@ -33,9 +33,8 @@ running "Show line numbers"
 defaults write com.apple.dt.Xcode DVTTextShowLineNumbers -bool true
 ok
 
-running "Reduce the number of compile tasks and stop indexing"
-defaults write com.apple.dt.XCode IDEIndexDisable 1
-ok
+# Note: IDEIndexDisable removed - disabling indexing breaks code completion and navigation
+# If you need faster builds, use derived data RAM disk instead
 
 running "Show ruler at 80 chars"
 defaults write com.apple.dt.Xcode DVTTextShowPageGuide -bool true
@@ -50,16 +49,8 @@ running "Show build time"
 defaults write com.apple.dt.Xcode ShowBuildOperationDuration -bool YES
 ok
 
-running "Improve performance"
-defaults write com.apple.dt.Xcode IDEBuildOperationMaxNumberOfConcurrentCompileTasks 5
-ok
-
 running "Improve performance by leveraging multi-core CPU"
-defaults write com.apple.dt.Xcode IDEBuildOperationMaxNumberOfConcurrentCompileTasks $(sysctl -n hw.ncpu)
-ok
-
-running "Delete these settings"
-defaults delete com.apple.dt.XCode IDEIndexDisable
+defaults write com.apple.dt.Xcode IDEBuildOperationMaxNumberOfConcurrentCompileTasks "$(sysctl -n hw.ncpu)"
 ok
 
 killall "Xcode" >/dev/null 2>&1
