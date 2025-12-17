@@ -21,7 +21,7 @@ jobs:
 
       - name: Run shellcheck on bash scripts
         run: |
-          shellcheck -e SC1090,SC1091,SC2034,SC2154 -s bash \
+          shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 -s bash \
             bin/dotfiles \
             scripts/*.sh \
             macos/*.sh

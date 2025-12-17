@@ -25,7 +25,7 @@ if [ "${CURRENT_PROFILE}" != "${TERM_PROFILE}" ]; then
 fi
 ok
 
-running "Enable “focus follows mouse” for Terminal.app and all X11 apps"
+running "Enable 'focus follows mouse' for Terminal.app and all X11 apps"
 defaults write com.apple.terminal FocusFollowsMouse -bool true
 ok
 
