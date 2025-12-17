@@ -57,8 +57,10 @@ function hide-hidden-files() {
 # usage: dedup-pathvar PATH
 function dedup-pathvar() {
   local pathvar_name="$1"
-  # Use zsh's typeset -U to deduplicate (works with PATH, MANPATH, etc.)
-  typeset -U "${pathvar_name}"
+  # In zsh, PATH is tied to 'path' array, MANPATH to 'manpath', etc.
+  # Use typeset -gU on the lowercase array version to deduplicate
+  local pathvar_array="${(L)pathvar_name}"
+  typeset -gU "$pathvar_array"
 }
 
 # Show 256 TERM colors
