@@ -53,25 +53,43 @@
         "skipWSLChecks": false
       },
       {
-        "id": "a68b345f-3714-4824-8537-4c0fba6a83de",
-        "type": "REPO",
-        "repoName": "react-speech-highlight",
-        "repoPath": "/Users/stix/Work/mote/react-speech-highlight/",
-        "skipWSLChecks": false
-      },
-      {
-        "id": "f16a050f-79d9-4065-a0a8-826d1d5f0c94",
-        "type": "REPO",
-        "repoName": "ios-app",
-        "repoPath": "/Users/stix/Work/mote/ios-app/",
-        "skipWSLChecks": false
-      },
-      {
         "id": "a343efff-c313-4016-9a81-abab15083c0d",
         "type": "REPO",
         "repoName": "swaptic",
         "repoPath": "/Users/stix/Work/swaptic/swaptic/",
         "skipWSLChecks": false
+      },
+      {
+        "id": "40346f33-6537-4dde-b35f-7a95c59a8d4f",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "predictive-typing",
+        "repoPath": "/Users/stix/Work/mote/predictive-typing/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "e2d60858-0ed5-4b03-af5c-c768ebbbf249",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "predictive-engine-v2",
+        "repoPath": "/Users/stix/Work/mote/predictive-engine-v2/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "0d8df44e-be6b-4ca4-b77b-272d536e3ed8",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "text-help-predictions",
+        "repoPath": "/Users/stix/Desktop/test_2/text-help-predictions/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "39104e95-69a9-450a-99de-4981f0c86a80",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "raflix",
+        "repoPath": "/Users/stix/Work/raflix/",
+        "skipWSLChecks": null
       }
     ]
   },
@@ -100,7 +118,7 @@
       "width": 215
     },
     "DetailPanel": {
-      "width": 353
+      "width": 492
     }
   },
   "externalEditor": "VS Code",
@@ -175,6 +193,9 @@
     }
   },
   "repoInit": {
-    "lastOpenedRepoPath": "/Users/stix/Work/mote/frontend"
+    "lastOpenedRepoPath": "/Users/stix/Work/raflix"
+  },
+  "ai": {
+    "sendCodeApproved": true
   }
 }
