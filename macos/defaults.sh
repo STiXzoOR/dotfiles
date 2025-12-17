@@ -144,11 +144,11 @@ running "Automatically quit printer app once the print jobs complete"
 defaults write com.apple.print.PrintingPrefs "Quit When Finished" -bool true
 ok
 
-running "Disable the “Are you sure you want to open this application?” dialog"
+running "Disable the 'Are you sure you want to open this application?' dialog"
 defaults write com.apple.LaunchServices LSQuarantine -bool false
 ok
 
-running "Remove duplicates in the “Open With” menu (also see 'lscleanup' alias)"
+running "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
 ok
 
@@ -382,7 +382,7 @@ running "Show the /Volumes folder"
 sudo chflags nohidden /Volumes
 ok
 
-running "Expand the following File Info panes: “General”, “Open with”, and “Sharing & Permissions”"
+running "Expand the following File Info panes: General, Open with, and Sharing & Permissions"
 defaults write com.apple.finder FXInfoPanesExpanded -dict \
   General -bool true \
   OpenWith -bool true \

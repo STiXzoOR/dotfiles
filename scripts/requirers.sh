@@ -17,8 +17,7 @@ function require_tap() {
   running "tap $1"
   if [[ $(brew tap | grep -x "$1") != "$1" ]]; then
     action "brew tap $1"
-    brew tap "$1"
-    if [[ $? != 0 ]]; then
+    if ! brew tap "$1"; then
       error "failed to tap $1!"
     fi
   fi
@@ -27,11 +26,9 @@ function require_tap() {
 
 function require_cask() {
   running "cask $1"
-  brew list --cask "$1" >/dev/null 2>&1 | true
-  if [[ ${PIPESTATUS[0]} != 0 ]]; then
+  if ! brew list --cask "$1" >/dev/null 2>&1; then
     action "brew install --cask $1 $2"
-    brew install --cask $1
-    if [[ $? != 0 ]]; then
+    if ! brew install --cask "$1"; then
       error "failed to install $1!"
     fi
   fi
@@ -40,11 +37,9 @@ function require_cask() {
 
 function require_brew() {
   running "brew $1 $2"
-  brew list "$1" >/dev/null 2>&1 | true
-  if [[ ${PIPESTATUS[0]} != 0 ]]; then
+  if ! brew list "$1" >/dev/null 2>&1; then
     action "brew install $1 $2"
-    brew install $1 $2
-    if [[ $? != 0 ]]; then
+    if ! brew install "$1" "$2"; then
       error "failed to install $1!"
     fi
   fi
@@ -63,7 +58,7 @@ function require_code() {
 
 function require_mas() {
   running "mas $1"
-  if [[ $(mas list | grep $1 | head -1 | cut -d' ' -f1) != "$1" ]]; then
+  if [[ $(mas list | grep "$1" | head -1 | cut -d' ' -f1) != "$1" ]]; then
     action "mas install $1"
     mas install "$1"
   fi
@@ -72,7 +67,7 @@ function require_mas() {
 
 function require_gem() {
   running "gem $1"
-  if [[ $(gem list --local | grep $1 | head -1 | cut -d' ' -f1) != "$1" ]]; then
+  if [[ $(gem list --local | grep "$1" | head -1 | cut -d' ' -f1) != "$1" ]]; then
     action "gem install $1"
     gem install "$1"
   fi
@@ -95,8 +90,7 @@ function require_npm() {
   source_fnm
   fnm use default >/dev/null 2>&1
   running "npm $*"
-  npm list -g --depth 0 | grep "$1"@ >/dev/null
-  if [[ $? != 0 ]]; then
+  if ! npm list -g --depth 0 | grep "$1"@ >/dev/null; then
     action "npm install -g $*"
     npm install -g "$@"
   fi

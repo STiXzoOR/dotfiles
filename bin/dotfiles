@@ -74,9 +74,8 @@ sub_update_help() {
 sub_install() {
   bot "Hi! I'm going to install tooling and tweak your system settings. Here I go..."
 
-  grep -q 'NOPASSWD:     ALL' /etc/sudoers.d/$LOGNAME >/dev/null 2>&1
-  if [ $? -ne 0 ]; then
-    echo "no suder file"
+  if ! grep -q 'NOPASSWD:     ALL' "/etc/sudoers.d/$LOGNAME" 2>/dev/null; then
+    echo "no sudoer file"
     sudo -v
 
     while true; do
@@ -108,8 +107,7 @@ sub_install() {
   running "checking homebrew..."
   if ! command-exists brew; then
     action "installing homebrew"
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    if [[ $? != 0 ]]; then
+    if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
       error "unable to install homebrew, script $0 abort!"
       exit 2
     fi
@@ -187,7 +185,7 @@ sub_install_passwordless() {
     if ! grep -q "#includedir /private/etc/sudoers.d" /etc/sudoers; then
       echo '#includedir /private/etc/sudoers.d' | sudo tee -a /etc/sudoers >/dev/null
     fi
-    echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD:     ALL" | sudo tee /etc/sudoers.d/$LOGNAME
+    echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD:     ALL" | sudo tee "/etc/sudoers.d/$LOGNAME"
     bot "You can now run sudo commands without password!"
   fi
 }
@@ -206,7 +204,7 @@ sub_install_ssh() {
     rm -rf "$HOME/.ssh/id_ed25519.pub"
     action "Generating a new SSH key"
     read -r -p "Please enter an email to associate your ssh key: " ssh_email
-    ssh-keygen -t ed25519 -C $ssh_email -f "$HOME/.ssh/id_ed25519"
+    ssh-keygen -t ed25519 -C "$ssh_email" -f "$HOME/.ssh/id_ed25519"
     ok
   else
     skip
@@ -746,7 +744,7 @@ case $COMMAND_NAME in
   if [[ -n $SUB_COMMAND_NAME ]]; then
     case $SUB_COMMAND_NAME in
     --"${STRIPPED_SUB_COMMAND_NAME}")
-      sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}
+      "sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}"
       if [ $? = 127 ]; then
         subcmd_error
       fi
@@ -756,7 +754,7 @@ case $COMMAND_NAME in
       ;;
     esac
   else
-    sub_"${COMMAND_NAME}"
+    "sub_${COMMAND_NAME}"
     if [ $? = 127 ]; then
       cmd_error
     fi
