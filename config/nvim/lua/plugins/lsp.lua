@@ -69,7 +69,7 @@ return {
             },
           },
         },
-        tsserver = {},
+        ts_ls = {},
         pyright = {},
         rust_analyzer = {},
         gopls = {},
@@ -89,7 +89,7 @@ return {
         group = vim.api.nvim_create_augroup("UserLspConfig", {}),
         callback = function(ev)
           local buffer = ev.buf
-          local client = vim.lsp.get_client_by_id(ev.data.client_id)
+          local client = vim.lsp.get_clients({ id = ev.data.client_id })[1]
 
           local function map(mode, lhs, rhs, desc)
             vim.keymap.set(mode, lhs, rhs, { buffer = buffer, desc = desc })

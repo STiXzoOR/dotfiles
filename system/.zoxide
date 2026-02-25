@@ -5,7 +5,7 @@ _zoxide_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zoxide-init.zsh"
 
 if command -v zoxide &>/dev/null; then
   # Regenerate cache if missing or zoxide binary is newer
-  if [[ ! -f "$_zoxide_cache" ]] || [[ "$(command -v zoxide)" -nt "$_zoxide_cache" ]]; then
+  if [[ ! -f "$_zoxide_cache" ]] || [[ "$commands[zoxide]" -nt "$_zoxide_cache" ]]; then
     mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
     zoxide init zsh > "$_zoxide_cache" 2>/dev/null
   fi

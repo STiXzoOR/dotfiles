@@ -39,7 +39,7 @@ mkdir -p "$CUSTOM_THEME_DIR/" 2>/dev/null
 ok
 
 running "Install themes for Warp"
-rm -rf "$CUSTOM_THEME_DIR/*.yaml" 2>/dev/null
+rm -rf "$CUSTOM_THEME_DIR"/*.yaml 2>/dev/null
 cp "$DOTFILES_DIR/apps/warp/themes/standard"/*.yaml "$CUSTOM_THEME_DIR/" 2>/dev/null
 cp "$DOTFILES_DIR/apps/warp/themes/base16"/*.yaml "$CUSTOM_THEME_DIR/" 2>/dev/null
 ok

@@ -29,14 +29,25 @@ SHOW_FUNCTIONS=true
 SEARCH_TERM=""
 MARKDOWN=false
 
-for arg in "$@"; do
-  case $arg in
-    --aliases|-a) SHOW_ALIASES=true; SHOW_FUNCTIONS=false ;;
-    --functions|-f) SHOW_FUNCTIONS=true; SHOW_ALIASES=false ;;
-    --markdown|-m) MARKDOWN=true ;;
+while [[ $# -gt 0 ]]; do
+  case $1 in
     --search|-s)
       shift
-      SEARCH_TERM="$1"
+      SEARCH_TERM="${1:-}"
+      ;;
+    --aliases|-a)
+      SHOW_ALIASES=true
+      SHOW_FUNCTIONS=false
+      ;;
+    --functions|-f)
+      SHOW_FUNCTIONS=true
+      SHOW_ALIASES=false
+      ;;
+    --markdown|-m)
+      MARKDOWN=true
+      ;;
+    --verbose|-v)
+      VERBOSE=1
       ;;
     --help|-h)
       echo "Usage: dotfiles-cheatsheet [--aliases] [--functions] [--search TERM] [--markdown]"
@@ -49,7 +60,7 @@ for arg in "$@"; do
       exit 0
       ;;
   esac
-  shift 2>/dev/null
+  shift
 done
 
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"

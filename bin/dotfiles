@@ -212,9 +212,10 @@ sub_install_ssh() {
 
   action "Adding SSH key to SSH Agent"
   eval "$(ssh-agent -s)"
+  [[ -f "$HOME/.ssh/config" ]] && cp "$HOME/.ssh/config" "$HOME/.ssh/config.backup.$(date +%Y%m%d%H%M%S)"
   touch "$HOME/.ssh/config"
   echo -e "Host *\n AddKeysToAgent yes\n UseKeychain yes\n IdentityFile ~/.ssh/id_ed25519" | tee "$HOME/.ssh/config"
-  ssh-add -K "$HOME/.ssh/id_ed25519"
+  ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519"
   ok
 
   echo -e "\nNote: You should add your SSH key to your github account by first running:\n"
@@ -263,9 +264,7 @@ sub_install_hosts() {
       require_brew python
     fi
     if ! command -v pip3 >/dev/null 2>&1; then
-      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-      sudo python3 get-pip.py
-      rm get-pip.py
+      python3 -m ensurepip --upgrade 2>/dev/null || true
     fi
     action "installing python dependencies from stevenblack-hosts requirements.txt"
     # Create a virtual environment for stevenblack-hosts
@@ -435,7 +434,7 @@ sub_install_launchagents() {
 
 sub_configure() {
   read -r -p "Do you want to update the system configurations? [y|N] " response
-  if [[ -z $response || $response =~ ^(y|Y) ]]; then
+  if [[ $response =~ ^(y|Y) ]]; then
     echo
     $0 configure --defaults
     $0 configure --dock
@@ -448,7 +447,7 @@ sub_configure_defaults() {
   bot "OS Configuration\n"
 
   read -r -p "Do you want to update the system defaults? [y|N] " response
-  if [[ -z $response || $response =~ ^(y|Y) ]]; then
+  if [[ $response =~ ^(y|Y) ]]; then
     shopt -s nullglob
 
     for DEFAULTS_FILE in "$DOTFILES_DIR"/macos/defaults*.sh; do
@@ -466,7 +465,7 @@ sub_configure_dock() {
   bot "Dock Configuration\n"
 
   read -r -p "Do you want to update the dock configuration? [y|N] " response
-  if [[ -z $response || $response =~ ^(y|Y) ]]; then
+  if [[ $response =~ ^(y|Y) ]]; then
     . "$DOTFILES_DIR/macos/dock.sh"
 
     ok "Dock reloaded!"
@@ -536,7 +535,7 @@ sub_unlink() {
     fi
 
     if [[ -e ./$file ]]; then
-      mv "./$file" ./
+      mv "./$file" "$HOME/"
       echo -en "$1 backup restored"
       ok
     fi
@@ -623,7 +622,7 @@ sub_open() {
 }
 
 sub_edit() {
-  sh -c "$DOTFILES_IDE $DOTFILES_DIR"
+  "$DOTFILES_IDE" "$DOTFILES_DIR"
 }
 
 sub_test() {
@@ -736,9 +735,9 @@ case $COMMAND_NAME in
 "" | "help")
   sub_help
   ;;
-"unlink")
+"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets")
   shift
-  sub_unlink "$@"
+  sub_"$COMMAND_NAME" "$@"
   ;;
 *)
   if [[ -n $SUB_COMMAND_NAME ]]; then

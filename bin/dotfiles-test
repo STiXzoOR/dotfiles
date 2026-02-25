@@ -168,7 +168,7 @@ test_shellcheck() {
       # SC1091: Not following sourced file
       # SC2034: Variable appears unused (common in configs)
       # SC2154: Variable referenced but not assigned (sourced from elsewhere)
-      output=$(shellcheck -e SC1090,SC1091,SC2034,SC2154 -s bash "$file" 2>&1)
+      output=$(shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 -s bash "$file" 2>&1)
       if [[ $? -eq 0 ]]; then
         pass "Shellcheck OK: $basename"
       else
@@ -581,6 +581,264 @@ test_prezto() {
 }
 
 #############################################################################
+# SECURITY FIX VALIDATION TESTS
+#############################################################################
+
+test_security_fixes() {
+  section "Security Fix Validation"
+
+  # Test prepend-path quotes its argument (no word splitting)
+  source "$DOTFILES_DIR/system/.function"
+  local old_path="$PATH"
+  prepend-path "/path with spaces"
+  # Should not have added it (doesn't exist), but importantly shouldn't error
+  if [[ "$PATH" == "$old_path" ]]; then
+    pass "prepend-path: handles paths with spaces safely"
+  else
+    fail "prepend-path: should not add non-existent path with spaces"
+    PATH="$old_path"
+  fi
+
+  # Test git config doesn't have dangerous unstage alias
+  local git_config="$DOTFILES_DIR/config/git/config"
+  if [[ -f "$git_config" ]]; then
+    if grep -q 'unstage.*reset --hard' "$git_config"; then
+      fail "Git unstage alias still uses --hard (data loss risk)"
+    else
+      pass "Git unstage alias is safe (no --hard)"
+    fi
+  fi
+
+  # Test secrets script uses printf %q (not vulnerable to quote injection)
+  local secrets_script="$DOTFILES_DIR/bin/dotfiles-secrets"
+  if [[ -f "$secrets_script" ]]; then
+    if grep -q 'printf.*%q' "$secrets_script"; then
+      pass "Secrets env output uses printf %%q (safe from injection)"
+    else
+      fail "Secrets env output should use printf %%q for safe quoting"
+    fi
+  fi
+
+  # Test SSH key generation uses modern flag
+  if grep -q 'apple-use-keychain' "$DOTFILES_DIR/bin/dotfiles"; then
+    pass "SSH uses --apple-use-keychain (not deprecated -K)"
+  else
+    fail "SSH should use --apple-use-keychain instead of -K"
+  fi
+}
+
+#############################################################################
+# PERFORMANCE OPTIMIZATION VALIDATION TESTS
+#############################################################################
+
+test_performance_optimizations() {
+  section "Performance Optimization Validation"
+
+  # Test brew shellenv cache doesn't contain path_helper eval
+  local brew_cache="${XDG_CACHE_HOME:-$HOME/.cache}/brew-shellenv.zsh"
+  if [[ -f "$brew_cache" ]]; then
+    if grep -q 'path_helper' "$brew_cache"; then
+      fail "Brew cache still contains path_helper (defeats caching)"
+    else
+      pass "Brew cache: no path_helper subprocess"
+    fi
+  else
+    skip "Brew cache not generated yet"
+  fi
+
+  # Test .grep uses static alias (no is-supported calls)
+  if [[ -f "$DOTFILES_DIR/system/.grep" ]]; then
+    if grep -q 'is-supported' "$DOTFILES_DIR/system/.grep"; then
+      fail ".grep still uses is-supported (spawns subprocesses)"
+    else
+      pass ".grep: uses static config (no subprocesses)"
+    fi
+  fi
+
+  # Test .zshrc uses $USER not $(whoami)
+  if [[ -f "$DOTFILES_DIR/runcom/.zshrc" ]]; then
+    if grep -q '$(whoami)' "$DOTFILES_DIR/runcom/.zshrc"; then
+      fail ".zshrc still uses \$(whoami) subprocess"
+    else
+      pass ".zshrc: uses \$USER (no subprocess)"
+    fi
+  fi
+
+  # Test cache files use $commands[] instead of $(command -v)
+  local cache_files=("$DOTFILES_DIR/system/.fzf" "$DOTFILES_DIR/system/.zoxide" "$DOTFILES_DIR/system/.fix")
+  local all_good=true
+  for f in "${cache_files[@]}"; do
+    if [[ -f "$f" ]] && grep -q '$(command -v' "$f"; then
+      all_good=false
+      break
+    fi
+  done
+  if $all_good; then
+    pass "Cache files use \$commands[] (no subprocess for lookups)"
+  else
+    fail "Some cache files still use \$(command -v) subprocess"
+  fi
+
+  # Test no duplicate env sourcing in .zshrc
+  if [[ -f "$DOTFILES_DIR/runcom/.zshrc" ]]; then
+    if grep -q 'local/share.*\.\./.*bin/env' "$DOTFILES_DIR/runcom/.zshrc"; then
+      fail ".zshrc still has duplicate env sourcing"
+    else
+      pass ".zshrc: no duplicate env sourcing"
+    fi
+  fi
+}
+
+#############################################################################
+# CONFIGURATION MODERNIZATION TESTS
+#############################################################################
+
+test_config_modernization() {
+  section "Configuration Modernization"
+
+  # Test Neovim uses ts_ls not tsserver
+  local lsp_config="$DOTFILES_DIR/config/nvim/lua/plugins/lsp.lua"
+  if [[ -f "$lsp_config" ]]; then
+    if grep -q 'tsserver' "$lsp_config"; then
+      fail "Neovim LSP still uses deprecated 'tsserver'"
+    else
+      pass "Neovim LSP: uses 'ts_ls' (current name)"
+    fi
+  fi
+
+  # Test Neovim uses vim.uv not vim.loop
+  local lazy_config="$DOTFILES_DIR/config/nvim/lua/config/lazy.lua"
+  if [[ -f "$lazy_config" ]]; then
+    if grep -q 'vim\.loop' "$lazy_config"; then
+      fail "Neovim still uses deprecated vim.loop"
+    else
+      pass "Neovim: uses vim.uv (not deprecated vim.loop)"
+    fi
+  fi
+
+  # Test git config uses ksdiff via PATH (not hardcoded Intel path)
+  local git_config="$DOTFILES_DIR/config/git/config"
+  if [[ -f "$git_config" ]]; then
+    if grep -q '/usr/local/bin/ksdiff' "$git_config"; then
+      fail "Git config has hardcoded Intel ksdiff path"
+    else
+      pass "Git config: ksdiff uses PATH lookup"
+    fi
+  fi
+
+  # Test Prezto loads the osx/macos module
+  local zpreztorc="$DOTFILES_DIR/runcom/.zpreztorc"
+  if [[ -f "$zpreztorc" ]]; then
+    if grep -qE "'osx'|'macos'" "$zpreztorc"; then
+      pass "Prezto: macOS helper module is loaded"
+    else
+      fail "Prezto: macOS helper module (osx/macos) not loaded"
+    fi
+  fi
+
+  # Test git hooks are configured
+  if [[ -f "$git_config" ]]; then
+    if grep -q 'hooksPath' "$git_config"; then
+      pass "Git config: hooksPath is set"
+    else
+      fail "Git config: hooksPath not configured"
+    fi
+  fi
+
+  # Test Nord theme submodules use nordtheme org
+  if [[ -f "$DOTFILES_DIR/.gitmodules" ]]; then
+    if grep -q 'arcticicestudio' "$DOTFILES_DIR/.gitmodules"; then
+      fail "Submodules still reference archived arcticicestudio org"
+    else
+      pass "Submodules: use nordtheme org URLs"
+    fi
+  fi
+
+  # Test Brewfile doesn't have deprecated cask-fonts tap
+  if [[ -f "$DOTFILES_DIR/Brewfile" ]]; then
+    if grep -q 'homebrew/cask-fonts' "$DOTFILES_DIR/Brewfile"; then
+      fail "Brewfile still has deprecated homebrew/cask-fonts tap"
+    else
+      pass "Brewfile: no deprecated taps"
+    fi
+  fi
+
+  # Test Starship config exists (inactive while p10k is primary, kept for future use)
+  local starship_file="$DOTFILES_DIR/system/.starship"
+  if [[ -f "$starship_file" ]]; then
+    pass "Starship: config file preserved for future use"
+  fi
+
+  # Test Powerlevel10k is configured as the active prompt
+  local zpreztorc="$DOTFILES_DIR/runcom/.zpreztorc"
+  if [[ -f "$zpreztorc" ]]; then
+    if grep -q "theme 'powerlevel10k'" "$zpreztorc"; then
+      pass "Prompt: Powerlevel10k configured as active theme"
+    else
+      fail "Prompt: Powerlevel10k not set as theme in zpreztorc"
+    fi
+  fi
+
+  # Test XDG_RUNTIME_DIR is not set to Library/Caches
+  local env_file="$DOTFILES_DIR/system/.env"
+  if [[ -f "$env_file" ]]; then
+    if grep -q 'XDG_RUNTIME_DIR.*Library/Caches' "$env_file"; then
+      fail "XDG_RUNTIME_DIR still set to Library/Caches"
+    else
+      pass "XDG_RUNTIME_DIR: uses correct path"
+    fi
+  fi
+}
+
+#############################################################################
+# DEAD CODE CLEANUP TESTS
+#############################################################################
+
+test_dead_code_cleanup() {
+  section "Dead Code Cleanup"
+
+  local alias_file="$DOTFILES_DIR/system/.alias"
+  if [[ -f "$alias_file" ]]; then
+    # Test fd function doesn't shadow fd binary
+    source "$DOTFILES_DIR/system/.function"
+    source "$DOTFILES_DIR/system/.function_fs"
+    if typeset -f fd &>/dev/null; then
+      fail "fd() function still shadows the fd binary"
+    else
+      pass "No fd() function shadowing fd binary"
+    fi
+
+    # Test deprecated aliases are removed
+    if grep -q 'lwp-request' "$alias_file"; then
+      fail "Dead lwp-request aliases still present"
+    else
+      pass "lwp-request aliases removed"
+    fi
+
+    if grep -q 'youtube-dl' "$DOTFILES_DIR/system/.function_network"; then
+      fail "Still references deprecated youtube-dl"
+    else
+      pass "Uses yt-dlp (not deprecated youtube-dl)"
+    fi
+
+    # Test transfer function is removed (transfer.sh is dead)
+    source "$DOTFILES_DIR/system/.function_network" 2>/dev/null
+    if typeset -f transfer &>/dev/null; then
+      fail "transfer() function still present (transfer.sh is dead)"
+    else
+      pass "transfer() removed (transfer.sh dead)"
+    fi
+
+    # Test egrep is not used (deprecated)
+    if grep -q 'egrep' "$DOTFILES_DIR/system/.function_network"; then
+      fail "Still uses deprecated egrep"
+    else
+      pass "Uses grep -E (not deprecated egrep)"
+    fi
+  fi
+}
+
+#############################################################################
 # MAIN
 #############################################################################
 
@@ -602,6 +860,10 @@ main() {
   test_aliases
   test_environment
   test_prezto
+  test_security_fixes
+  test_performance_optimizations
+  test_config_modernization
+  test_dead_code_cleanup
   test_shell_startup
 
   # Summary

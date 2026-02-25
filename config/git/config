@@ -23,6 +23,7 @@
 	untrackedCache = true
 	pager = delta
 	ignorecase = false
+	hooksPath = .githooks
 
 [credential]
 	helper = osxkeychain
@@ -31,7 +32,7 @@
 	lineNumber = true
 
 [help]
-	autocorrect = 1
+	autocorrect = 20
 
 [init]
 	defaultBranch = main
@@ -39,6 +40,7 @@
 [push]
 	default = simple
 	followTags = true
+	autoSetupRemote = true
 
 [fetch]
 	prune = true
@@ -65,6 +67,7 @@
 	renames = copies
 	indentHeuristic = true
 	tool = Kaleidoscope
+	algorithm = histogram
 
 [difftool]
 	prompt = false
@@ -73,7 +76,7 @@
 	cmd = ksdiff --partial-changeset --relative-path \"$MERGED\" -- \"$LOCAL\" \"$REMOTE\"
 
 [difftool "sourcetree"]
-	cmd = /usr/local/bin/ksdiff -w \"$LOCAL\" \"$REMOTE\"
+	cmd = ksdiff -w \"$LOCAL\" \"$REMOTE\"
 	path =
 
 [difftool "vscode"]
@@ -82,7 +85,7 @@
 
 [merge]
 	tool = Kaleidoscope
-	conflictstyle = diff3
+	conflictstyle = zdiff3
 	defaultToUpstream = true
 
 [mergetool]
@@ -93,7 +96,7 @@
 	trustExitCode = true
 
 [mergetool "sourcetree"]
-	cmd = /usr/local/bin/ksdiff --merge --output \"$MERGED\" --base \"$BASE\" -- \"$LOCAL\" --snapshot \"$REMOTE\" --snapshot
+	cmd = ksdiff --merge --output \"$MERGED\" --base \"$BASE\" -- \"$LOCAL\" --snapshot \"$REMOTE\" --snapshot
 	trustExitCode = true
 
 [mergetool "vscode"]
@@ -132,9 +135,15 @@
 	st = status
 	stl = ls-files -m -o --exclude-standard
 	sts = status -sb
-	unstage = reset --hard HEAD
+	unstage = reset HEAD
   upm = !git fetch upstream && git merge upstream/main
   up = pull --rebase --autostash
+
+[branch]
+	sort = -committerdate
+
+[column]
+	ui = auto
 
 [dotfiles]
 	lastupdate = 2025-10-06 12:15:54

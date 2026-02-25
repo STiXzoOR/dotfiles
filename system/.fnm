@@ -23,5 +23,5 @@ fnm_upgrade() {
 # Force cache refresh
 fnm_refresh() {
   rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/fnm-env.zsh"
-  exec $SHELL
+  exec "$SHELL"
 }

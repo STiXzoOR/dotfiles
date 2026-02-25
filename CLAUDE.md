@@ -11,6 +11,7 @@ This is a macOS dotfiles repository for automated system setup and configuration
 All operations are managed through the `./bin/dotfiles` script. Common workflows:
 
 ### Initial Setup
+
 ```bash
 # Remote installation (fresh machine)
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/STiXzoOR/dotfiles/main/remote-install.sh)"
@@ -22,6 +23,7 @@ cd ~/.dotfiles
 ```
 
 ### Development Commands
+
 ```bash
 ./bin/dotfiles help                    # Show all available commands
 ./bin/dotfiles setup                   # Run interactive setup wizard (recommended for new machines)
@@ -48,6 +50,7 @@ cd ~/.dotfiles
 ```
 
 ### Selective Installation
+
 ```bash
 ./bin/dotfiles install --hosts         # Update /etc/hosts with ad-blocking
 ./bin/dotfiles install --prezto        # Install Prezto zsh framework
@@ -60,12 +63,14 @@ cd ~/.dotfiles
 ```
 
 ### Configuration
+
 ```bash
 ./bin/dotfiles configure --defaults    # Apply macOS system defaults
 ./bin/dotfiles configure --dock        # Configure Dock settings
 ```
 
 ### Updates and Maintenance
+
 ```bash
 ./bin/dotfiles update --system         # Update OS, brew, npm, gem packages
 ./bin/dotfiles clean                   # Clean homebrew and npm caches
@@ -118,7 +123,6 @@ cd ~/.dotfiles
   - `.gemrc` - Ruby gem configuration
   - `.mackup.cfg` - Mackup backup configuration
   - `.hushlogin` - Suppress login message
-  - `.huskyrc` - Husky git hooks configuration
 
 - **`config/`** - XDG config files symlinked to `~/.config/` using GNU Stow
   - `git/` - Git configuration (aliases, settings)
@@ -133,7 +137,7 @@ cd ~/.dotfiles
 - **`modules/`** - Git submodules for external dependencies
   - `prezto/` - Prezto zsh framework
   - `prezto-contrib/` - Additional Prezto modules
-  - `zsh/` - Additional zsh plugins (zsh-autocomplete, zsh-thefuck, zsh-lazy-load)
+  - `zsh/` - Additional zsh plugins (zsh-thefuck, zsh-lazy-load)
   - `stevenblack-hosts/` - Unified hosts file for ad-blocking
 
 - **`system/`** - Shell configuration files sourced by `.zshrc`
@@ -148,8 +152,10 @@ cd ~/.dotfiles
   - `.grep` - Grep configuration
   - `.path` - PATH environment setup
   - `.pnpm` - PNPM configuration
-  - `.prompt` - Prompt configuration (fallback)
-  - `.starship` - Starship prompt loader
+  - `.prompt` - Powerlevel10k prompt configuration
+  - `.starship` - Starship prompt configuration (inactive, kept for future use)
+  - `.bindings` - Key bindings (history-substring-search, word navigation)
+  - `.fix` - thefuck alias configuration
   - `.zoxide` - Zoxide directory jumper configuration
   - `hosts.whitelist` - Whitelist for domains that should not be blocked by hosts file
 
@@ -171,7 +177,7 @@ cd ~/.dotfiles
   - `terminal.png` - Terminal screenshot for README
 
 - **`launchagents/`** - macOS LaunchAgents for automated tasks
-  - `com.user.mackup-auto.plist` - Auto-backup mackup settings every hour
+  - `com.stixzoor.mackup-auto.plist` - Auto-backup mackup settings every hour
 
 - **`profiles/`** - Machine-specific configurations
   - `default.zsh` - Base settings loaded on all machines
@@ -195,6 +201,7 @@ The preferred method is using the `Brewfile` with `brew bundle install`. This ha
 
 **Dotfile Linking:**
 Uses GNU Stow for symlink management. Running `./bin/dotfiles link` will:
+
 1. Backup existing dotfiles to `~/.dotfiles_backup/$(date)`
 2. Stow `runcom/` directory to `~/`
 3. Stow `config/` directory to `~/.config/`
@@ -216,7 +223,7 @@ Most commands prompt for confirmation before making changes. The `--all` flag by
 - Custom whitelist support: Add domains to `system/hosts.whitelist` (one per line) to prevent them from being blocked. The whitelist is copied to the stevenblack-hosts module as `whitelist` during the hosts installation process
 - Submodules must be initialized: `git submodule update --init --recursive`
 - The repository uses Prezto instead of Oh My Zsh for better performance
-- The shell prompt uses Starship for cross-shell prompt customization
+- The shell prompt uses Powerlevel10k (via Prezto's prompt module). Starship config is kept in `system/.starship` but is not sourced
 - Node.js version management uses FNM (Fast Node Manager) instead of NVM for better performance
 - System defaults require logout/restart to take full effect
 - Vim uses Vundle for plugin management (stored as a git submodule)
@@ -225,10 +232,12 @@ Most commands prompt for confirmation before making changes. The `--all` flag by
 ## Common Workflows
 
 **Adding a new package:**
+
 1. Add package name to appropriate file in `packages/`
 2. Run `./bin/dotfiles install --packages`
 
 **Updating submodules:**
+
 ```bash
 ./bin/dotfiles update  # Interactive - prompts for commit message
 # Or manually:
@@ -236,18 +245,21 @@ git submodule update --remote --recursive --merge
 ```
 
 **Restoring old dotfiles:**
+
 ```bash
 ./bin/dotfiles unlink YYYY.MM.DD.HH.MM.SS
 ```
 
 **Modifying system defaults:**
 Edit appropriate script in `macos/` directory, then run:
+
 ```bash
 ./bin/dotfiles configure --defaults
 ```
 
 **Managing hosts whitelist:**
 Add domains to whitelist to prevent them from being blocked:
+
 ```bash
 # Add domain to whitelist
 echo "example.com" >> system/hosts.whitelist
@@ -267,6 +279,7 @@ The repository includes a comprehensive test suite to validate shell configurati
 ```
 
 **Test Categories:**
+
 - **Syntax Validation** - Checks all zsh/bash files for syntax errors
 - **Cache Generation** - Validates that all cached initializations work (fnm, zoxide, fzf, etc.)
 - **Function Tests** - Tests core functions like `prepend-path`, `get`, `dedup-pathvar`
@@ -278,6 +291,7 @@ The repository includes a comprehensive test suite to validate shell configurati
 
 **Refreshing Caches:**
 Shell initialization outputs are cached for performance. To refresh:
+
 ```bash
 rm ~/.cache/*.zsh     # Clear all shell caches
 fnm_refresh           # Refresh fnm cache specifically
@@ -297,6 +311,7 @@ cp profiles/work.zsh.example profiles/$(hostname -s).zsh
 ```
 
 **Profile Loading Order:**
+
 1. `profiles/default.zsh` - Always loaded
 2. `profiles/$DOTFILES_PROFILE.zsh` or `profiles/$(hostname).zsh`
 3. `profiles/local.zsh` - Machine-specific overrides (gitignored)
@@ -313,6 +328,7 @@ Diagnose common dotfiles issues:
 ```
 
 **Checks performed:**
+
 - Symlink status (dotfiles properly linked)
 - Git submodules initialized
 - Shell configuration (zsh, prezto, starship)
@@ -326,6 +342,7 @@ Diagnose common dotfiles issues:
 ## CI/CD
 
 GitHub Actions automatically run on push/PR:
+
 - Shell syntax validation (bash and zsh)
 - Shellcheck linting
 - Test suite execution
@@ -340,6 +357,7 @@ Install pre-commit hooks for development:
 ```
 
 **Pre-commit checks:**
+
 - Bash syntax validation
 - Zsh syntax validation
 - Shellcheck linting
@@ -356,6 +374,7 @@ Profile and optimize shell startup time:
 ```
 
 **Features:**
+
 - Measures average startup time across multiple runs
 - Shows cache file status and age
 - Rates performance (Excellent < 200ms, Good < 500ms, etc.)
@@ -388,6 +407,7 @@ Securely store and retrieve secrets using macOS Keychain:
 ```
 
 **Usage in shell scripts:**
+
 ```bash
 # Load secret into environment variable
 export GITHUB_TOKEN=$(dotfiles-secrets get github_token)
@@ -397,6 +417,7 @@ eval "$(dotfiles-secrets env github_token GITHUB_TOKEN)"
 ```
 
 **Security notes:**
+
 - Secrets are stored in macOS Keychain (encrypted at rest)
 - Requires user authentication to access
 - Never commit secrets to git
@@ -407,6 +428,7 @@ eval "$(dotfiles-secrets env github_token GITHUB_TOKEN)"
 Modern Neovim setup using lazy.nvim as the package manager:
 
 **Structure:**
+
 ```
 config/nvim/
 ├── init.lua              # Entry point
@@ -426,6 +448,7 @@ config/nvim/
 ```
 
 **Key bindings (Leader = Space):**
+
 - `<leader>ff` - Find files
 - `<leader>fg` - Live grep
 - `<leader>ee` - Toggle file explorer
@@ -442,6 +465,7 @@ For new machines, use the interactive setup wizard:
 ```
 
 **Features:**
+
 - System detection (Intel vs Apple Silicon)
 - Prerequisite validation (Xcode CLI tools, git, curl, zsh)
 - Package installation with multiple presets (essential, development, full)

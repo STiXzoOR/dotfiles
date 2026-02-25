@@ -58,8 +58,8 @@ keymap("n", "<leader>tp", "<cmd>tabp<CR>", { desc = "Go to previous tab" })
 keymap("n", "<leader>tf", "<cmd>tabnew %<CR>", { desc = "Open current buffer in new tab" })
 
 -- Diagnostic keymaps
-keymap("n", "[d", vim.diagnostic.goto_prev, { desc = "Go to previous diagnostic message" })
-keymap("n", "]d", vim.diagnostic.goto_next, { desc = "Go to next diagnostic message" })
+keymap("n", "[d", function() vim.diagnostic.jump({ count = -1 }) end, { desc = "Go to previous diagnostic message" })
+keymap("n", "]d", function() vim.diagnostic.jump({ count = 1 }) end, { desc = "Go to next diagnostic message" })
 keymap("n", "<leader>e", vim.diagnostic.open_float, { desc = "Show diagnostic error messages" })
 keymap("n", "<leader>dl", vim.diagnostic.setloclist, { desc = "Open diagnostic list" })
 

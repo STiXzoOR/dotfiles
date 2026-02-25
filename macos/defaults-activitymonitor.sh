@@ -21,7 +21,6 @@ ok
 # 104: Other User Processes
 # 105: Active Processes
 # 106: Inactive Processes
-# 106: Inactive Processes
 # 107: Windowed Processes
 running "Show all processes in Activity Monitor"
 defaults write com.apple.ActivityMonitor ShowCategory -int 100
@@ -63,15 +62,6 @@ ok
 
 running "Show Data in the Network graph (instead of packets)"
 defaults write com.apple.ActivityMonitor NetworkGraphType -int 1
-ok
-
-running "Change Dock Icon"
-# 0: Application Icon
-# 2: Network Usage
-# 3: Disk Activity
-# 5: CPU Usage
-# 6: CPU History
-defaults write com.apple.ActivityMonitor IconType -int 3
 ok
 
 killall "Activity Monitor" >/dev/null 2>&1

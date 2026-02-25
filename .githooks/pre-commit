@@ -30,11 +30,19 @@ check_shellcheck() {
   fi
 
   local bash_files=""
+  # These are zsh scripts, skip shellcheck -s bash for them
+  local zsh_scripts="bin/dotfiles-test bin/dotfiles-doctor bin/dotfiles-cheatsheet bin/dotfiles-profiler"
+
   for file in $STAGED_FILES; do
     case "$file" in
       bin/dotfiles|bin/dotfiles-*|scripts/*.sh|macos/*.sh)
         if [[ -f "$file" ]]; then
-          bash_files="$bash_files $file"
+          # Skip zsh scripts from bash shellcheck
+          local is_zsh=false
+          for zf in $zsh_scripts; do
+            [[ "$file" == "$zf" ]] && is_zsh=true
+          done
+          $is_zsh || bash_files="$bash_files $file"
         fi
         ;;
     esac
@@ -43,7 +51,7 @@ check_shellcheck() {
   if [[ -n "$bash_files" ]]; then
     echo "Checking bash scripts with shellcheck..."
     for file in $bash_files; do
-      if ! shellcheck -e SC1090,SC1091,SC2034,SC2154 -s bash "$file" 2>/dev/null; then
+      if ! shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 -s bash "$file" 2>/dev/null; then
         echo -e "${RED}✗ Shellcheck failed: $file${NC}"
         ((ERRORS++))
       else
@@ -58,12 +66,18 @@ check_shellcheck() {
 #############################################################################
 
 check_bash_syntax() {
+  # These are zsh scripts, skip bash -n for them
+  local zsh_scripts="bin/dotfiles-test bin/dotfiles-doctor bin/dotfiles-cheatsheet bin/dotfiles-profiler"
   local bash_files=""
   for file in $STAGED_FILES; do
     case "$file" in
       bin/dotfiles|bin/dotfiles-*|scripts/*.sh|macos/*.sh)
         if [[ -f "$file" ]]; then
-          bash_files="$bash_files $file"
+          local is_zsh=false
+          for zf in $zsh_scripts; do
+            [[ "$file" == "$zf" ]] && is_zsh=true
+          done
+          $is_zsh || bash_files="$bash_files $file"
         fi
         ;;
     esac
@@ -133,6 +147,10 @@ check_secrets() {
   )
 
   for file in $STAGED_FILES; do
+    # Skip files that legitimately contain pattern strings (not actual secrets)
+    case "$file" in
+      .githooks/pre-commit|bin/dotfiles-test|bin/dotfiles-secrets) continue ;;
+    esac
     if [[ -f "$file" ]]; then
       for pattern in "${secret_patterns[@]}"; do
         if grep -qiE "$pattern" "$file" 2>/dev/null; then

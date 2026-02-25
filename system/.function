@@ -1,6 +1,6 @@
 # Add to path
 prepend-path() {
-  [ -d $1 ] && PATH="$1:$PATH"
+  [ -d "$1" ] && PATH="$1:$PATH"
 }
 
 # Get named var (zsh-compatible indirect expansion)
@@ -11,18 +11,18 @@ get() {
 
 # Generate .gitignore file
 function gen-git-ignore() {
-  curl -sL https://www.toptal.com/developers/gitignore/api/$@
+  curl -sL "https://www.toptal.com/developers/gitignore/api/$*"
 }
 
 # Get weather information for a given country/city
 # usage: weather Cyprus
 function weather() {
-  curl wttr.in/$1
+  curl "wttr.in/${1:-}"
 }
 
 # Use Mac OS Preview to open a man page in a more handsome format
 function manp() {
-  man -t $1 | open -f -a /Applications/Preview.app
+  man -t "$1" | open -f -a /Applications/Preview.app
 }
 
 # Hide shadow under screenshots
@@ -69,6 +69,6 @@ colors() {
   local Y=$(printf %$((COLUMNS-6))s)
   for i in {0..256}; do
     o=00$i
-    echo -e ${o:${#o}-3:3} $(tput setaf $i;tput setab $i)${Y// /=}$X
+    echo -e "${o:${#o}-3:3}" "$(tput setaf "$i";tput setab "$i")${Y// /=}${X}"
   done
 }

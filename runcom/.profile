@@ -11,7 +11,7 @@ fi
 
 PATH="$DOTFILES_DIR/bin:$PATH"
 
-for DOTFILE in "$DOTFILES_DIR"/system/.{function,function_*,path,env,alias,starship,fnm,fzf,grep,fix,pnpm}; do
+for DOTFILE in "$DOTFILES_DIR"/system/.{function,function_*,path,env,alias,fnm,fzf,grep,fix,pnpm}; do
   [[ -f "$DOTFILE" ]] && . "$DOTFILE"
 done
 
@@ -30,3 +30,5 @@ export DOTFILES_DIR
 
 # Load machine-specific profile
 [[ -f "$DOTFILES_DIR/system/.profile_loader" ]] && source "$DOTFILES_DIR/system/.profile_loader"
+
+[[ -f "$HOME/.local/bin/env" ]] && . "$HOME/.local/bin/env"

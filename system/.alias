@@ -3,27 +3,26 @@
 #############################################################
 
 alias _="sudo"
+alias clauded="claude --dangerously-skip-permissions"
 alias rr="rm -rf"
 alias g="git"
 alias library="cd $HOME/Library"
-alias gdrive="cd $HOME/Google Drive"
+alias gdrive='cd "$HOME/Library/CloudStorage/GoogleDrive-"* 2>/dev/null || echo "Google Drive not found"'
 alias xcode="open -a Xcode"
 alias reload="exec $SHELL -l"
 alias pbcopynn='tr -d "\n" | pbcopy'
 alias jsonfix="pbpaste | jq . | pbcopy"
 alias reloadshell="source $HOME/.zshrc"
 alias copyssh="pbcopy < $HOME/.ssh/id_ed25519.pub"
-alias lookbusy="cat /dev/urandom | hexdump -C | grep \"34 32\""
-alias afk="/System/Library/CoreServices/Menu\ Extras/User.menu/Contents/Resources/CGSession -suspend"
+alias lookbusy="hexdump -C < /dev/urandom | grep '34 32'"
+alias afk="pmset displaysleepnow"
 
 #############################################################
 # Default options
 #############################################################
 
-alias vtop="vtop --theme nord"
 alias rsync="rsync -vh"
-alias json="json -c"
-alias psgrep="psgrep -i"
+alias psgrep="ps aux | grep -i"
 alias mzsh="arch -arm64 zsh"
 alias izsh="arch -x86_64 zsh"
 
@@ -103,15 +102,6 @@ alias update='sudo softwareupdate -i -a; brew update; brew upgrade; brew upgrade
 alias ip="curl -s ipinfo.io | jq -r '.ip'"
 alias ipl="ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1'"
 
-# Request using GET, POST, etc. method
-alias GET="lwp-request -m 'GET'"
-alias HEAD="lwp-request -m 'HEAD'"
-alias POST="lwp-request -m 'POST'"
-alias PUT="lwp-request -m 'PUT'"
-alias DELETE="lwp-request -m 'DELETE'"
-alias TRACE="lwp-request -m 'TRACE'"
-alias OPTIONS="lwp-request -m 'OPTIONS'"
-
 #############################################################
 # Spotlight
 #############################################################
@@ -120,18 +110,10 @@ alias spoton="sudo mdutil -a -i on"
 alias spotoff="sudo mdutil -a -i off"
 
 #############################################################
-# Notification Center
-#############################################################
-
-alias notioff="launchctl unload -w /System/Library/LaunchAgents/com.apple.notificationcenterui.plist && killall NotificationCenter"
-alias notion="launchctl load -w /System/Library/LaunchAgents/com.apple.notificationcenterui.plist && open /System/Library/CoreServices/NotificationCenter.app/"
-
-#############################################################
 # Npm
 #############################################################
 
 alias npmri="rm -r node_modules package-lock.json && npm install"
-alias ncd="npm-check -su"
 
 #############################################################
 # Git
@@ -147,5 +129,5 @@ alias gitdev='git checkout develop; git up; git branch --merged develop | grep -
 alias hosts="sudo $EDITOR /etc/hosts"
 alias quit="exit"
 alias week="date +%V"
-alias speedtest="wget -O /dev/null http://speed.transip.nl/100mb.bin"
+alias speedtest="curl -o /dev/null -w 'Speed: %{speed_download} bytes/sec\n' https://speed.cloudflare.com/__down?bytes=100000000"
 alias grip="grip -b"

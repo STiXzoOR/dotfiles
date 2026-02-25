@@ -27,27 +27,32 @@ zstyle ':prezto:load' pmodule-dirs $DOTFILES_DIR/modules/prezto-contrib $DOTFILE
 # Set the Prezto modules to load (browse modules).
 # The order matters.
 zstyle ':prezto:load' pmodule \
-  'zsh-lazy-load' \
   'environment' \
   'terminal' \
   'editor' \
   'history' \
-  'homebrew' \
   'directory' \
   'spectrum' \
   'utility' \
   'git' \
-  'zsh-thefuck' \
+  'homebrew' \
   'osx' \
   'ssh' \
-  'ruby' \
   'python' \
-  'node' \
   'completion' \
+  'prompt' \
   'syntax-highlighting' \
   'history-substring-search' \
-  'prompt' \
   'autosuggestions'
+
+#
+# Prompt
+#
+
+# Set the prompt theme to load.
+# Setting it to 'random' loads a random theme.
+# Auto set to 'off' on dumb terminals.
+zstyle ':prezto:module:prompt' theme 'powerlevel10k'
 
 #
 # Autosuggestions
@@ -122,25 +127,6 @@ zstyle ':prezto:module:history-substring-search' globbing-flags 'i'
 # zstyle ':prezto:module:pacman' frontend 'yaourt'
 
 #
-# Prompt
-#
-
-# Set the prompt theme to load.
-# Setting it to 'random' loads a random theme.
-# Auto set to 'off' on dumb terminals.
-zstyle ':prezto:module:prompt' theme 'powerlevel10k'
-# zstyle ':prezto:module:prompt' theme 'starship'
-
-# Set the working directory prompt display length.
-# By default, it is set to 'short'. Set it to 'long' (without '~' expansion)
-# for longer or 'full' (with '~' expansion) for even longer prompt display.
-zstyle ':prezto:module:prompt' pwd-length 'short'
-
-# Set the prompt to display the return code along with an indicator for non-zero
-# return codes. This is not supported by all prompts.
-# zstyle ':prezto:module:prompt' show-return-val 'yes'
-
-#
 # Python
 #
 
@@ -186,10 +172,7 @@ zstyle ':prezto:module:syntax-highlighting' color 'yes'
 zstyle ':prezto:module:syntax-highlighting' highlighters \
    'main' \
    'brackets' \
-   'pattern' \
-   'line' \
-   'cursor' \
-   'root'
+   'pattern'
 
 # Set syntax highlighting styles.
 # zstyle ':prezto:module:syntax-highlighting' styles \

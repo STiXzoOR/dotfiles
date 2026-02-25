@@ -96,25 +96,23 @@ return {
     event = "VeryLazy",
     opts = {
       plugins = { spelling = true },
-      defaults = {
-        mode = { "n", "v" },
-        ["<leader>b"] = { name = "+buffer" },
-        ["<leader>c"] = { name = "+code" },
-        ["<leader>d"] = { name = "+diagnostics" },
-        ["<leader>e"] = { name = "+explorer" },
-        ["<leader>f"] = { name = "+find" },
-        ["<leader>g"] = { name = "+git" },
-        ["<leader>h"] = { name = "+hunk" },
-        ["<leader>s"] = { name = "+split" },
-        ["<leader>t"] = { name = "+tab" },
-        ["<leader>u"] = { name = "+toggle" },
-        ["<leader>x"] = { name = "+trouble" },
-      },
     },
     config = function(_, opts)
       local wk = require("which-key")
       wk.setup(opts)
-      wk.register(opts.defaults)
+      wk.add({
+        { "<leader>b", group = "buffer", mode = { "n", "v" } },
+        { "<leader>c", group = "code", mode = { "n", "v" } },
+        { "<leader>d", group = "diagnostics", mode = { "n", "v" } },
+        { "<leader>e", group = "explorer", mode = { "n", "v" } },
+        { "<leader>f", group = "find", mode = { "n", "v" } },
+        { "<leader>g", group = "git", mode = { "n", "v" } },
+        { "<leader>h", group = "hunk", mode = { "n", "v" } },
+        { "<leader>s", group = "split", mode = { "n", "v" } },
+        { "<leader>t", group = "tab", mode = { "n", "v" } },
+        { "<leader>u", group = "toggle", mode = { "n", "v" } },
+        { "<leader>x", group = "trouble", mode = { "n", "v" } },
+      })
     end,
   },
 
@@ -194,9 +192,9 @@ return {
     "folke/trouble.nvim",
     dependencies = { "nvim-tree/nvim-web-devicons" },
     keys = {
-      { "<leader>xx", "<cmd>TroubleToggle<CR>", desc = "Toggle Trouble" },
-      { "<leader>xw", "<cmd>TroubleToggle workspace_diagnostics<CR>", desc = "Workspace diagnostics" },
-      { "<leader>xd", "<cmd>TroubleToggle document_diagnostics<CR>", desc = "Document diagnostics" },
+      { "<leader>xx", "<cmd>Trouble toggle<CR>", desc = "Toggle Trouble" },
+      { "<leader>xw", "<cmd>Trouble diagnostics<CR>", desc = "Workspace diagnostics" },
+      { "<leader>xd", "<cmd>Trouble diagnostics filter.buf=0<CR>", desc = "Document diagnostics" },
       { "<leader>xl", "<cmd>TroubleToggle loclist<CR>", desc = "Location list" },
       { "<leader>xq", "<cmd>TroubleToggle quickfix<CR>", desc = "Quickfix list" },
     },

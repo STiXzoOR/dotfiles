@@ -12,7 +12,7 @@ if [[ -n "$HOMEBREW_PREFIX" ]]; then
   _brew_cache="${XDG_CACHE_HOME:-$HOME/.cache}/brew-shellenv.zsh"
   if [[ ! -f "$_brew_cache" ]] || [[ "$HOMEBREW_PREFIX/bin/brew" -nt "$_brew_cache" ]]; then
     mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
-    "$HOMEBREW_PREFIX/bin/brew" shellenv > "$_brew_cache" 2>/dev/null
+    "$HOMEBREW_PREFIX/bin/brew" shellenv 2>/dev/null | grep -v 'path_helper' > "$_brew_cache"
   fi
   [[ -f "$_brew_cache" ]] && source "$_brew_cache"
   unset _brew_cache
@@ -33,8 +33,10 @@ prepend-path "$HOMEBREW_PREFIX/opt/go/libexec/bin"
 prepend-path "$HOMEBREW_PREFIX/opt/ruby/bin"
 prepend-path "$HOMEBREW_PREFIX/opt/openssl/bin"
 prepend-path "$HOME/bin"
+prepend-path "$HOME/.local/bin"
 prepend-path "$HOME/.cargo/bin"
 prepend-path "$HOME/.local/share/pnpm"
+prepend-path "$HOME/.cache/.bun/bin"
 prepend-path "/Applications/Postgres.app/Contents/Versions/16/bin"
 
 # Remove duplicates using zsh native typeset (no subprocess)

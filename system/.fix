@@ -5,7 +5,7 @@ _thefuck_cache="${XDG_CACHE_HOME:-$HOME/.cache}/thefuck-alias.zsh"
 
 if command -v thefuck &>/dev/null; then
   # Regenerate cache if missing or thefuck binary is newer
-  if [[ ! -f "$_thefuck_cache" ]] || [[ "$(command -v thefuck)" -nt "$_thefuck_cache" ]]; then
+  if [[ ! -f "$_thefuck_cache" ]] || [[ "$commands[thefuck]" -nt "$_thefuck_cache" ]]; then
     mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
     thefuck --alias fix > "$_thefuck_cache" 2>/dev/null
   fi

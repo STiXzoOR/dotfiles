@@ -12,7 +12,6 @@ tap "goreleaser/tap"
 tap "khanakia/vercelgate"
 tap "khanhas/tap"
 tap "lotyp/formulae"
-tap "homebrew/cask-fonts"
 tap "artginzburg/tap"
 
 # ============================================================================
@@ -21,7 +20,6 @@ tap "artginzburg/tap"
 
 # Search tools
 brew "ack"                          # Code search tool
-brew "ag"                           # The Silver Searcher
 brew "fd"                           # Fast find alternative
 brew "fzf"                          # Fuzzy finder
 brew "ripgrep"                      # Fast grep alternative
@@ -77,13 +75,11 @@ brew "imagemagick"                  # Image manipulation
 brew "optipng"                      # PNG optimizer
 brew "webp"                         # WebP tools
 brew "yt-dlp"                       # Video downloader
-brew "svgo"                         # SVG optimizer (via npm usually)
 
 # Misc utilities
 brew "dos2unix"                     # Line ending converter
 brew "uni"                          # Unicode tool
 brew "grip"                         # GitHub markdown preview
-brew "tldr"                         # Simplified man pages
 
 # Tap-specific
 brew "lotyp/formulae/dockutil"      # Dock management
@@ -191,7 +187,6 @@ mas "LocalSend", id: 1661733229
 mas "Magnet", id: 441258766
 mas "Messenger", id: 1480068668
 mas "SponsorBlock", id: 1573461917
-mas "Tailscale", id: 1475387142
 mas "Windows App", id: 1295203466
 
 # ============================================================================

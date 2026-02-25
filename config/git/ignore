@@ -16,3 +16,5 @@ Temporary Items
 node_modules
 bower_components
 id_*
+
+**/.claude/settings.local.json

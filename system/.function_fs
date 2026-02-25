@@ -5,8 +5,8 @@ function mkd() {
 
 # Create a new git repo with one README commit and CD into it
 function gitnr() {
-  mkdir $1
-  cd $1
+  mkdir "$1"
+  cd "$1"
   git init
   touch README.md
   git add README.md
@@ -38,8 +38,8 @@ function fo() {
 }
 
 # Fuzzy find file/dir
-ff() { find . -type f -iname "*$1*";}
-fd() { find . -type d -iname "*$1*";}
+ff() { find . -type f -iname "*${1}*";}
+finddir() { find . -type d -iname "*${1}*";}
 
 # Show disk usage of current folder, or list with depth
 duf() {

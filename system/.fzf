@@ -5,7 +5,7 @@ _fzf_cache="${XDG_CACHE_HOME:-$HOME/.cache}/fzf-init.zsh"
 
 if command -v fzf &>/dev/null; then
   # Regenerate cache if missing or fzf binary is newer
-  if [[ ! -f "$_fzf_cache" ]] || [[ "$(command -v fzf)" -nt "$_fzf_cache" ]]; then
+  if [[ ! -f "$_fzf_cache" ]] || [[ "$commands[fzf]" -nt "$_fzf_cache" ]]; then
     mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
     fzf --zsh > "$_fzf_cache" 2>/dev/null
   fi
