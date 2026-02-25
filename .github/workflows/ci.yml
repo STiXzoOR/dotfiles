@@ -96,7 +96,7 @@ jobs:
           submodules: recursive
 
       - name: Setup Homebrew
-        uses: Homebrew/actions/setup-homebrew@cced18749828
+        uses: Homebrew/actions/setup-homebrew@cced187498280712e078aaba62dc13a3e9cd80bf
 
       - name: Install dependencies
         run: |
@@ -117,7 +117,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Homebrew
-        uses: Homebrew/actions/setup-homebrew@cced18749828
+        uses: Homebrew/actions/setup-homebrew@cced187498280712e078aaba62dc13a3e9cd80bf
 
       - name: Validate Brewfile syntax
         run: |

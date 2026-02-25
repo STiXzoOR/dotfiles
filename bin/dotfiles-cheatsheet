@@ -86,7 +86,8 @@ parse_aliases() {
     fi
 
     # Match alias definitions
-    if [[ "$line" =~ ^[[:space:]]*alias[[:space:]]+([^=]+)=[\'\""]?(.*)[\'\""']?[[:space:]]*$ ]]; then
+    local alias_pattern='^[[:space:]]*alias[[:space:]]+([^=]+)=['"'"'"]?(.*)$'
+    if [[ "$line" =~ $alias_pattern ]]; then
       local name="${match[1]}"
       local value="${match[2]}"
       # Clean up the value

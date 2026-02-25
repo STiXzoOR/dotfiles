@@ -245,7 +245,7 @@ ask_checklist() {
 
   # Initialize all as selected
   for i in "${!options[@]}"; do
-    selected[$i]=1
+    selected[i]=1
   done
 
   echo ""
@@ -274,15 +274,15 @@ ask_checklist() {
         break
         ;;
       a|A)
-        for i in "${!options[@]}"; do selected[$i]=1; done
+        for i in "${!options[@]}"; do selected[i]=1; done
         ;;
       n|N)
-        for i in "${!options[@]}"; do selected[$i]=0; done
+        for i in "${!options[@]}"; do selected[i]=0; done
         ;;
       *)
         if [[ "$input" =~ ^[0-9]+$ ]] && [[ "$input" -ge 1 ]] && [[ "$input" -le "${#options[@]}" ]]; then
           local idx=$((input - 1))
-          selected[$idx]=$((1 - selected[$idx]))
+          selected[idx]=$((1 - selected[idx]))
         fi
         ;;
     esac
@@ -377,7 +377,7 @@ install_homebrew() {
     print_success "Homebrew already installed"
     if ask_yes_no "Update Homebrew?"; then
       start_spinner "Updating Homebrew..."
-      brew update &>> "$LOG_FILE"
+      brew update >> "$LOG_FILE" 2>&1
       stop_spinner true "Homebrew updated"
     fi
   else
@@ -411,33 +411,34 @@ install_packages() {
     "Skip package installation"
   )
 
-  local choice=$(ask_menu "Select installation type:" "${options[@]}")
+  local choice
+  choice=$(ask_menu "Select installation type:" "${options[@]}")
 
   case $choice in
     0)
       # Essential only
       start_spinner "Installing essential packages..."
-      brew install git zsh starship fnm stow &>> "$LOG_FILE"
+      brew install git zsh starship fnm stow >> "$LOG_FILE" 2>&1
       stop_spinner true "Essential packages installed"
       ;;
     1)
       # Development setup
       start_spinner "Installing development packages..."
       brew install git zsh starship fnm stow vim neovim python node go rust \
-                   ripgrep fd bat eza fzf zoxide &>> "$LOG_FILE"
+                   ripgrep fd bat eza fzf zoxide >> "$LOG_FILE" 2>&1
       stop_spinner true "Development packages installed"
       ;;
     2)
       # Full installation
       start_spinner "Installing all packages from Brewfile..."
-      brew bundle install --file="$ROOT_DIR/Brewfile" &>> "$LOG_FILE"
+      brew bundle install --file="$ROOT_DIR/Brewfile" >> "$LOG_FILE" 2>&1
       stop_spinner true "All packages installed"
       ;;
     3)
       # Custom - show categories
       print_info "Custom selection coming soon. Running full install."
       start_spinner "Installing packages..."
-      brew bundle install --file="$ROOT_DIR/Brewfile" &>> "$LOG_FILE"
+      brew bundle install --file="$ROOT_DIR/Brewfile" >> "$LOG_FILE" 2>&1
       stop_spinner true "Packages installed"
       ;;
     4)
@@ -453,7 +454,7 @@ setup_shell() {
   if [[ ! -d "$HOME/.zprezto" ]]; then
     if ask_yes_no "Install Prezto (Zsh framework)?"; then
       start_spinner "Installing Prezto..."
-      git clone --recursive https://github.com/sorin-ionescu/prezto.git "$HOME/.zprezto" &>> "$LOG_FILE"
+      git clone --recursive https://github.com/sorin-ionescu/prezto.git "$HOME/.zprezto" >> "$LOG_FILE" 2>&1
       stop_spinner true "Prezto installed"
     fi
   else
@@ -461,12 +462,14 @@ setup_shell() {
   fi
 
   # Change default shell
-  local current_shell=$(basename "$SHELL")
+  local current_shell
+  current_shell=$(basename "$SHELL")
   if [[ "$current_shell" != "zsh" ]]; then
     if ask_yes_no "Change default shell to Zsh?"; then
-      local zsh_path=$(which zsh)
+      local zsh_path
+      zsh_path=$(which zsh)
       if ! grep -q "$zsh_path" /etc/shells; then
-        echo "$zsh_path" | sudo tee -a /etc/shells &>> "$LOG_FILE"
+        echo "$zsh_path" | sudo tee -a /etc/shells > /dev/null
       fi
       chsh -s "$zsh_path"
       print_success "Default shell changed to Zsh"
@@ -479,7 +482,8 @@ setup_shell() {
 link_dotfiles() {
   print_section "Dotfiles Linking"
 
-  local backup_dir="$HOME/.dotfiles_backup/$(date +%Y.%m.%d.%H.%M.%S)"
+  local backup_dir
+  backup_dir="$HOME/.dotfiles_backup/$(date +%Y.%m.%d.%H.%M.%S)"
 
   print_info "Existing dotfiles will be backed up to: $backup_dir"
 
@@ -524,13 +528,13 @@ configure_macos() {
 
   start_spinner "Applying system defaults..."
   for file in "$ROOT_DIR/macos"/defaults*.sh; do
-    [[ -f "$file" ]] && source "$file" &>> "$LOG_FILE"
+    [[ -f "$file" ]] && source "$file" >> "$LOG_FILE" 2>&1
   done
   stop_spinner true "System defaults applied"
 
   if ask_yes_no "Configure Dock?"; then
     start_spinner "Configuring Dock..."
-    [[ -f "$ROOT_DIR/macos/dock.sh" ]] && source "$ROOT_DIR/macos/dock.sh" &>> "$LOG_FILE"
+    [[ -f "$ROOT_DIR/macos/dock.sh" ]] && source "$ROOT_DIR/macos/dock.sh" >> "$LOG_FILE" 2>&1
     stop_spinner true "Dock configured"
   fi
 }
@@ -544,8 +548,8 @@ setup_node() {
     if ask_yes_no "Install Node.js LTS?"; then
       start_spinner "Installing Node.js LTS..."
       eval "$(fnm env)"
-      fnm install --lts &>> "$LOG_FILE"
-      fnm default lts-latest &>> "$LOG_FILE"
+      fnm install --lts >> "$LOG_FILE" 2>&1
+      fnm default lts-latest >> "$LOG_FILE" 2>&1
       stop_spinner true "Node.js LTS installed"
     fi
   else
@@ -559,7 +563,7 @@ setup_vim() {
   if [[ -f "$HOME/.vimrc" ]] && [[ -d "$HOME/.vim/bundle/Vundle.vim" ]]; then
     if ask_yes_no "Install Vim plugins?"; then
       start_spinner "Installing Vim plugins..."
-      vim +PluginInstall +qall &>> "$LOG_FILE" 2>&1
+      vim +PluginInstall +qall >> "$LOG_FILE" 2>&1 2>&1
       stop_spinner true "Vim plugins installed"
     fi
   fi
@@ -567,7 +571,7 @@ setup_vim() {
   if command -v nvim &>/dev/null && [[ -d "$HOME/.config/nvim" ]]; then
     if ask_yes_no "Setup Neovim plugins (lazy.nvim)?"; then
       start_spinner "Installing Neovim plugins..."
-      nvim --headless "+Lazy! sync" +qa &>> "$LOG_FILE" 2>&1 || true
+      nvim --headless "+Lazy! sync" +qa >> "$LOG_FILE" 2>&1 2>&1 || true
       stop_spinner true "Neovim plugins installed"
     fi
   fi
@@ -586,15 +590,16 @@ generate_ssh_key() {
     return
   fi
 
-  local email=$(ask_input "Enter email for SSH key")
+  local email
+  email=$(ask_input "Enter email for SSH key")
 
   start_spinner "Generating SSH key..."
-  ssh-keygen -t ed25519 -C "$email" -f "$HOME/.ssh/id_ed25519" -N "" &>> "$LOG_FILE"
+  ssh-keygen -t ed25519 -C "$email" -f "$HOME/.ssh/id_ed25519" -N "" >> "$LOG_FILE" 2>&1
   stop_spinner true "SSH key generated"
 
   # Start ssh-agent and add key
-  eval "$(ssh-agent -s)" &>> "$LOG_FILE"
-  ssh-add "$HOME/.ssh/id_ed25519" &>> "$LOG_FILE" 2>&1 || true
+  eval "$(ssh-agent -s)" >> "$LOG_FILE" 2>&1
+  ssh-add "$HOME/.ssh/id_ed25519" >> "$LOG_FILE" 2>&1 2>&1 || true
 
   print_info "Your public key:"
   echo ""
