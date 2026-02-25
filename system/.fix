@@ -1,1 +1,14 @@
-eval $(thefuck --alias fix)
+# thefuck - command correction
+# Uses cached output to avoid running thefuck --alias on every shell start
+
+_thefuck_cache="${XDG_CACHE_HOME:-$HOME/.cache}/thefuck-alias.zsh"
+
+if command -v thefuck &>/dev/null; then
+  # Regenerate cache if missing or thefuck binary is newer
+  if [[ ! -f "$_thefuck_cache" ]] || [[ "$commands[thefuck]" -nt "$_thefuck_cache" ]]; then
+    mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+    thefuck --alias fix > "$_thefuck_cache" 2>/dev/null
+  fi
+  [[ -f "$_thefuck_cache" ]] && source "$_thefuck_cache"
+fi
+unset _thefuck_cache

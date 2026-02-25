@@ -2,7 +2,7 @@ source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
 
 ###############################################################################
-bot "TextEdit and Disk Utility"
+bot "TextEdit"
 ###############################################################################
 running "Use plain text mode for new documents"
 defaults write com.apple.TextEdit RichText -int 0

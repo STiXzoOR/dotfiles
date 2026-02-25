@@ -4,10 +4,8 @@ source "$DOTFILES_DIR/scripts/requirers.sh"
 ###############################################################################
 bot "Mail"
 ###############################################################################
-running "Disable send and reply animations in Mail.app"
-defaults write com.apple.mail DisableReplyAnimations -bool true
-defaults write com.apple.mail DisableSendAnimations -bool true
-ok
+# DisableReplyAnimations / DisableSendAnimations: Removed — broken since High Sierra.
+# Mail's animation system was replaced and no longer reads these keys.
 
 running "Copy email addresses as 'foo@example.com' instead of 'Foo Bar <foo@example.com>' in Mail.app"
 defaults write com.apple.mail AddressesIncludeNameOnPasteboard -bool false

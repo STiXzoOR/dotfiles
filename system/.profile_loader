@@ -1,0 +1,26 @@
+# Machine Profile Loader
+# Loads machine-specific configurations from profiles/
+
+_load_profile() {
+  local profile_dir="$DOTFILES_DIR/profiles"
+  local hostname_short="${HOST:-$(hostname -s 2>/dev/null)}"
+
+  # Load default profile (always)
+  [[ -f "$profile_dir/default.zsh" ]] && source "$profile_dir/default.zsh"
+
+  # Determine which profile to load
+  local profile_name="${DOTFILES_PROFILE:-$hostname_short}"
+  local profile_file="$profile_dir/$profile_name.zsh"
+
+  # Load machine-specific profile
+  if [[ -f "$profile_file" ]]; then
+    source "$profile_file"
+    export DOTFILES_LOADED_PROFILE="$profile_name"
+  fi
+
+  # Load local overrides (always, for machine-specific secrets/settings)
+  [[ -f "$profile_dir/local.zsh" ]] && source "$profile_dir/local.zsh"
+}
+
+_load_profile
+unset -f _load_profile

@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on bash scripts
+        run: |
+          shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 -s bash \
+            bin/dotfiles \
+            bin/dotfiles-secrets \
+            bin/dotfiles-setup \
+            scripts/*.sh \
+            macos/*.sh
+
+      - name: Check bash syntax
+        run: |
+          for file in bin/dotfiles scripts/*.sh macos/*.sh; do
+            if [[ -f "$file" ]]; then
+              bash -n "$file" || exit 1
+            fi
+          done
+
+  syntax:
+    name: Validate Zsh Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install zsh
+        run: sudo apt-get install -y zsh
+
+      - name: Check zsh syntax
+        run: |
+          files=(
+            runcom/.zshrc
+            runcom/.zprofile
+            runcom/.zlogin
+            runcom/.profile
+            runcom/.zpreztorc
+            system/.alias
+            system/.bindings
+            system/.completion
+            system/.env
+            system/.fix
+            system/.fnm
+            system/.function
+            system/.function_fs
+            system/.function_fun
+            system/.function_network
+            system/.function_text
+            system/.fzf
+            system/.grep
+            system/.path
+            system/.pnpm
+            system/.starship
+            system/.zoxide
+            bin/dotfiles-test
+            bin/dotfiles-doctor
+            bin/dotfiles-cheatsheet
+            bin/dotfiles-profiler
+          )
+
+          for file in "${files[@]}"; do
+            if [[ -f "$file" ]]; then
+              echo "Checking $file..."
+              zsh -n "$file" || exit 1
+            fi
+          done
+
+  test:
+    name: Run Tests
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Homebrew
+        uses: Homebrew/actions/setup-homebrew@cced187498280712e078aaba62dc13a3e9cd80bf
+
+      - name: Install dependencies
+        run: |
+          brew install shellcheck coreutils
+
+      - name: Run test suite
+        run: |
+          chmod +x bin/dotfiles-test
+          ./bin/dotfiles-test --quick
+        env:
+          DOTFILES_DIR: ${{ github.workspace }}
+
+  brewfile:
+    name: Validate Brewfile
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Homebrew
+        uses: Homebrew/actions/setup-homebrew@cced187498280712e078aaba62dc13a3e9cd80bf
+
+      - name: Validate Brewfile syntax
+        run: |
+          # Just check that the Brewfile is valid syntax
+          brew bundle check --file=Brewfile 2>&1 || true
+          # The check will "fail" because packages aren't installed
+          # but syntax errors would cause a different error
+          brew bundle list --file=Brewfile > /dev/null

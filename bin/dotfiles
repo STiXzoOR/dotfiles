@@ -21,13 +21,20 @@ sub_help() {
   echo -e "\nUsage: $BIN_NAME <command>"
   echo
   echo "Commands:"
+  echo "   cheatsheet       Show aliases and functions cheatsheet"
   echo "   clean            Clean up caches (brew, nvm, gem)"
   echo "   configure        Configure system (defaults, dock)"
+  echo "   doctor           Diagnose common issues"
   echo "   edit             Open dotfiles in IDE ($DOTFILES_IDE)"
   echo "   help             This help message"
+  echo "   hooks            Install git pre-commit hooks"
   echo "   install          Bootstrap system"
   echo "   link             Link dotfiles to ~/"
   echo "   open             Open dotfiles in Finder"
+  echo "   profiler         Profile shell startup time"
+  echo "   secrets          Manage secrets (macOS Keychain)"
+  echo "   setup            Run interactive setup wizard"
+  echo "   test             Run test suite to validate configuration"
   echo "   unlink           Restore dotfiles from ~/.dotfiles_backup"
   echo "   update           Update dotfiles (submodules)"
 }
@@ -67,9 +74,8 @@ sub_update_help() {
 sub_install() {
   bot "Hi! I'm going to install tooling and tweak your system settings. Here I go..."
 
-  grep -q 'NOPASSWD:     ALL' /etc/sudoers.d/$LOGNAME >/dev/null 2>&1
-  if [ $? -ne 0 ]; then
-    echo "no suder file"
+  if ! grep -q 'NOPASSWD:     ALL' "/etc/sudoers.d/$LOGNAME" 2>/dev/null; then
+    echo "no sudoer file"
     sudo -v
 
     while true; do
@@ -101,8 +107,7 @@ sub_install() {
   running "checking homebrew..."
   if ! command-exists brew; then
     action "installing homebrew"
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    if [[ $? != 0 ]]; then
+    if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
       error "unable to install homebrew, script $0 abort!"
       exit 2
     fi
@@ -180,7 +185,7 @@ sub_install_passwordless() {
     if ! grep -q "#includedir /private/etc/sudoers.d" /etc/sudoers; then
       echo '#includedir /private/etc/sudoers.d' | sudo tee -a /etc/sudoers >/dev/null
     fi
-    echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD:     ALL" | sudo tee /etc/sudoers.d/$LOGNAME
+    echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD:     ALL" | sudo tee "/etc/sudoers.d/$LOGNAME"
     bot "You can now run sudo commands without password!"
   fi
 }
@@ -199,7 +204,7 @@ sub_install_ssh() {
     rm -rf "$HOME/.ssh/id_ed25519.pub"
     action "Generating a new SSH key"
     read -r -p "Please enter an email to associate your ssh key: " ssh_email
-    ssh-keygen -t ed25519 -C $ssh_email -f "$HOME/.ssh/id_ed25519"
+    ssh-keygen -t ed25519 -C "$ssh_email" -f "$HOME/.ssh/id_ed25519"
     ok
   else
     skip
@@ -207,9 +212,10 @@ sub_install_ssh() {
 
   action "Adding SSH key to SSH Agent"
   eval "$(ssh-agent -s)"
+  [[ -f "$HOME/.ssh/config" ]] && cp "$HOME/.ssh/config" "$HOME/.ssh/config.backup.$(date +%Y%m%d%H%M%S)"
   touch "$HOME/.ssh/config"
   echo -e "Host *\n AddKeysToAgent yes\n UseKeychain yes\n IdentityFile ~/.ssh/id_ed25519" | tee "$HOME/.ssh/config"
-  ssh-add -K "$HOME/.ssh/id_ed25519"
+  ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519"
   ok
 
   echo -e "\nNote: You should add your SSH key to your github account by first running:\n"
@@ -258,9 +264,7 @@ sub_install_hosts() {
       require_brew python
     fi
     if ! command -v pip3 >/dev/null 2>&1; then
-      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-      sudo python3 get-pip.py
-      rm get-pip.py
+      python3 -m ensurepip --upgrade 2>/dev/null || true
     fi
     action "installing python dependencies from stevenblack-hosts requirements.txt"
     # Create a virtual environment for stevenblack-hosts
@@ -328,10 +332,58 @@ install_packages() {
 
 sub_install_packages() {
   bot "Packages install\n"
-  read -r -p "Install packages/tools/apps? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
-    pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
 
+  pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
+
+  # Check if Brewfile exists (preferred method)
+  if [[ -f "Brewfile" ]]; then
+    read -r -p "Install packages using Brewfile (brew bundle)? [y|N] " response
+    if [[ $response =~ (y|yes|Y) ]]; then
+      action "Installing packages via brew bundle..."
+      brew bundle install --file=Brewfile
+      ok "Homebrew packages installed"
+
+      # Handle npm packages separately (not in Brewfile)
+      if [[ -f "packages/npm.list" ]]; then
+        read -r -p "Install NPM global packages? [y|N] " npm_response
+        if [[ $npm_response =~ (y|yes|Y) ]]; then
+          action "Installing NPM packages..."
+          while IFS= read -r package || [[ -n "$package" ]]; do
+            [[ $package =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${package// /}" ]] && continue
+            require_npm "$package"
+          done <"packages/npm.list"
+          ok "NPM packages installed"
+        fi
+      fi
+
+      # Handle VS Code extensions separately
+      if [[ -f "packages/code.list" ]]; then
+        read -r -p "Install VS Code extensions? [y|N] " code_response
+        if [[ $code_response =~ (y|yes|Y) ]]; then
+          action "Installing VS Code extensions..."
+          while IFS= read -r extension || [[ -n "$extension" ]]; do
+            [[ $extension =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${extension// /}" ]] && continue
+            require_code "$extension"
+          done <"packages/code.list"
+          ok "VS Code extensions installed"
+        fi
+      fi
+
+      running "cleanup homebrew"
+      brew cleanup --force >/dev/null 2>&1
+      rm -f -r /Library/Caches/Homebrew/* >/dev/null 2>&1
+      xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook" 2>/dev/null
+      popd >/dev/null 2>&1 || exit
+      ok
+      return
+    fi
+  fi
+
+  # Fallback to legacy .list files
+  read -r -p "Install packages using legacy .list files? [y|N] " response
+  if [[ $response =~ (y|yes|Y) ]]; then
     install_packages "tap.list" "require_tap" "Homebrew taps"
     install_packages "brew.list" "require_brew" "Homebrew utilities"
     install_packages "cask.list" "require_cask" "Homebrew desktop apps"
@@ -342,7 +394,7 @@ sub_install_packages() {
     running "cleanup homebrew"
     brew cleanup --force >/dev/null 2>&1
     rm -f -r /Library/Caches/Homebrew/* >/dev/null 2>&1
-    xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook"
+    xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook" 2>/dev/null
     popd >/dev/null 2>&1 || exit
     ok
   else
@@ -382,7 +434,7 @@ sub_install_launchagents() {
 
 sub_configure() {
   read -r -p "Do you want to update the system configurations? [y|N] " response
-  if [[ -z $response || $response =~ ^(y|Y) ]]; then
+  if [[ $response =~ ^(y|Y) ]]; then
     echo
     $0 configure --defaults
     $0 configure --dock
@@ -395,7 +447,7 @@ sub_configure_defaults() {
   bot "OS Configuration\n"
 
   read -r -p "Do you want to update the system defaults? [y|N] " response
-  if [[ -z $response || $response =~ ^(y|Y) ]]; then
+  if [[ $response =~ ^(y|Y) ]]; then
     shopt -s nullglob
 
     for DEFAULTS_FILE in "$DOTFILES_DIR"/macos/defaults*.sh; do
@@ -413,7 +465,7 @@ sub_configure_dock() {
   bot "Dock Configuration\n"
 
   read -r -p "Do you want to update the dock configuration? [y|N] " response
-  if [[ -z $response || $response =~ ^(y|Y) ]]; then
+  if [[ $response =~ ^(y|Y) ]]; then
     . "$DOTFILES_DIR/macos/dock.sh"
 
     ok "Dock reloaded!"
@@ -483,7 +535,7 @@ sub_unlink() {
     fi
 
     if [[ -e ./$file ]]; then
-      mv "./$file" ./
+      mv "./$file" "$HOME/"
       echo -en "$1 backup restored"
       ok
     fi
@@ -570,7 +622,98 @@ sub_open() {
 }
 
 sub_edit() {
-  sh -c "$DOTFILES_IDE $DOTFILES_DIR"
+  "$DOTFILES_IDE" "$DOTFILES_DIR"
+}
+
+sub_test() {
+  "$DOTFILES_DIR/bin/dotfiles-test" "$@"
+}
+
+sub_test_help() {
+  echo -e "\nUsage: $BIN_NAME test [options]"
+  echo
+  echo "Options:"
+  echo "   --verbose, -v    Show detailed output for each test"
+  echo "   --quick, -q      Skip slow tests (shell startup timing)"
+  echo "   --help, -h       Show this help message"
+}
+
+sub_doctor() {
+  "$DOTFILES_DIR/bin/dotfiles-doctor" "$@"
+}
+
+sub_doctor_help() {
+  echo -e "\nUsage: $BIN_NAME doctor [options]"
+  echo
+  echo "Options:"
+  echo "   --fix            Attempt to automatically fix issues"
+  echo "   --help, -h       Show this help message"
+}
+
+sub_hooks() {
+  bot "Git Hooks Setup\n"
+  action "Configuring git to use .githooks directory..."
+  git -C "$DOTFILES_DIR" config core.hooksPath .githooks
+  ok "Git hooks installed!"
+  echo ""
+  echo "The following hooks are now active:"
+  echo "  - pre-commit: Validates shell syntax and runs shellcheck"
+}
+
+sub_profiler() {
+  "$DOTFILES_DIR/bin/dotfiles-profiler" "$@"
+}
+
+sub_profiler_help() {
+  echo -e "\nUsage: $BIN_NAME profiler [options]"
+  echo
+  echo "Options:"
+  echo "   --detailed, -d    Show detailed breakdown of sourced files"
+  echo "   --compare, -c     Compare startup with/without caches"
+  echo "   --help, -h        Show this help message"
+}
+
+sub_cheatsheet() {
+  "$DOTFILES_DIR/bin/dotfiles-cheatsheet" "$@"
+}
+
+sub_cheatsheet_help() {
+  echo -e "\nUsage: $BIN_NAME cheatsheet [options]"
+  echo
+  echo "Options:"
+  echo "   --aliases, -a     Show only aliases"
+  echo "   --functions, -f   Show only functions"
+  echo "   --search, -s      Search for specific command"
+  echo "   --markdown, -m    Output in markdown format"
+  echo "   --help, -h        Show this help message"
+}
+
+sub_secrets() {
+  "$DOTFILES_DIR/bin/dotfiles-secrets" "$@"
+}
+
+sub_secrets_help() {
+  echo -e "\nUsage: $BIN_NAME secrets <command> [options]"
+  echo
+  echo "Commands:"
+  echo "   set <name>        Store a secret in Keychain"
+  echo "   get <name>        Retrieve a secret"
+  echo "   delete <name>     Delete a secret"
+  echo "   list              List all dotfiles secrets"
+  echo "   export <file>     Export secrets to encrypted file"
+  echo "   import <file>     Import secrets from encrypted file"
+  echo "   --help, -h        Show detailed help message"
+}
+
+sub_setup() {
+  "$DOTFILES_DIR/bin/dotfiles-setup" "$@"
+}
+
+sub_setup_help() {
+  echo -e "\nUsage: $BIN_NAME setup"
+  echo
+  echo "Run the interactive setup wizard to install and configure dotfiles."
+  echo "This is recommended for first-time setup on a new machine."
 }
 
 cmd_error() {
@@ -592,15 +735,15 @@ case $COMMAND_NAME in
 "" | "help")
   sub_help
   ;;
-"unlink")
+"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets")
   shift
-  sub_unlink "$@"
+  sub_"$COMMAND_NAME" "$@"
   ;;
 *)
   if [[ -n $SUB_COMMAND_NAME ]]; then
     case $SUB_COMMAND_NAME in
     --"${STRIPPED_SUB_COMMAND_NAME}")
-      sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}
+      "sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}"
       if [ $? = 127 ]; then
         subcmd_error
       fi
@@ -610,7 +753,7 @@ case $COMMAND_NAME in
       ;;
     esac
   else
-    sub_"${COMMAND_NAME}"
+    "sub_${COMMAND_NAME}"
     if [ $? = 127 ]; then
       cmd_error
     fi

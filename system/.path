@@ -1,12 +1,24 @@
-# Start with system path
-# Retrieve it from getconf, otherwise it's just current $PATH
+# PATH configuration - optimized for performance
 
-command-exists getconf && PATH=$($(command -v getconf) PATH)
+# Detect Homebrew prefix without subprocess
+if [[ -x /opt/homebrew/bin/brew ]]; then
+  export HOMEBREW_PREFIX="/opt/homebrew"
+elif [[ -x /usr/local/bin/brew ]]; then
+  export HOMEBREW_PREFIX="/usr/local"
+fi
 
-export HOMEBREW_PREFIX=$($DOTFILES_DIR/bin/is-supported $DOTFILES_DIR/bin/is-apple-silicon /opt/homebrew /usr/local)
-eval "$("$HOMEBREW_PREFIX"/bin/brew shellenv)"
+# Cache brew shellenv output (rarely changes, expensive to compute)
+if [[ -n "$HOMEBREW_PREFIX" ]]; then
+  _brew_cache="${XDG_CACHE_HOME:-$HOME/.cache}/brew-shellenv.zsh"
+  if [[ ! -f "$_brew_cache" ]] || [[ "$HOMEBREW_PREFIX/bin/brew" -nt "$_brew_cache" ]]; then
+    mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+    "$HOMEBREW_PREFIX/bin/brew" shellenv 2>/dev/null | grep -v 'path_helper' > "$_brew_cache"
+  fi
+  [[ -f "$_brew_cache" ]] && source "$_brew_cache"
+  unset _brew_cache
+fi
 
-# Default
+# Prepend paths (function defined in .function)
 prepend-path "/bin"
 prepend-path "/sbin"
 prepend-path "/usr/bin"
@@ -21,12 +33,13 @@ prepend-path "$HOMEBREW_PREFIX/opt/go/libexec/bin"
 prepend-path "$HOMEBREW_PREFIX/opt/ruby/bin"
 prepend-path "$HOMEBREW_PREFIX/opt/openssl/bin"
 prepend-path "$HOME/bin"
+prepend-path "$HOME/.local/bin"
 prepend-path "$HOME/.cargo/bin"
 prepend-path "$HOME/.local/share/pnpm"
-prepend-path "/Applications/Postgres.app/Contents/Versions/16/bin/psql"
+prepend-path "$HOME/.cache/.bun/bin"
+prepend-path "/Applications/Postgres.app/Contents/Versions/16/bin"
 
-# Remove duplicates (preserving prepended items)
-PATH=$(echo -n $PATH | awk -v RS=: '{ if (!arr[$0]++) {printf("%s%s",!ln++?"":":",$0)}}')
+# Remove duplicates using zsh native typeset (no subprocess)
+typeset -U PATH path
 
-# Wrap up
 export PATH

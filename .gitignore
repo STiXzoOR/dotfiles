@@ -22,3 +22,9 @@ runcom/.vim/.netrwhist
 runcom/.vim/bundle/*
 !runcom/.vim/bundle/.gitignore
 !runcom/.vim/bundle/Vundle.vim
+
+# Machine-specific profile (contains secrets/local config)
+profiles/local.zsh
+
+# Brewfile lock (optional - can be committed for reproducibility)
+Brewfile.lock.json

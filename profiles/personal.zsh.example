@@ -1,0 +1,15 @@
+# Personal Machine Profile
+# Copy to personal.zsh and customize
+
+# Personal Git configuration (if different from global)
+# export GIT_AUTHOR_EMAIL="personal@email.com"
+# export GIT_COMMITTER_EMAIL="personal@email.com"
+
+# Personal aliases
+alias projects="cd ~/Projects"
+
+# Personal paths
+# prepend-path "$HOME/personal/scripts"
+
+# Load personal Brewfile additions
+# export HOMEBREW_BUNDLE_FILE_PERSONAL="$DOTFILES_DIR/profiles/Brewfile.personal"

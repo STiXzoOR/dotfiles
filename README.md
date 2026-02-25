@@ -7,7 +7,7 @@ You don't need to install or configure anything upfront! This works with a brand
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 
-- [\\[._.]/ - Hi, I'm the MacOS bot](#_---hi-im-the-macos-bot)
+- [\\[.\_.]/ - Hi, I'm the MacOS bot](#_---hi-im-the-macos-bot)
   - [Forget About Manual Configuration](#forget-about-manual-configuration)
   - [Installation](#installation)
   - [Restoring Dotfiles](#restoring-dotfiles)
@@ -33,8 +33,6 @@ You don't need to install or configure anything upfront! This works with a brand
     - [Photos](#photos)
     - [Safari & WebKit](#safari--webkit)
     - [Google Chrome & Google Chrome Canary](#google-chrome--google-chrome-canary)
-    - [Twitter](#twitter)
-    - [Tweetbot](#tweetbot)
     - [VLC](#vlc)
     - [Xcode](#xcode)
     - [Visual Studio Code](#visual-studio-code)
@@ -64,9 +62,10 @@ Don't you hate getting a new laptop or joining a new team and then spending a wh
 
 When I finish with your machine, you will have a fully configured development environment with a modern terminal emulator (Warp) and a customizable shell prompt.
 
-![iTerm Screenshot](./resources/terminal.png)
+![Terminal Screenshot](./resources/terminal.png)
 
 The shell prompt uses Starship for cross-shell prompt customization, displaying useful information like:
+
 - Current directory path
 - Git branch and status
 - Node.js version (via FNM)
@@ -76,6 +75,7 @@ The shell prompt uses Starship for cross-shell prompt customization, displaying 
 The dotfiles configure Vim as a terminal-based IDE using Vundle for plugin management.
 
 Modern terminal features:
+
 - Warp: AI-powered terminal with native text editing
 - Full-screen mode: `Command + Enter`
 
@@ -149,7 +149,7 @@ Here is the current list:
 The following will only happen if you agree on the prompt
 
 - make sudo command passwordless
-- overwrite your /etc/hosts file with a copy from someonewhocares.org (supports custom whitelist via `system/hosts.whitelist`)
+- overwrite your /etc/hosts file with StevenBlack's unified hosts file for ad/tracker blocking (supports custom whitelist via `system/hosts.whitelist`)
 - install prezto zsh framework
 - link dotfiles
 - install vim plugins/themes
@@ -379,20 +379,6 @@ The following will only happen if you agree on the prompt
 - Use the system-native print preview dialog
 - Expand the print dialog by default
 
-### Twitter
-
-- Disable smart quotes as it’s annoying for code tweets
-- Show the app window when clicking the menu bar icon
-- Enable the hidden ‘Develop’ menu
-- Open links in the background
-- Allow closing the ‘new tweet’ window by pressing $(Esc)
-- Show full names rather than Twitter handles
-- Hide the app in the background if it’s not the front-most window
-
-### Tweetbot
-
-- Bypass the annoyingly slow t.co URL shortener
-
 ### VLC
 
 - Install settings
@@ -452,19 +438,17 @@ The following is the software installed by default:
 ### Taps
 
 - Homebrew/Bundle
-- Homebrew/Cask
-- Homebrew/Cask Drivers
-- Homebrew/Cask Versions
-- Homebrew/Cask Fonts
-- Homebrew/Core
-- Homebrew/Dupes
 - Homebrew/Services
+- goreleaser/tap
+- khanakia/vercelgate
 - Khanhas/Tap
-- Mongodb/Brew
+- lotyp/formulae
+- artginzburg/tap
 
 ### Utilities
 
 **Core/Dotfiles:**
+
 - ack, ag (the_silver_searcher)
 - bats-core
 - coreutils, dos2unix
@@ -476,6 +460,7 @@ The following is the software installed by default:
 - topgrade (universal package upgrader)
 
 **File System/Network:**
+
 - bat (cat replacement)
 - croc (file transfer)
 - eza (ls replacement)
@@ -486,6 +471,7 @@ The following is the software installed by default:
 - zoxide (cd replacement)
 
 **Search/Grep/Diff:**
+
 - fd (find replacement)
 - findutils
 - fzf (fuzzy finder)
@@ -499,6 +485,7 @@ The following is the software installed by default:
 - ripgrep (fast grep)
 
 **Languages/Tools:**
+
 - cmake
 - gh (GitHub CLI)
 - go
@@ -506,6 +493,7 @@ The following is the software installed by default:
 - shellcheck, shfmt
 
 **Media:**
+
 - ffmpeg
 - imagemagick
 - optipng
@@ -514,16 +502,19 @@ The following is the software installed by default:
 - youtube-dl
 
 **Misc:**
+
 - grip (GitHub README preview)
 - sudo-touchid
 
 ### Apps
 
 **Creative & Design:**
+
 - Adobe Creative Cloud
 - Figma
 
 **Development:**
+
 - Arduino, Arduino IDE
 - Autodesk Fusion
 - GitKraken
@@ -531,16 +522,19 @@ The following is the software installed by default:
 - Visual Studio Code
 
 **Browsers:**
+
 - Brave Browser
 - Firefox
 - Google Chrome
 
 **Media:**
+
 - IINA (modern media player)
 - Spotify
 - VLC
 
 **Utilities:**
+
 - AltServer
 - AnyDesk
 - Apparency
@@ -567,9 +561,11 @@ The following is the software installed by default:
 - Zoom
 
 **Terminals:**
+
 - Warp
 
 **Fonts:**
+
 - Font Awesome Terminal Fonts
 - Font Fira Code
 - Font Fira Mono
@@ -587,6 +583,7 @@ The following is the software installed by default:
 - Font Roboto Mono Nerd Font
 
 **QuickLook Plugins:**
+
 - qlmarkdown
 - qlstephen
 - qlvideo
@@ -605,7 +602,6 @@ The following is the software installed by default:
 - Paste
 - Spark
 - Trello
-- Twitter
 
 ### VS Code Extensions
 
@@ -620,7 +616,6 @@ The following is the software installed by default:
 - Multi Line Tricks
 - StandardJS
 - Npm Intellisense
-- Bracket Pair Colorizer 2
 - Markdown Lint
 - Eslint
 - Githistory
@@ -649,7 +644,6 @@ The following is the software installed by default:
 - Savebackup
 - Quicktype
 - Sort Json
-- Code Settings Sync
 - Brewfile
 - Autoimport
 - Open In Browser
@@ -664,16 +658,19 @@ The following is the software installed by default:
 ### Node Packages
 
 **AI Tools:**
+
 - @anthropic-ai/claude-code
 - @google/gemini-cli
 
 **Package Management:**
+
 - npm (latest)
 - pnpm
 - yarn
 - corepack
 
 **Development Tools:**
+
 - eslint
 - prettier
 - detect-circular-deps
@@ -681,22 +678,27 @@ The following is the software installed by default:
 - tsx (TypeScript executor)
 
 **CLI Utilities:**
+
 - fkill-cli (kill processes)
 - get-port-cli
 - fast-cli (internet speed test)
 - gtop (system monitoring)
 
 **Build Tools:**
+
 - grunt-cli
 - gulp-cli
 
 **Maintenance:**
+
 - npm-check-updates
 
 **Publishing:**
+
 - release-it
 
 **Misc:**
+
 - instant-markdown-d
 - local-web-server
 - svgo (SVG optimizer)

@@ -5,11 +5,17 @@
       <key>Label</key>
       <string>com.stixzoor.mackup-auto</string>
 
+      <key>EnvironmentVariables</key>
+      <dict>
+          <key>PATH</key>
+          <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+      </dict>
+
       <key>ProgramArguments</key>
       <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>mackup backup --force</string>
+        <string>/opt/homebrew/bin/mackup backup --force</string>
       </array>
 
       <key>StartInterval</key>

@@ -1,0 +1,299 @@
+#!/usr/bin/env zsh
+#
+# dotfiles-profiler - Profile shell startup time
+#
+# Usage: dotfiles-profiler [--detailed] [--compare]
+#
+# Options:
+#   --detailed    Show detailed breakdown of sourced files
+#   --compare     Compare with/without caches
+#
+
+set -o pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+NC='\033[0m'
+
+DETAILED=false
+COMPARE=false
+
+for arg in "$@"; do
+  case $arg in
+    --detailed|-d) DETAILED=true ;;
+    --compare|-c) COMPARE=true ;;
+    --help|-h)
+      echo "Usage: dotfiles-profiler [--detailed] [--compare]"
+      echo ""
+      echo "Options:"
+      echo "  --detailed, -d    Show detailed breakdown of sourced files"
+      echo "  --compare, -c     Compare startup with/without caches"
+      exit 0
+      ;;
+  esac
+done
+
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+
+#############################################################################
+# Profiling Functions
+#############################################################################
+
+# Measure basic startup time (average of 5 runs)
+measure_startup() {
+  local total=0
+  local runs=5
+  local times=()
+
+  for i in $(seq 1 $runs); do
+    local start=$(perl -MTime::HiRes=time -e 'printf "%.0f\n", time*1000')
+    zsh -i -c 'exit' 2>/dev/null
+    local end=$(perl -MTime::HiRes=time -e 'printf "%.0f\n", time*1000')
+    local duration=$((end - start))
+    times+=($duration)
+    total=$((total + duration))
+  done
+
+  local avg=$((total / runs))
+  local min=${times[1]}
+  local max=${times[1]}
+
+  for t in "${times[@]}"; do
+    [[ $t -lt $min ]] && min=$t
+    [[ $t -gt $max ]] && max=$t
+  done
+
+  echo "$avg $min $max"
+}
+
+# Profile with zprof
+profile_detailed() {
+  echo -e "${BLUE}━━━ Detailed Profiling (zprof) ━━━${NC}"
+  echo ""
+
+  # Create a temporary zshrc that enables profiling
+  local tmp_zshrc=$(mktemp)
+  cat > "$tmp_zshrc" << 'EOF'
+zmodload zsh/zprof
+EOF
+  cat "$HOME/.zshrc" >> "$tmp_zshrc"
+  echo "zprof" >> "$tmp_zshrc"
+
+  # Run with profiling
+  ZDOTDIR=$(dirname "$tmp_zshrc") HOME=$(dirname "$tmp_zshrc") zsh -i -c 'exit' 2>/dev/null | head -40
+
+  rm -f "$tmp_zshrc"
+}
+
+# Profile individual files
+profile_files() {
+  echo -e "${BLUE}━━━ File Load Times ━━━${NC}"
+  echo ""
+
+  local files=(
+    "$DOTFILES_DIR/runcom/.profile"
+    "$DOTFILES_DIR/system/.function"
+    "$DOTFILES_DIR/system/.path"
+    "$DOTFILES_DIR/system/.env"
+    "$DOTFILES_DIR/system/.alias"
+    "$DOTFILES_DIR/system/.fnm"
+    "$DOTFILES_DIR/system/.fzf"
+    "$DOTFILES_DIR/system/.zoxide"
+    "$DOTFILES_DIR/system/.fix"
+    "$DOTFILES_DIR/system/.completion"
+    "$DOTFILES_DIR/modules/prezto/init.zsh"
+  )
+
+  local results=()
+
+  for file in "${files[@]}"; do
+    if [[ -f "$file" ]]; then
+      local basename="${file##*/}"
+      local start=$(perl -MTime::HiRes=time -e 'printf "%.6f\n", time')
+
+      # Source the file in a subshell
+      (
+        export DOTFILES_DIR="$DOTFILES_DIR"
+        export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+        export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+        source "$DOTFILES_DIR/system/.function" 2>/dev/null
+        source "$file" 2>/dev/null
+      )
+
+      local end=$(perl -MTime::HiRes=time -e 'printf "%.6f\n", time')
+      local duration=$(echo "($end - $start) * 1000" | bc)
+      local duration_int=${duration%.*}
+
+      results+=("$duration_int:$basename")
+    fi
+  done
+
+  # Sort by time (descending)
+  printf '%s\n' "${results[@]}" | sort -t: -k1 -nr | while IFS=: read -r time name; do
+    if [[ $time -gt 50 ]]; then
+      printf "${RED}%6dms${NC}  %s\n" "$time" "$name"
+    elif [[ $time -gt 20 ]]; then
+      printf "${YELLOW}%6dms${NC}  %s\n" "$time" "$name"
+    else
+      printf "${GREEN}%6dms${NC}  %s\n" "$time" "$name"
+    fi
+  done
+}
+
+# Check cache status
+check_caches() {
+  echo -e "${BLUE}━━━ Cache Status ━━━${NC}"
+  echo ""
+
+  local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
+  local caches=(
+    "fnm-env.zsh"
+    "zoxide-init.zsh"
+    "thefuck-alias.zsh"
+    "fzf-init.zsh"
+    "brew-shellenv.zsh"
+    "npm-completion.zsh"
+    "dircolors.zsh"
+  )
+
+  for cache in "${caches[@]}"; do
+    local path="$cache_dir/$cache"
+    if [[ -f "$path" ]]; then
+      local size=$(wc -c < "$path" | tr -d ' ')
+      local age_days=$(( ($(date +%s) - $(stat -f %m "$path" 2>/dev/null || stat -c %Y "$path" 2>/dev/null)) / 86400 ))
+      printf "${GREEN}✓${NC} %-25s %6d bytes  %3dd old\n" "$cache" "$size" "$age_days"
+    else
+      printf "${RED}✗${NC} %-25s ${DIM}(missing)${NC}\n" "$cache"
+    fi
+  done
+}
+
+# Compare with and without caches
+compare_caches() {
+  echo -e "${BLUE}━━━ Cache Impact Comparison ━━━${NC}"
+  echo ""
+
+  local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
+
+  # Measure with caches
+  echo -n "Measuring with caches... "
+  local with_cache=$(measure_startup | awk '{print $1}')
+  echo "${with_cache}ms"
+
+  # Backup and remove caches
+  echo -n "Measuring without caches... "
+  local backup_dir=$(mktemp -d)
+  mv "$cache_dir"/*.zsh "$backup_dir/" 2>/dev/null
+
+  local without_cache=$(measure_startup | awk '{print $1}')
+  echo "${without_cache}ms"
+
+  # Restore caches
+  mv "$backup_dir"/*.zsh "$cache_dir/" 2>/dev/null
+  rmdir "$backup_dir" 2>/dev/null
+
+  local diff=$((without_cache - with_cache))
+  local percent=$((diff * 100 / without_cache))
+
+  echo ""
+  echo -e "With caches:    ${GREEN}${with_cache}ms${NC}"
+  echo -e "Without caches: ${RED}${without_cache}ms${NC}"
+  echo -e "Savings:        ${CYAN}${diff}ms (${percent}%)${NC}"
+}
+
+#############################################################################
+# Main
+#############################################################################
+
+main() {
+  echo ""
+  echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
+  echo -e "${BLUE}║     Shell Startup Profiler             ║${NC}"
+  echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
+  echo ""
+
+  # Basic timing
+  echo -e "${BLUE}━━━ Startup Time (5 runs) ━━━${NC}"
+  echo ""
+  echo -n "Measuring... "
+
+  local result=$(measure_startup)
+  local avg=$(echo "$result" | awk '{print $1}')
+  local min=$(echo "$result" | awk '{print $2}')
+  local max=$(echo "$result" | awk '{print $3}')
+
+  echo "done"
+  echo ""
+
+  # Rating
+  local rating rating_color
+  if [[ $avg -lt 200 ]]; then
+    rating="Excellent" rating_color=$GREEN
+  elif [[ $avg -lt 500 ]]; then
+    rating="Good" rating_color=$GREEN
+  elif [[ $avg -lt 1000 ]]; then
+    rating="Acceptable" rating_color=$YELLOW
+  elif [[ $avg -lt 2000 ]]; then
+    rating="Slow" rating_color=$RED
+  else
+    rating="Very Slow" rating_color=$RED
+  fi
+
+  printf "Average: ${rating_color}%dms${NC}  (%s)\n" "$avg" "$rating"
+  printf "Range:   %dms - %dms\n" "$min" "$max"
+  echo ""
+
+  # Cache status
+  check_caches
+  echo ""
+
+  # Detailed profiling if requested
+  if $DETAILED; then
+    profile_files
+    echo ""
+  fi
+
+  # Compare if requested
+  if $COMPARE; then
+    compare_caches
+    echo ""
+  fi
+
+  # Recommendations
+  echo -e "${BLUE}━━━ Recommendations ━━━${NC}"
+  echo ""
+
+  if [[ $avg -gt 1000 ]]; then
+    echo "• Your shell is slow. Try clearing and regenerating caches:"
+    echo "  rm ~/.cache/*.zsh && exec \$SHELL"
+    echo ""
+  fi
+
+  local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
+  local missing_caches=0
+  for cache in fnm-env.zsh zoxide-init.zsh fzf-init.zsh brew-shellenv.zsh; do
+    [[ ! -f "$cache_dir/$cache" ]] && ((missing_caches++))
+  done
+
+  if [[ $missing_caches -gt 0 ]]; then
+    echo "• $missing_caches cache file(s) missing. Restart shell to generate them."
+    echo ""
+  fi
+
+  if ! $DETAILED; then
+    echo "• Run with --detailed to see file-by-file breakdown"
+  fi
+
+  if ! $COMPARE; then
+    echo "• Run with --compare to see cache impact"
+  fi
+
+  echo ""
+}
+
+main "$@"

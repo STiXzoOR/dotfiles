@@ -1,5 +1,19 @@
-source <(fzf --zsh)
+# fzf - fuzzy finder configuration
+# Cached initialization for performance
 
+_fzf_cache="${XDG_CACHE_HOME:-$HOME/.cache}/fzf-init.zsh"
+
+if command -v fzf &>/dev/null; then
+  # Regenerate cache if missing or fzf binary is newer
+  if [[ ! -f "$_fzf_cache" ]] || [[ "$commands[fzf]" -nt "$_fzf_cache" ]]; then
+    mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+    fzf --zsh > "$_fzf_cache" 2>/dev/null
+  fi
+  [[ -f "$_fzf_cache" ]] && source "$_fzf_cache"
+fi
+unset _fzf_cache
+
+# fzf options
 export FZF_CTRL_R_OPTS="
   --bind 'ctrl-y:execute-silent(echo -n {2..} | pbcopy)+abort'
   --color header:italic

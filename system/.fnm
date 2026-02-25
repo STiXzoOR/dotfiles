@@ -1,7 +1,27 @@
-eval "$(fnm env --use-on-cd --corepack-enabled --shell zsh)"
+# fnm (Fast Node Manager) - optimized initialization
+# Uses cached output to avoid running fnm env on every shell start
 
-fnm_upgrade () {
+_fnm_cache="${XDG_CACHE_HOME:-$HOME/.cache}/fnm-env.zsh"
+
+# Regenerate cache if fnm exists and cache is missing or older than 1 day
+if command -v fnm &>/dev/null; then
+  if [[ ! -f "$_fnm_cache" ]] || [[ $(find "$_fnm_cache" -mtime +1 2>/dev/null) ]]; then
+    mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+    fnm env --use-on-cd --corepack-enabled --shell zsh > "$_fnm_cache" 2>/dev/null
+  fi
+  [[ -f "$_fnm_cache" ]] && source "$_fnm_cache"
+fi
+unset _fnm_cache
+
+# Helper function to upgrade global npm packages
+fnm_upgrade() {
   fnm exec --using=$1 npm ls --global --json \
     | jq -r '.dependencies | to_entries[] | .key+"@"+.value.version' \
     | xargs npm i -g
+}
+
+# Force cache refresh
+fnm_refresh() {
+  rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/fnm-env.zsh"
+  exec "$SHELL"
 }

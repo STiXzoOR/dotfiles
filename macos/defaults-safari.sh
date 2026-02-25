@@ -5,6 +5,16 @@ source "$DOTFILES_DIR/scripts/requirers.sh"
 bot "Safari & WebKit"
 ###############################################################################
 
+# NOTE: Since Safari 13 (Catalina), Safari is sandboxed. All `defaults write`
+# commands require Terminal to have Full Disk Access, otherwise writes go to
+# ~/Library/Preferences/ (which Safari ignores) instead of the container at
+# ~/Library/Containers/com.apple.Safari/Data/Library/Preferences/
+# Grant access in: System Settings > Privacy & Security > Full Disk Access
+if ! ls ~/Library/Containers/com.apple.Safari/ &>/dev/null; then
+  error "Terminal lacks Full Disk Access — Safari defaults will NOT take effect"
+  error "Grant access in: System Settings > Privacy & Security > Full Disk Access"
+fi
+
 running "Don’t send search queries to Apple"
 defaults write com.apple.Safari UniversalSearchEnabled -bool false
 defaults write com.apple.Safari SuppressSearchSuggestions -bool true
@@ -31,22 +41,20 @@ ok
 # For High Sierra and below enable the default one
 running "Allow hitting the Backspace key to go to the previous page in history"
 defaults write com.apple.Safari NSUserKeyEquivalents -dict-add Back "\U232b"
+ok
 
 running "Hide Safari’s bookmarks bar by default"
 defaults write com.apple.Safari ShowFavoritesBar -bool false
 ok
 
-running "Hide Safari’s sidebar in Top Sites"
-defaults write com.apple.Safari ShowSidebarInTopSites -bool false
-ok
+# ShowSidebarInTopSites: Removed — "Top Sites" was replaced by "Start Page" in Safari 14 (Big Sur)
 
 running "Disable Safari’s thumbnail cache for History and Top Sites"
 defaults write com.apple.Safari DebugSnapshotsUpdatePolicy -int 2
 ok
 
-running "Enable Safari’s debug menu"
-defaults write com.apple.Safari IncludeInternalDebugMenu -bool true
-ok
+# IncludeInternalDebugMenu: Non-functional since Safari 15+. The Develop menu
+# (IncludeDevelopMenu below) is what most people want.
 
 running "Make Safari’s search banners default to Contains instead of Starts With"
 defaults write com.apple.Safari FindOnPageMatchesWordStartsOnly -bool false
@@ -85,25 +93,14 @@ running "Warn about fraudulent websites"
 defaults write com.apple.Safari WarnAboutFraudulentWebsites -bool true
 ok
 
-running "Disable plug-ins"
-defaults write com.apple.Safari WebKitPluginsEnabled -bool false
-defaults write com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2PluginsEnabled -bool false
-ok
-
-running "Disable Java"
-defaults write com.apple.Safari WebKitJavaEnabled -bool false
-defaults write com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2JavaEnabled -bool false
-defaults write com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2JavaEnabledForLocalFiles -bool false
-ok
+# Plugins and Java removed from Safari since macOS Catalina
 
 running "Block pop-up windows"
 defaults write com.apple.Safari WebKitJavaScriptCanOpenWindowsAutomatically -bool false
 defaults write com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2JavaScriptCanOpenWindowsAutomatically -bool false
 ok
 
-running "Enable Do Not Track"
-defaults write com.apple.Safari SendDoNotTrackHTTPHeader -bool true
-ok
+# Do Not Track removed from Safari since macOS Monterey
 
 running "Update extensions automatically"
 defaults write com.apple.Safari InstallExtensionUpdatesAutomatically -bool true

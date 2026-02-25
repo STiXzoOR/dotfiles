@@ -1,15 +1,12 @@
 [submodule "apps/terminal/nord_theme"]
 	path = apps/terminal/nord_theme
-	url = https://github.com/arcticicestudio/nord-terminal-app
+	url = https://github.com/nordtheme/terminal-app
 [submodule "apps/xcode/nord_theme"]
 	path = apps/xcode/nord_theme
-	url = https://github.com/arcticicestudio/nord-xcode
+	url = https://github.com/nordtheme/xcode
 [submodule "modules/prezto"]
 	path = modules/prezto
 	url = https://github.com/sorin-ionescu/prezto.git
-[submodule "modules/zsh/zsh-autocomplete"]
-	path = modules/zsh/zsh-autocomplete
-	url = https://github.com/marlonrichert/zsh-autocomplete.git
 [submodule "runcom/.vim/bundle/Vundle.vim"]
 	path = runcom/.vim/bundle/Vundle.vim
 	url = https://github.com/VundleVim/Vundle.vim.git

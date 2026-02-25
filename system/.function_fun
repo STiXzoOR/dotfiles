@@ -1,12 +1,12 @@
 # Hammer a service with curl for a given number of times
 # usage: curlhammer $url
 function curlhammer() {
-  bot "about to hammer $1 with $2 curls ⇒"
+  echo "About to hammer $1 with $2 curls ⇒"
   echo "curl -k -s -D - $1 -o /dev/null | grep 'HTTP/1.1' | sed 's/HTTP\/1.1 //'"
   for i in {1..$2}; do
-    curl -k -s -D - $1 -o /dev/null | grep 'HTTP/1.1' | sed 's/HTTP\/1.1 //'
+    curl -k -s -D - "$1" -o /dev/null | grep 'HTTP/1.1' | sed 's/HTTP\/1.1 //'
   done
-  bot "done"
+  echo "Done"
 }
 
 # Do a Matrix movie effect of falling characters

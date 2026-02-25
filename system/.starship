@@ -1,1 +1,6 @@
 export STARSHIP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/starship/config.toml"
+
+# Initialize Starship prompt
+if command -v starship &>/dev/null; then
+  eval "$(starship init zsh)"
+fi

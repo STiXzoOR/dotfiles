@@ -7,38 +7,42 @@
 #
 
 ##################################################################################################
-# Enable Instant Prompt
-##################################################################################################
-# if [[ -s "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-#   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
-# fi
-
-##################################################################################################
 # Hide Username from Prompt
 ##################################################################################################
 
-export DEFAULT_USER=$(whoami)
-
-##################################################################################################
-# Source Powerlevel Settings
-##################################################################################################
-
-[[ -f "$DOTFILES_DIR/system/.prompt" ]] && . "$DOTFILES_DIR/system/.prompt"
+export DEFAULT_USER="$USER"
 
 ##################################################################################################
 # Source Prezto
 ##################################################################################################
 
+# Add completions to fpath BEFORE compinit (Prezto handles compinit)
+fpath=("$DOTFILES_DIR/completions" $fpath)
+
 [[ -s "$DOTFILES_DIR/modules/prezto/init.zsh" ]] && . "$DOTFILES_DIR/modules/prezto/init.zsh"
+
+##################################################################################################
+# Prompt configuration (Powerlevel10k)
+##################################################################################################
+
+# Source p10k config if it exists
+[[ -f "$DOTFILES_DIR/system/.prompt" ]] && source "$DOTFILES_DIR/system/.prompt"
 
 ##################################################################################################
 # Completion settings
 ##################################################################################################
 
+# Source completion config (without redundant compinit)
 source "$DOTFILES_DIR/system/.completion"
-fpath+="$DOTFILES_DIR/completions"
-compinit
+
+# Zoxide (lazy-loaded in .zoxide for performance)
 source "$DOTFILES_DIR/system/.zoxide"
+
+##################################################################################################
+# Key bindings (must be after Prezto for history-substring-search)
+##################################################################################################
+
+source "$DOTFILES_DIR/system/.bindings"
 
 ##################################################################################################
 # Recursive globbing with "**"

@@ -25,31 +25,32 @@ bot "Configuring System"
 # Close any open System Preferences panes, to prevent them from overriding
 # settings we’re about to change
 running "closing any system preferences to prevent issues with automated changes"
-osascript -e 'tell application "System Preferences" to quit'
+# Use "System Settings" for macOS Ventura+ or fall back to "System Preferences"
+osascript -e 'tell application "System Settings" to quit' 2>/dev/null || osascript -e 'tell application "System Preferences" to quit' 2>/dev/null
 ok
 
 ###############################################################################
 bot "Security"
 ###############################################################################
 running "Enable install from Anywhere"
-sudo spctl --master-disable
+# On macOS 15+ (Sequoia), this requires manual confirmation in System Settings > Privacy & Security
+if [[ $(sw_vers -productVersion | cut -d. -f1) -lt 15 ]]; then
+  sudo spctl --master-disable
+else
+  echo "  NOTE: On macOS 15+, enable 'Anywhere' manually in System Settings > Privacy & Security"
+fi
 ok
 
 running "Disable remote apple events"
-sudo systemsetup -setremoteappleevents off
+sudo systemsetup -setremoteappleevents off 2>/dev/null || true
 ok
 
 running "Disable remote login"
-sudo systemsetup -setremotelogin off
+sudo systemsetup -setremotelogin off 2>/dev/null || true
 ok
 
-running "Disable wake-on modem"
-sudo systemsetup -setwakeonmodem off
-ok
-
-# Disable wake-on LAN
 running "Disable wake-on LAN"
-sudo systemsetup -setwakeonnetworkaccess off
+sudo pmset -a womp 0
 ok
 
 running "Disable guest account login"
@@ -77,33 +78,29 @@ running "Set timezone to $TIMEZONE;" #see `sudo systemsetup -listtimezones` for 
 sudo systemsetup -settimezone "$TIMEZONE" >/dev/null
 ok
 
-running "Disable the sound effects on boot"
-sudo nvram SystemAudioVolume=" "
-sudo nvram StartupMute=%01
-ok
+# Boot sound: On macOS 11+ (Big Sur), control via System Settings > Sound > "Play sound on startup"
+# The nvram commands only worked on Intel Macs running macOS 10.15 or earlier
 
 running "Restart automatically if the computer freezes"
-sudo systemsetup -setrestartfreeze on 2>/dev/null
+sudo systemsetup -setrestartfreeze on 2>/dev/null || true
 ok
 
 running "Set standby delay to 24 hours (default is 1 hour)"
 sudo pmset -a standbydelay 86400
 ok
 
-running "Disable Sudden Motion Sensor"
-sudo pmset -a sms 0
-ok
+# Note: Sudden Motion Sensor (sms) setting removed - only relevant for HDDs, not SSDs
+# All modern Macs use SSDs, so this setting is obsolete
 
 running "Disable audio feedback when volume is changed"
 defaults write com.apple.sound.beep.feedback -bool false
 ok
 
-running "Show battery percentage"
-defaults write com.apple.menuextra.battery ShowPercent YES
-ok
+# Note: Battery percentage setting removed - deprecated in macOS Big Sur+
+# Now controlled via System Settings > Control Center > Battery
 
 running "Set highlight color to steel blue"
-defaults write NSGlobalDomain AppleHighlightColor -string "0.172549019607843 0.349019607843137 0,501960784313725"
+defaults write NSGlobalDomain AppleHighlightColor -string "0.172549019607843 0.349019607843137 0.501960784313725"
 ok
 
 running "Set sidebar icon size to medium"
@@ -145,14 +142,15 @@ running "Automatically quit printer app once the print jobs complete"
 defaults write com.apple.print.PrintingPrefs "Quit When Finished" -bool true
 ok
 
-running "Disable the “Are you sure you want to open this application?” dialog"
+running "Disable the 'Are you sure you want to open this application?' dialog"
 defaults write com.apple.LaunchServices LSQuarantine -bool false
 ok
 
-running "Remove duplicates in the “Open With” menu (also see 'lscleanup' alias)"
+running "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
 ok
 
+running "Show control characters"
 defaults write NSGlobalDomain NSTextShowsControlCharacters -bool true
 ok
 
@@ -160,9 +158,8 @@ running "Disable Resume system-wide"
 defaults write NSGlobalDomain NSQuitAlwaysKeepsWindows -bool false
 ok
 
-running "Disable automatic termination of inactive apps"
-defaults write NSGlobalDomain NSDisableAutomaticTermination -bool true
-ok
+# Note: NSDisableAutomaticTermination removed - disabling automatic termination
+# prevents macOS from freeing RAM and negatively impacts system performance
 
 running "Set Help Viewer windows to non-floating mode"
 defaults write com.apple.helpviewer DevMode -bool true
@@ -201,7 +198,7 @@ defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
 ok
 
 running "Enable full keyboard access for all controls (e.g. enable Tab in modal dialogs)"
-defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
+defaults write NSGlobalDomain AppleKeyboardUIMode -int 2
 ok
 
 running "Disable press-and-hold for keys in favor of key repeat"
@@ -213,13 +210,8 @@ defaults write NSGlobalDomain KeyRepeat -int 1
 defaults write NSGlobalDomain InitialKeyRepeat -int 15
 ok
 
-running "Automatically illuminate built-in MacBook keyboard in low light"
-defaults write com.apple.BezelServices kDim -bool true
-ok
-
-running "Turn off keyboard illumination when computer is not used for 5 minutes"
-defaults write com.apple.BezelServices kDimTime -int 300
-ok
+# Note: BezelServices keyboard illumination settings removed - deprecated in modern macOS
+# Keyboard backlight is now managed automatically by the system
 
 ###############################################################################
 bot "Trackpad, mouse, Bluetooth accessories"
@@ -257,10 +249,10 @@ ok
 bot "Screen"
 ###############################################################################
 
-running "Require password immediately after sleep or screen saver begins"
-defaults write com.apple.screensaver askForPassword -int 1
-defaults write com.apple.screensaver askForPasswordDelay -int 0
-ok
+# Screen lock password: Broken since macOS 10.13 (High Sierra).
+# Use System Settings > Lock Screen to configure, or:
+#   sysadminctl -screenLock immediate -password -
+# (requires interactive password entry)
 
 running "Save screenshots to the desktop"
 mkdir -p "${SCREENSHOTS_FOLDER}"
@@ -275,10 +267,8 @@ running "Disable shadow in screenshots"
 defaults write com.apple.screencapture disable-shadow -bool true
 ok
 
-running "Enable subpixel font rendering on non-Apple LCDs"
-# Reference: https://github.com/kevinSuttle/macOS-Defaults/issues/17#issuecomment-266633501
-defaults write NSGlobalDomain AppleFontSmoothing -int 2
-ok
+# Note: AppleFontSmoothing (subpixel rendering) removed - deprecated since macOS Mojave
+# Retina displays don't benefit from subpixel antialiasing
 
 #running "Enable HiDPI display modes (requires restart)"
 #sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
@@ -325,16 +315,14 @@ running "Show path bar"
 defaults write com.apple.finder ShowPathbar -bool true
 ok
 
-running "Allow text selection in Quick Look"
-defaults write com.apple.finder QLEnableTextSelection -bool true
-ok
+# Note: QLEnableTextSelection removed - text selection is now enabled by default in Quick Look
 
-running "Display full POSIX path as Finder window title"
-defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
-ok
+# POSIX path in title: Broken on Sequoia (Finder title bar redesign).
+# Use ShowPathbar instead (enabled above).
 
 running "Keep folders on top when sorting by name"
 defaults write com.apple.finder _FXSortFoldersFirst -bool true
+ok
 
 running "When performing a search, search the current folder by default"
 defaults write com.apple.finder FXDefaultSearchScope -string "SCcf"
@@ -382,9 +370,8 @@ running "Disable the warning before emptying the Trash"
 defaults write com.apple.finder WarnOnEmptyTrash -bool false
 ok
 
-running "Empty Trash securely by default"
-defaults write com.apple.finder EmptyTrashSecurely -bool true
-ok
+# Note: EmptyTrashSecurely removed - secure delete was removed in El Capitan
+# SSDs don't benefit from secure erase due to wear leveling
 
 running "Show the ~/Library folder"
 chflags nohidden ~/Library && xattr -d com.apple.FinderInfo ~/Library
@@ -394,7 +381,7 @@ running "Show the /Volumes folder"
 sudo chflags nohidden /Volumes
 ok
 
-running "Expand the following File Info panes: “General”, “Open with”, and “Sharing & Permissions”"
+running "Expand the following File Info panes: General, Open with, and Sharing & Permissions"
 defaults write com.apple.finder FXInfoPanesExpanded -dict \
   General -bool true \
   OpenWith -bool true \
@@ -402,7 +389,7 @@ defaults write com.apple.finder FXInfoPanesExpanded -dict \
 ok
 
 ###############################################################################
-bot "Dock & Dashboard"
+bot "Dock"
 ###############################################################################
 
 running "Set the icon size of Dock items to 36 pixels"
@@ -429,9 +416,7 @@ running "Show indicator lights for open applications in the Dock"
 defaults write com.apple.dock show-process-indicators -bool true
 ok
 
-running "Speed up Mission Control animations"
-defaults write com.apple.dock expose-animation-duration -float 0.1
-ok
+# Mission Control animation speed: Unreliable since Sierra (animations moved to WindowServer)
 
 running "Remove the auto-hiding Dock delay"
 defaults write com.apple.dock autohide-delay -float 0
@@ -445,9 +430,10 @@ running "Reset Launchpad, but keep the desktop wallpaper intact"
 find "${HOME}/Library/Application Support/Dock" -name "*-*.db" -maxdepth 1 -delete
 ok
 
-running "Add iOS & Watch Simulator to Launchpad"
-sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" "/Applications/Simulator.app"
-sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator (Watch).app" "/Applications/Simulator (Watch).app"
+running "Add iOS Simulator to Launchpad"
+if [[ -d "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" ]]; then
+  sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" "/Applications/Simulator.app"
+fi
 ok
 
 bot "Hot corners"
@@ -458,20 +444,23 @@ bot "Hot corners"
 #  4: Desktop
 #  5: Start screen saver
 #  6: Disable screen saver
-#  7: Dashboard
 # 10: Put display to sleep
 # 11: Launchpad
 # 12: Notification Center
 # 13: Lock Screen
+# 14: Quick Note (added in Monterey)
 running "Top left screen corner → Mission Control"
 defaults write com.apple.dock wvous-tl-corner -int 2
 defaults write com.apple.dock wvous-tl-modifier -int 0
+ok
 running "Top right screen corner → Desktop"
 defaults write com.apple.dock wvous-tr-corner -int 4
 defaults write com.apple.dock wvous-tr-modifier -int 0
+ok
 running "Bottom left screen corner → Start screen saver"
 defaults write com.apple.dock wvous-bl-corner -int 5
 defaults write com.apple.dock wvous-bl-modifier -int 0
+ok
 
 ###############################################################################
 bot "Spotlight"

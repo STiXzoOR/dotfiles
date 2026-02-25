@@ -6,7 +6,7 @@
       },
       "REPO_MANAGEMENT": {}
     },
-    "selectedTabId": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
+    "selectedTabId": "75e5286a-2a98-479c-a0db-966e5aa5998b",
     "tabs": [
       {
         "id": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
@@ -22,13 +22,6 @@
         "type": "REPO",
         "repoName": "frontend",
         "repoPath": "/Users/stix/Work/mote/frontend/",
-        "skipWSLChecks": null
-      },
-      {
-        "id": "ab5ca97e-3e63-465f-a888-d697a85acdef",
-        "type": "REPO",
-        "repoName": "backend",
-        "repoPath": "/Users/stix/Work/mote/backend/",
         "skipWSLChecks": false
       },
       {
@@ -36,13 +29,6 @@
         "type": "REPO",
         "repoName": "electricity_partial_bill_calculator",
         "repoPath": "/Users/stix/Projects/electricity_partial_bill_calculator/",
-        "skipWSLChecks": false
-      },
-      {
-        "id": "30193ee8-2be7-4e9f-bdc4-3a46978f5326",
-        "type": "REPO",
-        "repoName": "name_picker_roulette",
-        "repoPath": "/Users/stix/Projects/name_picker_roulette/",
         "skipWSLChecks": false
       },
       {
@@ -89,6 +75,46 @@
         "type": "REPO",
         "repoName": "raflix",
         "repoPath": "/Users/stix/Work/raflix/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "a0d6e1ea-112b-448d-b0d8-aa33e79934a3",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "swizzin-scripts",
+        "repoPath": "/Users/stix/Projects/swizzin-scripts/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "b6a9f6d2-1892-4188-8f72-0af2ec713c69",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "decypharr",
+        "repoPath": "/Users/stix/Projects/decypharr/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "a9ac5e37-be54-4bbc-a85c-969e3095d395",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "taggarr",
+        "repoPath": "/Users/stix/Projects/taggarr/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "75e5286a-2a98-479c-a0db-966e5aa5998b",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "thesis_v2",
+        "repoPath": "/Users/stix/Projects/thesis_v2/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "f2895c08-df75-4d89-9cec-308049666502",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "webflow-cms-manager",
+        "repoPath": "/Users/stix/Work/mote/webflow-cms-manager/",
         "skipWSLChecks": null
       }
     ]
@@ -139,7 +165,7 @@
   "zoom": 1,
   "projects": {},
   "ui": {
-    "theme": "nord-dark.jsonc",
+    "theme": "dark",
     "repoManagementTab": {
       "orderedSectionIds": [],
       "sectionsById": {}
@@ -197,5 +223,10 @@
   },
   "ai": {
     "sendCodeApproved": true
+  },
+  "actions": {
+    "commit": {
+      "ignoreWhiteSpace": false
+    }
   }
 }
