@@ -19,11 +19,9 @@ tap "artginzburg/tap"
 # ============================================================================
 
 # Search tools
-brew "ack"                          # Code search tool
 brew "fd"                           # Fast find alternative
 brew "fzf"                          # Fuzzy finder
 brew "ripgrep"                      # Fast grep alternative
-brew "the_silver_searcher"          # ag
 
 # File utilities
 brew "bat"                          # Cat with syntax highlighting

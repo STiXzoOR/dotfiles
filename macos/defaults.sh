@@ -32,14 +32,8 @@ ok
 ###############################################################################
 bot "Security"
 ###############################################################################
-running "Enable install from Anywhere"
-# On macOS 15+ (Sequoia), this requires manual confirmation in System Settings > Privacy & Security
-if [[ $(sw_vers -productVersion | cut -d. -f1) -lt 15 ]]; then
-  sudo spctl --master-disable
-else
-  echo "  NOTE: On macOS 15+, enable 'Anywhere' manually in System Settings > Privacy & Security"
-fi
-ok
+# Gatekeeper: kept enabled for security
+# To allow individual unsigned apps, use: sudo xattr -r -d com.apple.quarantine /path/to/app
 
 running "Disable remote apple events"
 sudo systemsetup -setremoteappleevents off 2>/dev/null || true
@@ -142,9 +136,8 @@ running "Automatically quit printer app once the print jobs complete"
 defaults write com.apple.print.PrintingPrefs "Quit When Finished" -bool true
 ok
 
-running "Disable the 'Are you sure you want to open this application?' dialog"
-defaults write com.apple.LaunchServices LSQuarantine -bool false
-ok
+# Quarantine dialog: kept enabled for security
+# To bypass for a specific app: xattr -d com.apple.quarantine /path/to/app
 
 running "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
@@ -345,11 +338,7 @@ defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
 defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
 ok
 
-running "Disable disk image verification"
-defaults write com.apple.frameworks.diskimages skip-verify -bool true
-defaults write com.apple.frameworks.diskimages skip-verify-locked -bool true
-defaults write com.apple.frameworks.diskimages skip-verify-remote -bool true
-ok
+# Disk image verification: kept enabled for security
 
 running "Automatically open a new Finder window when a volume is mounted"
 defaults write com.apple.frameworks.diskimages auto-open-ro-root -bool true

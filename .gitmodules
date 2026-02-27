@@ -13,9 +13,6 @@
 [submodule "config/spicetify/Themes"]
 	path = config/spicetify/Themes
 	url = https://github.com/morpheusthewhite/spicetify-themes
-[submodule "modules/zsh/zsh-thefuck"]
-	path = modules/zsh/zsh-thefuck
-	url = https://github.com/laggardkernel/zsh-thefuck
 [submodule "apps/warp/themes"]
 	path = apps/warp/themes
 	url = https://github.com/warpdotdev/themes.git
@@ -25,9 +22,6 @@
 [submodule "modules/stevenblack-hosts"]
 	path = modules/stevenblack-hosts
 	url = https://github.com/StevenBlack/hosts.git
-[submodule "modules/zsh/zsh-lazy-load"]
-	path = modules/zsh/zsh-lazy-load
-	url = https://github.com/xcv58/zsh-lazy-load.git
 [submodule "modules/prezto-contrib"]
 	path = modules/prezto-contrib
 	url = https://github.com/belak/prezto-contrib.git

@@ -17,7 +17,7 @@ srv() {
 # Get information for a given ip address
 # usage: ip-info 123.456.789.0
 function ipinfo() {
-  curl ipinfo.io/$1
+  curl "ipinfo.io/${1:-}"
 }
 
 # Get IP from hostname
@@ -41,11 +41,11 @@ function yt-download() {
 # usage: curlheader $url
 function curlheader() {
   if [[ -z "$2" ]]; then
-    echo "curl -k -s -D - $1 -o /dev/null"
-    curl -k -s -D - "$1" -o /dev/null
+    echo "curl -s -D - $1 -o /dev/null"
+    curl -s -D - "$1" -o /dev/null
   else
-    echo "curl -k -s -D - $2 -o /dev/null | grep $1:"
-    curl -k -s -D - "$2" -o /dev/null | grep "$1:"
+    echo "curl -s -D - $2 -o /dev/null | grep $1:"
+    curl -s -D - "$2" -o /dev/null | grep "$1:"
   fi
 }
 

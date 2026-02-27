@@ -9,9 +9,7 @@ else
   return
 fi
 
-PATH="$DOTFILES_DIR/bin:$PATH"
-
-for DOTFILE in "$DOTFILES_DIR"/system/.{function,function_*,path,env,alias,fnm,fzf,grep,fix,pnpm}; do
+for DOTFILE in "$DOTFILES_DIR"/system/.{function,function_*,path,env,alias,fnm,fzf,grep,thefuck,pnpm}; do
   [[ -f "$DOTFILE" ]] && . "$DOTFILE"
 done
 

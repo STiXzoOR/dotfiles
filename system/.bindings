@@ -23,6 +23,6 @@ bindkey '^[[3;5~' backward-delete-word
 
 # fzf key-bindings are loaded via .fzf (fzf --zsh includes them)
 # Fallback for systems without fzf
-if ! command -v fzf &>/dev/null; then
+if ! (( $+commands[fzf] )); then
   bindkey '^R' history-incremental-search-backward
 fi

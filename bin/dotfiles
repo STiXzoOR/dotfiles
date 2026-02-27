@@ -11,7 +11,11 @@ export DOTFILES_DIR="$ROOT_DIR"
 export XDG_CONFIG_HOME="$HOME/.config"
 export STOW_DIR="$DOTFILES_DIR"
 export ACCEPT_EULA=Y
-HOMEBREW_PREFIX=$("$DOTFILES_DIR"/bin/is-supported "$DOTFILES_DIR"/bin/is-apple-silicon /opt/homebrew /usr/local)
+if [[ "$(uname -m)" == "arm64" ]]; then
+  HOMEBREW_PREFIX="/opt/homebrew"
+else
+  HOMEBREW_PREFIX="/usr/local"
+fi
 PATH="$HOMEBREW_PREFIX/bin:$DOTFILES_DIR/bin:$PATH"
 
 source "$ROOT_DIR/scripts/echos.sh"
@@ -74,7 +78,7 @@ sub_update_help() {
 sub_install() {
   bot "Hi! I'm going to install tooling and tweak your system settings. Here I go..."
 
-  if ! grep -q 'NOPASSWD:     ALL' "/etc/sudoers.d/$LOGNAME" 2>/dev/null; then
+  if ! grep -q 'NOPASSWD:' "/etc/sudoers.d/$LOGNAME" 2>/dev/null; then
     echo "no sudoer file"
     sudo -v
 
@@ -185,7 +189,7 @@ sub_install_passwordless() {
     if ! grep -q "#includedir /private/etc/sudoers.d" /etc/sudoers; then
       echo '#includedir /private/etc/sudoers.d' | sudo tee -a /etc/sudoers >/dev/null
     fi
-    echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD:     ALL" | sudo tee "/etc/sudoers.d/$LOGNAME"
+    echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD: $HOMEBREW_PREFIX/bin/brew, /usr/sbin/softwareupdate, /usr/bin/xattr, /usr/bin/pkill coreaudiod" | sudo tee "/etc/sudoers.d/$LOGNAME"
     bot "You can now run sudo commands without password!"
   fi
 }
@@ -200,8 +204,8 @@ sub_install_ssh() {
   fi
 
   if [[ $response =~ (yes|y|Y) ]]; then
-    rm -rf "$HOME/.ssh/id_ed25519"
-    rm -rf "$HOME/.ssh/id_ed25519.pub"
+    rm -f "$HOME/.ssh/id_ed25519"
+    rm -f "$HOME/.ssh/id_ed25519.pub"
     action "Generating a new SSH key"
     read -r -p "Please enter an email to associate your ssh key: " ssh_email
     ssh-keygen -t ed25519 -C "$ssh_email" -f "$HOME/.ssh/id_ed25519"
@@ -212,9 +216,16 @@ sub_install_ssh() {
 
   action "Adding SSH key to SSH Agent"
   eval "$(ssh-agent -s)"
-  [[ -f "$HOME/.ssh/config" ]] && cp "$HOME/.ssh/config" "$HOME/.ssh/config.backup.$(date +%Y%m%d%H%M%S)"
-  touch "$HOME/.ssh/config"
-  echo -e "Host *\n AddKeysToAgent yes\n UseKeychain yes\n IdentityFile ~/.ssh/id_ed25519" | tee "$HOME/.ssh/config"
+  if ! grep -q "IdentityFile ~/.ssh/id_ed25519" "$HOME/.ssh/config" 2>/dev/null; then
+    [[ -f "$HOME/.ssh/config" ]] && cp "$HOME/.ssh/config" "$HOME/.ssh/config.backup.$(date +%Y%m%d%H%M%S)"
+    cat >> "$HOME/.ssh/config" <<'SSH_EOF'
+
+Host *
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519
+SSH_EOF
+  fi
   ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519"
   ok
 
@@ -567,11 +578,25 @@ sub_update() {
   git submodule update --remote --recursive --checkout --quiet >/dev/null 2>&1
   ok
 
-  running "Updating remote repo"
-  git add -A >/dev/null 2>&1
-  git commit -m "$message" >/dev/null 2>&1
-  git push origin main --quiet >/dev/null 2>&1
-  ok
+  running "Checking for changes"
+  local changes
+  changes=$(git status --short)
+  if [[ -z "$changes" ]]; then
+    warn "No changes to commit."
+  else
+    echo -e "\nChanged files:"
+    echo "$changes"
+    echo
+    read -r -p "Commit and push these changes? [y|N] " confirm
+    if [[ $confirm =~ (yes|y|Y) ]]; then
+      git add -A
+      git commit -m "$message"
+      git push origin main --quiet
+      ok
+    else
+      skip
+    fi
+  fi
 
   running "Saving date of update"
   git config --global dotfiles.lastupdate "$(date "+%F %T")" >/dev/null 2>&1

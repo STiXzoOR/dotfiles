@@ -1,14 +1,6 @@
 # Completion configuration
 # Note: compinit is handled by Prezto's completion module
-
-# Cache HOMEBREW_PREFIX if not set (avoid repeated brew calls)
-if [[ -z "$HOMEBREW_PREFIX" ]]; then
-  if [[ -x /opt/homebrew/bin/brew ]]; then
-    HOMEBREW_PREFIX="/opt/homebrew"
-  elif [[ -x /usr/local/bin/brew ]]; then
-    HOMEBREW_PREFIX="/usr/local"
-  fi
-fi
+# HOMEBREW_PREFIX is set by system/.path
 
 # Dotfiles completion
 _dotfiles_completions() {
@@ -19,7 +11,7 @@ compdef _dotfiles_completions dotfiles
 # npm completion - cached for performance
 # Regenerate with: npm completion > ~/.cache/npm-completion.zsh
 _npm_completion_file="${XDG_CACHE_HOME:-$HOME/.cache}/npm-completion.zsh"
-if [[ ! -f "$_npm_completion_file" ]] && command -v npm &>/dev/null; then
+if [[ ! -f "$_npm_completion_file" ]] && (( $+commands[npm] )); then
   mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
   npm completion > "$_npm_completion_file" 2>/dev/null
 fi

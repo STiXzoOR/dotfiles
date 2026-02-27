@@ -67,7 +67,7 @@ function dedup-pathvar() {
 colors() {
   local X=$(tput op)
   local Y=$(printf %$((COLUMNS-6))s)
-  for i in {0..256}; do
+  for i in {0..255}; do
     o=00$i
     echo -e "${o:${#o}-3:3}" "$(tput setaf "$i";tput setab "$i")${Y// /=}${X}"
   done

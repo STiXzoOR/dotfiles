@@ -23,6 +23,9 @@ runcom/.vim/bundle/*
 !runcom/.vim/bundle/.gitignore
 !runcom/.vim/bundle/Vundle.vim
 
+# Claude Code project config
+config/.claude/
+
 # Machine-specific profile (contains secrets/local config)
 profiles/local.zsh
 

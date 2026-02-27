@@ -4,7 +4,7 @@
 
 alias _="sudo"
 alias clauded="claude --dangerously-skip-permissions"
-alias rr="rm -rf"
+alias rr="rm -rf -I"
 alias g="git"
 alias library="cd $HOME/Library"
 alias gdrive='cd "$HOME/Library/CloudStorage/GoogleDrive-"* 2>/dev/null || echo "Google Drive not found"'
@@ -92,9 +92,9 @@ alias killos="killfinder && killdock && killmenubar"
 alias resetaudio="sudo pkill coreaudiod"
 alias dnsflush='dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
 alias cleanupds="find . -type f -name '*.DS_Store' -ls -delete"
-alias cleanupad="find . -type d -name '.AppleD*' -ls -exec /bin/rm -r {} \;"
+alias cleanupad="find . -type d -name '.AppleD*' -prune -ls -exec /bin/rm -r {} +"
 alias emptytrash="sudo rm -rfv /Volumes/*/.Trashes; sudo rm -rfv ~/.Trash; sudo rm -rfv /private/var/log/asl/*.asl; sqlite3 ~/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV* 'delete from LSQuarantineEvent'"
-alias update='sudo softwareupdate -i -a; brew update; brew upgrade; brew upgrade --cask; brew cleanup; mas upgrade; npm install npm -g; npm update -g; npm audit fix; sudo gem update --system; sudo gem update; sudo gem cleanup'
+alias update='sudo softwareupdate -i -a; brew update; brew upgrade; brew upgrade --cask; brew cleanup; mas upgrade; npm install npm -g; npm update -g; npm audit fix'
 
 #############################################################
 # Network

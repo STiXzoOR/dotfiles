@@ -39,21 +39,6 @@
         "skipWSLChecks": false
       },
       {
-        "id": "a343efff-c313-4016-9a81-abab15083c0d",
-        "type": "REPO",
-        "repoName": "swaptic",
-        "repoPath": "/Users/stix/Work/swaptic/swaptic/",
-        "skipWSLChecks": false
-      },
-      {
-        "id": "40346f33-6537-4dde-b35f-7a95c59a8d4f",
-        "isWorktree": false,
-        "type": "REPO",
-        "repoName": "predictive-typing",
-        "repoPath": "/Users/stix/Work/mote/predictive-typing/",
-        "skipWSLChecks": null
-      },
-      {
         "id": "e2d60858-0ed5-4b03-af5c-c768ebbbf249",
         "isWorktree": false,
         "type": "REPO",
@@ -133,7 +118,7 @@
   },
   "defaultTerminal": "iTerm2",
   "fileView": {
-    "diffDisplayMode": "hunk"
+    "diffDisplayMode": "split"
   },
   "layout": {
     "CommitMessage": {
@@ -144,7 +129,7 @@
       "width": 215
     },
     "DetailPanel": {
-      "width": 492
+      "width": 408
     }
   },
   "externalEditor": "VS Code",
@@ -219,7 +204,7 @@
     }
   },
   "repoInit": {
-    "lastOpenedRepoPath": "/Users/stix/Work/raflix"
+    "lastOpenedRepoPath": "/Users/stix/Work/mote/webflow-cms-manager"
   },
   "ai": {
     "sendCodeApproved": true

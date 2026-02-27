@@ -7,7 +7,11 @@
 
 function source_brew() {
   if [[ -z "${HOMEBREW_PREFIX}" ]]; then
-    HOMEBREW_PREFIX=$(is-supported is-apple-silicon /opt/homebrew /usr/local)
+    if [[ "$(uname -m)" == "arm64" ]]; then
+      HOMEBREW_PREFIX="/opt/homebrew"
+    else
+      HOMEBREW_PREFIX="/usr/local"
+    fi
   fi
 
   eval "$("$HOMEBREW_PREFIX"/bin/brew shellenv)"
@@ -27,7 +31,7 @@ function require_tap() {
 function require_cask() {
   running "cask $1"
   if ! brew list --cask "$1" >/dev/null 2>&1; then
-    action "brew install --cask $1 $2"
+    action "brew install --cask $1"
     if ! brew install --cask "$1"; then
       error "failed to install $1!"
     fi
@@ -61,15 +65,6 @@ function require_mas() {
   if [[ $(mas list | grep "$1" | head -1 | cut -d' ' -f1) != "$1" ]]; then
     action "mas install $1"
     mas install "$1"
-  fi
-  ok
-}
-
-function require_gem() {
-  running "gem $1"
-  if [[ $(gem list --local | grep "$1" | head -1 | cut -d' ' -f1) != "$1" ]]; then
-    action "gem install $1"
-    gem install "$1"
   fi
   ok
 }
