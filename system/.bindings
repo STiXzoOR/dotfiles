@@ -1,8 +1,6 @@
 # Fuzzy find: start to type
 bindkey "$terminfo[kcuu1]" history-substring-search-up
 bindkey "$terminfo[kcud1]" history-substring-search-down
-bindkey "$terminfo[cuu1]" history-substring-search-up
-bindkey "$terminfo[cud1]" history-substring-search-down
 
 # Backward and forward word with option+left/right
 bindkey '^[^[[D' backward-word
