@@ -9,9 +9,17 @@ else
   return
 fi
 
-for DOTFILE in "$DOTFILES_DIR"/system/.{function,function_*,path,env,alias,fnm,fzf,grep,thefuck,pnpm}; do
+# Core system files (bash + zsh compatible)
+for DOTFILE in "$DOTFILES_DIR"/system/.{function,function_*,path,env,grep}; do
   [[ -f "$DOTFILE" ]] && . "$DOTFILE"
 done
+
+# Files using zsh-only features ($+commands, alias -g, alias -s)
+if [[ -n "$ZSH_VERSION" ]]; then
+  for DOTFILE in "$DOTFILES_DIR"/system/.{alias,fnm,fzf,thefuck,pnpm}; do
+    [[ -f "$DOTFILE" ]] && . "$DOTFILE"
+  done
+fi
 
 # dircolors - cached for performance
 _dircolors_cache="${XDG_CACHE_HOME:-$HOME/.cache}/dircolors.zsh"
