@@ -1,0 +1,26 @@
+# Claude Code Marketplaces
+# Format: github_org/repo (or full git URL for non-standard repos)
+# Used by: scripts/install_claude.sh
+
+# Official Anthropic
+anthropics/claude-plugins-official
+anthropics/skills
+anthropics/claude-code
+
+# Power-user
+obra/superpowers-marketplace
+https://github.com/EveryInc/compound-engineering-plugin.git
+ArtemXTech/personal-os-skills
+
+# Dev-focused
+steveyegge/beads
+kingbootoshi/cartographer
+kenryu42/cc-marketplace
+affaan-m/everything-claude-code
+guinacio/claude-image-gen
+CloudAI-X/claude-workflow-v2
+
+# Framework-specific
+hopeoverture/worldbuilding-app-skills
+davila7/claude-code-templates
+jezweb/claude-skills

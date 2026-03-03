@@ -1,0 +1,74 @@
+# Claude Code Plugins
+# Format: plugin@marketplace
+# Used by: scripts/install_claude.sh
+# To find available plugins: claude plugin list --available
+
+# Official Anthropic plugins
+context7@claude-plugins-official
+frontend-design@claude-plugins-official
+hookify@claude-plugins-official
+vercel@claude-plugins-official
+code-simplifier@claude-plugins-official
+feature-dev@claude-plugins-official
+code-review@claude-plugins-official
+security-guidance@claude-plugins-official
+typescript-lsp@claude-plugins-official
+playwright@claude-plugins-official
+gopls-lsp@claude-plugins-official
+stripe@claude-plugins-official
+figma@claude-plugins-official
+playground@claude-plugins-official
+
+# Anthropic skills
+document-skills@anthropic-agent-skills
+
+# Superpowers
+superpowers@superpowers-marketplace
+
+# Compound Engineering
+compound-engineering@every-marketplace
+
+# Personal OS
+recall-skill@personal-os-skills
+sync-claude-sessions-skill@personal-os-skills
+
+# Dev tools
+plugin-dev@claude-code-plugins
+code-review@claude-code-plugins
+security-guidance@claude-code-plugins
+beads@beads-marketplace
+cartographer@cartographer-marketplace
+safety-net@cc-marketplace
+everything-claude-code@everything-claude-code
+media-pipeline@media-pipeline-marketplace
+project-starter@claude-workflow
+
+# Framework templates
+nextjs-vercel-pro@claude-code-templates
+
+# Claude skills
+auth-skills@claude-skills
+backend-skills@claude-skills
+cloudflare-skills@claude-skills
+database-skills@claude-skills
+frontend-skills@claude-skills
+tooling-skills@claude-skills
+
+# Worldbuilding app skills
+a11y-checker-ci@worldbuilding-app-skills
+api-contracts-and-zod-validation@worldbuilding-app-skills
+auth-route-protection-checker@worldbuilding-app-skills
+csp-config-generator@worldbuilding-app-skills
+env-config-validator@worldbuilding-app-skills
+feature-flag-manager@worldbuilding-app-skills
+form-generator-rhf-zod@worldbuilding-app-skills
+nextjs-fullstack-scaffold@worldbuilding-app-skills
+playwright-flow-recorder@worldbuilding-app-skills
+revalidation-strategy-planner@worldbuilding-app-skills
+security-hardening-checklist@worldbuilding-app-skills
+server-actions-vs-api-optimizer@worldbuilding-app-skills
+skill-reviewer-and-enhancer@worldbuilding-app-skills
+supabase-prisma-database-management@worldbuilding-app-skills
+tailwind-shadcn-ui-setup@worldbuilding-app-skills
+testing-next-stack@worldbuilding-app-skills
+ui-library-usage-auditor@worldbuilding-app-skills
