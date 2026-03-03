@@ -91,3 +91,30 @@ function require_npm() {
   fi
   ok
 }
+
+function require_claude_marketplace() {
+  running "marketplace $1"
+  if echo "$CLAUDE_MARKETPLACES_CACHE" | grep -q "$1"; then
+    ok
+  else
+    if claude plugin marketplace add "$1" 2>>"${CLAUDE_INSTALL_LOG:-/dev/null}"; then
+      ok
+    else
+      warn "failed to add marketplace $1"
+    fi
+  fi
+}
+
+function require_claude_plugin() {
+  local plugin_name="${1%%@*}"
+  running "plugin $1"
+  if echo "$CLAUDE_PLUGINS_CACHE" | grep -q "$plugin_name"; then
+    ok
+  else
+    if claude plugin install "$1" 2>>"${CLAUDE_INSTALL_LOG:-/dev/null}"; then
+      ok
+    else
+      warn "failed to install $1"
+    fi
+  fi
+}
