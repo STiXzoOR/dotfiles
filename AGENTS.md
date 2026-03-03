@@ -21,6 +21,7 @@ These affect nearly every task:
 - **FNM, not NVM**: Node.js managed by FNM (Fast Node Manager). Use `require_fnm()` and `source_fnm()`.
 - **Packages**: Brewfile for brew/cask/mas (`brew bundle install`). `.list` files in `packages/` for npm, vscode extensions, and other tools Brewfile doesn't support. See [packages.md](docs/agents/packages.md).
 - **Backups**: Dotfile linking backs up originals to `~/.dotfiles_backup/<timestamp>` before replacing.
+- **Claude Code**: `install --claude` bootstraps Claude Code native binary, marketplaces, plugins, rules, hooks, settings, and QMD. Config manifests live in `claude/`. See [commands.md](docs/agents/commands.md).
 
 ## Detail Docs
 

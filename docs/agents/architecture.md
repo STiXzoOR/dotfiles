@@ -12,6 +12,7 @@
 | `config/`       | XDG config stowed to `~/.config/` — `git/`, `nvim/`, `karabiner/`, `starship/`, `thefuck/`, etc.         |
 | `modules/`      | Git submodules — `prezto/`, `prezto-contrib/`, `zsh/` plugins, `stevenblack-hosts/`                      |
 | `system/`       | Shell config sourced by `.zshrc` — `.alias`, `.env`, `.path`, `.function*`, `.fzf`, `.prompt`, etc.      |
+| `claude/`       | Claude Code config — `marketplaces.list`, `plugins.list`, `settings.template.json`, `rules/`, `hooks/`   |
 | `apps/`         | App themes — Terminal, Xcode, Warp, GitKraken, VLC, VS Code                                              |
 | `fonts/`        | Powerline fonts with `install.sh`                                                                        |
 | `profiles/`     | Machine-specific config — `default.zsh`, `personal.zsh`, `work.zsh`, `local.zsh` (gitignored)            |

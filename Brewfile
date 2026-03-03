@@ -34,6 +34,7 @@ brew "croc"                         # Secure file transfer
 brew "gnu-sed"                      # GNU sed
 brew "gawk"                         # GNU awk
 brew "grep"                         # GNU grep
+brew "gettext"                      # GNU i18n tools (envsubst)
 brew "jq"                           # JSON processor
 brew "yq"                           # YAML processor
 
@@ -124,6 +125,7 @@ cask "keycastr"                     # Keystroke visualizer
 cask "shottr"                       # Screenshot tool
 cask "topnotch"                     # Notch hider
 cask "flux-app"                     # Blue light filter
+cask "obsidian"                     # Knowledge base / vault
 cask "setapp"                       # App subscription
 
 # Media

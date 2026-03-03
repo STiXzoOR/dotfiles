@@ -1,4 +1,3 @@
-@anthropic-ai/claude-code
 @google/gemini-cli
 corepack
 detect-circular-deps
@@ -16,6 +15,7 @@ npm-check-updates
 npm
 pnpm
 prettier
+qmd
 release-it
 svgo
 tldr

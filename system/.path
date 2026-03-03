@@ -39,7 +39,9 @@ prepend-path "$HOME/.local/share/pnpm"
 prepend-path "$HOME/.cache/.bun/bin"
 prepend-path "/Applications/Postgres.app/Contents/Versions/16/bin"
 
-# Remove duplicates using zsh native typeset (no subprocess)
-typeset -U PATH path
+# Remove duplicate PATH entries (typeset -U is zsh-only)
+if [[ -n "$ZSH_VERSION" ]]; then
+  typeset -U PATH path
+fi
 
 export PATH

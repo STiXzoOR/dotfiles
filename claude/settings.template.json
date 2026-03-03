@@ -1,0 +1,37 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "VAULT_DIR": "$HOME/Vault"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/skills/recall/.venv/bin/python3 $HOME/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/skills/recall/.venv/bin/python3 $HOME/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/index-sessions.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "alwaysThinkingEnabled": true
+}

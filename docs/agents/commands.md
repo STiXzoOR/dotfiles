@@ -9,6 +9,7 @@ install                 # Bootstrap system (interactive)
 install --all           # Install everything non-interactively
 install --hosts         # Update /etc/hosts with ad-blocking
 install --prezto        # Install Prezto zsh framework
+install --claude        # Bootstrap Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)
 install --packages      # Install brew/cask/npm/mas/vscode packages
 install --ssh           # Generate SSH key (ed25519)
 link                    # Symlink dotfiles to ~/ via GNU Stow
