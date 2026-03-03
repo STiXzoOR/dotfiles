@@ -33,5 +33,11 @@
       }
     ]
   },
-  "alwaysThinkingEnabled": true
+  "alwaysThinkingEnabled": true,
+  "mcpServers": {
+    "qmd": {
+      "command": "qmd",
+      "args": ["mcp"]
+    }
+  }
 }

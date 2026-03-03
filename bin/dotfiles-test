@@ -502,6 +502,27 @@ test_claude_bootstrap() {
     pass "claude/hooks/: no hardcoded user paths"
   fi
 
+  # Test vault templates directory exists
+  if [[ -d "$DOTFILES_DIR/claude/vault-templates" ]]; then
+    pass "Directory exists: claude/vault-templates"
+  else
+    fail "Directory missing: claude/vault-templates"
+  fi
+
+  # Test top-of-mind template exists
+  if [[ -f "$DOTFILES_DIR/claude/vault-templates/top-of-mind.md" ]]; then
+    pass "File exists: claude/vault-templates/top-of-mind.md"
+  else
+    fail "File missing: claude/vault-templates/top-of-mind.md"
+  fi
+
+  # Test settings template has QMD MCP server configured
+  if grep -q '"qmd"' "$DOTFILES_DIR/claude/settings.template.json" 2>/dev/null; then
+    pass "settings.template.json: QMD MCP server configured"
+  else
+    fail "settings.template.json: QMD MCP server missing"
+  fi
+
   # Test npm.list no longer has claude-code
   if grep -q '@anthropic-ai/claude-code' "$DOTFILES_DIR/packages/npm.list" 2>/dev/null; then
     fail "npm.list still contains @anthropic-ai/claude-code (should use native binary)"

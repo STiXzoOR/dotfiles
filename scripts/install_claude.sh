@@ -218,8 +218,23 @@ merge_settings() {
 
 setup_vault() {
   action "Setting up Obsidian vault structure"
-  mkdir -p "$VAULT_DIR"/{Claude-Sessions,Resources,Inbox,Projects}
-  ok "vault structure ready"
+  mkdir -p "$VAULT_DIR"/{Claude-Sessions,Resources,Inbox,Projects,Daily,Polaris}
+  ok "vault directories ready"
+
+  # Copy starter templates (only if they don't already exist)
+  local templates_dir="$CLAUDE_DIR/vault-templates"
+  if [[ -d "$templates_dir" ]]; then
+    for template in "$templates_dir"/*; do
+      [[ -f "$template" ]] || continue
+      local name
+      name="$(basename "$template")"
+      local dest="$VAULT_DIR/Polaris/$name"
+      if [[ ! -f "$dest" ]]; then
+        cp "$template" "$dest"
+        ok "vault template: Polaris/$name"
+      fi
+    done
+  fi
 }
 
 # ─── 7. Setup QMD ────────────────────────────────────────────────────────────
@@ -232,12 +247,42 @@ setup_qmd() {
 
   ok "QMD already installed ($(qmd --version 2>/dev/null))"
 
-  # Update QMD index (fast — only processes changed files)
+  # Register collections (idempotent — qmd ignores duplicates)
+  action "Configuring QMD collections"
+
+  if qmd collection add notes "$VAULT_DIR" 2>>"$CLAUDE_INSTALL_LOG"; then
+    ok "QMD collection: notes -> $VAULT_DIR"
+  else
+    warn "QMD collection 'notes' setup failed"
+  fi
+
+  local sessions_dir="$HOME/.claude/projects"
+  if [[ -d "$sessions_dir" ]]; then
+    if qmd collection add sessions "$sessions_dir" 2>>"$CLAUDE_INSTALL_LOG"; then
+      ok "QMD collection: sessions -> $sessions_dir"
+    else
+      warn "QMD collection 'sessions' setup failed"
+    fi
+  fi
+
+  # Add context descriptions for collections
+  qmd context add notes "Obsidian vault — notes, resources, projects, daily logs" 2>>"$CLAUDE_INSTALL_LOG" || true
+  qmd context add sessions "Claude Code session transcripts and conversation history" 2>>"$CLAUDE_INSTALL_LOG" || true
+
+  # Update index (fast — only processes changed files)
   action "Updating QMD index"
   if timeout 60 qmd update 2>>"$CLAUDE_INSTALL_LOG"; then
     ok "QMD index updated"
   else
     warn "QMD update timed out or failed (run 'qmd update' manually)"
+  fi
+
+  # Run embedding if models are available (first run downloads ~2GB)
+  action "Building QMD embeddings (may take a moment on first run)"
+  if timeout 120 qmd embed 2>>"$CLAUDE_INSTALL_LOG"; then
+    ok "QMD embeddings ready"
+  else
+    warn "QMD embed timed out or failed (run 'qmd embed' manually)"
   fi
 }
 
