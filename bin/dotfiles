@@ -51,6 +51,7 @@ sub_install_help() {
   echo "   --fonts            Local fonts"
   echo "   --help             This help message"
   echo "   --hosts            Ad-blocking hosts file from StevenBlack project"
+  echo "   --claude           Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)"
   echo "   --launchagents     Install LaunchAgents (mackup auto-backup)"
   echo "   --packages         3rd party packages and extensions (brew, cask, code, npm)"
   echo "   --passwordless     Run sudo without password"
@@ -177,6 +178,7 @@ sub_install_all() {
   $0 install --fonts
   $0 install --packages
   $0 install --launchagents
+  $0 install --claude
   $0 configure
 }
 
@@ -440,6 +442,17 @@ sub_install_launchagents() {
         ok "Loaded $plist_name"
       fi
     done
+  fi
+}
+
+sub_install_claude() {
+  bot "Claude Code Bootstrap\n"
+
+  read -r -p "Install Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)? [y|N] " response
+  if [[ $response =~ (yes|y|Y) ]]; then
+    bash "$ROOT_DIR/scripts/install_claude.sh"
+  else
+    skip
   fi
 }
 
