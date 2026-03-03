@@ -133,4 +133,6 @@ alias speedtest="curl -o /dev/null -w 'Speed: %{speed_download} bytes/sec\n' htt
 alias grip="grip -b"
 
 # Claude Code session management
-alias cs="$HOME/.claude/skills/recall/.venv/bin/python3 ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions"
+if [[ -x "$HOME/.claude/skills/recall/.venv/bin/python3" ]]; then
+  alias cs="$HOME/.claude/skills/recall/.venv/bin/python3 $HOME/.claude/skills/sync-claude-sessions/scripts/claude-sessions"
+fi

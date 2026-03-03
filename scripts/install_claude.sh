@@ -12,7 +12,7 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CLAUDE_DIR="$ROOT_DIR/claude"
 CLAUDE_HOME="$HOME/.claude"
 VAULT_DIR="${VAULT_DIR:-$HOME/Vault}"
-CLAUDE_INSTALL_LOG="/tmp/dotfiles-claude-install.log"
+CLAUDE_INSTALL_LOG="$HOME/.cache/dotfiles/claude-install.log"
 FAILURES=()
 
 source "$ROOT_DIR/scripts/echos.sh"
@@ -50,20 +50,19 @@ install_claude_binary() {
   action "Installing Claude Code native binary"
   local tmpfile
   tmpfile=$(mktemp)
+  trap 'rm -f "$tmpfile"' RETURN
+
   if curl -fsSL --proto '=https' --tlsv1.2 https://claude.ai/install.sh -o "$tmpfile"; then
     if bash "$tmpfile"; then
       ok "Claude Code installed"
     else
       error "Claude Code installer failed"
-      rm -f "$tmpfile"
       return 1
     fi
   else
     error "Failed to download Claude Code installer"
-    rm -f "$tmpfile"
     return 1
   fi
-  rm -f "$tmpfile"
 }
 
 # ─── 2. Register marketplaces ────────────────────────────────────────────────
@@ -119,7 +118,7 @@ install_plugins() {
     local plugin_name="${line%%@*}"
 
     # Skip already-installed plugins silently
-    if echo "$CLAUDE_PLUGINS_CACHE" | grep -q "$plugin_name"; then
+    if echo "$CLAUDE_PLUGINS_CACHE" | grep -Fq "$plugin_name"; then
       skipped=$((skipped + 1))
       continue
     fi
@@ -133,46 +132,32 @@ install_plugins() {
   fi
 }
 
-# ─── 4. Copy rules ───────────────────────────────────────────────────────────
+# ─── 4. Copy rules and hooks ─────────────────────────────────────────────────
 
-copy_rules() {
-  if [[ ! -d "$CLAUDE_DIR/rules" ]]; then
-    warn "No rules directory found, skipping"
+copy_claude_files() {
+  local src_dir="$1"
+  local dest_dir="$2"
+  local label="$3"
+  local make_exec="${4:-false}"
+
+  if [[ ! -d "$src_dir" ]]; then
+    warn "No $label directory found, skipping"
     return
   fi
 
-  action "Copying Claude Code rules"
-  mkdir -p "$CLAUDE_HOME/rules"
-  for rule_file in "$CLAUDE_DIR"/rules/*.md; do
-    [[ -f "$rule_file" ]] || continue
+  action "Copying Claude Code $label"
+  mkdir -p "$dest_dir"
+  for file in "$src_dir"/*; do
+    [[ -f "$file" ]] || continue
     local name
-    name="$(basename "$rule_file")"
-    cp "$rule_file" "$CLAUDE_HOME/rules/$name"
-    ok "rules/$name"
+    name="$(basename "$file")"
+    cp "$file" "$dest_dir/$name"
+    [[ "$make_exec" == "true" ]] && chmod +x "$dest_dir/$name"
+    ok "$label/$name"
   done
 }
 
-# ─── 5. Copy hooks ───────────────────────────────────────────────────────────
-
-copy_hooks() {
-  if [[ ! -d "$CLAUDE_DIR/hooks" ]]; then
-    warn "No hooks directory found, skipping"
-    return
-  fi
-
-  action "Copying Claude Code hooks"
-  mkdir -p "$CLAUDE_HOME/hooks"
-  for hook_file in "$CLAUDE_DIR"/hooks/*; do
-    [[ -f "$hook_file" ]] || continue
-    local name
-    name="$(basename "$hook_file")"
-    cp "$hook_file" "$CLAUDE_HOME/hooks/$name"
-    chmod +x "$CLAUDE_HOME/hooks/$name"
-    ok "hooks/$name"
-  done
-}
-
-# ─── 6. Merge settings template ──────────────────────────────────────────────
+# ─── 5. Merge settings template ──────────────────────────────────────────────
 
 merge_settings() {
   local template="$CLAUDE_DIR/settings.template.json"
@@ -185,9 +170,17 @@ merge_settings() {
 
   action "Merging Claude Code settings"
 
-  # Expand $HOME in template
+  # Expand $HOME in template using envsubst (safe against metacharacters)
   local expanded
-  expanded=$(sed "s|\\\$HOME|$HOME|g" "$template")
+  if command -v envsubst &>/dev/null; then
+    # shellcheck disable=SC2016
+    expanded=$(HOME="$HOME" envsubst '$HOME' < "$template")
+  else
+    # Fallback to sed with escaped replacement
+    local escaped_home
+    escaped_home=$(printf '%s\n' "$HOME" | sed 's/[&/\]/\\&/g')
+    expanded=$(sed "s|\\\$HOME|$escaped_home|g" "$template")
+  fi
 
   if [[ ! -f "$target" ]]; then
     # Fresh install — write expanded template directly
@@ -221,29 +214,15 @@ merge_settings() {
   fi
 }
 
-# ─── 7. Setup Obsidian vault ─────────────────────────────────────────────────
+# ─── 6. Setup Obsidian vault ─────────────────────────────────────────────────
 
 setup_vault() {
   action "Setting up Obsidian vault structure"
-
-  local dirs=(
-    "$VAULT_DIR"
-    "$VAULT_DIR/Claude-Sessions"
-    "$VAULT_DIR/Resources"
-    "$VAULT_DIR/Inbox"
-    "$VAULT_DIR/Projects"
-  )
-
-  for dir in "${dirs[@]}"; do
-    if [[ ! -d "$dir" ]]; then
-      mkdir -p "$dir"
-      ok "created $dir"
-    fi
-  done
+  mkdir -p "$VAULT_DIR"/{Claude-Sessions,Resources,Inbox,Projects}
   ok "vault structure ready"
 }
 
-# ─── 8. Setup QMD ────────────────────────────────────────────────────────────
+# ─── 7. Setup QMD ────────────────────────────────────────────────────────────
 
 setup_qmd() {
   if ! command -v qmd &>/dev/null; then
@@ -268,16 +247,15 @@ main() {
   local start_time
   start_time=$(date +%s)
 
-  bot "Claude Code Bootstrap\n"
-
-  # Reset log
+  # Ensure log directory exists (private to user)
+  mkdir -p "$(dirname "$CLAUDE_INSTALL_LOG")"
   : > "$CLAUDE_INSTALL_LOG"
 
   install_claude_binary
   register_marketplaces
   install_plugins
-  copy_rules
-  copy_hooks
+  copy_claude_files "$CLAUDE_DIR/rules" "$CLAUDE_HOME/rules" "rules"
+  copy_claude_files "$CLAUDE_DIR/hooks" "$CLAUDE_HOME/hooks" "hooks" "true"
   merge_settings
   setup_vault
   setup_qmd

@@ -48,10 +48,10 @@ sub_install_help() {
   echo
   echo "Commands:"
   echo "   --all              Run all below commands"
+  echo "   --claude           Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)"
   echo "   --fonts            Local fonts"
   echo "   --help             This help message"
   echo "   --hosts            Ad-blocking hosts file from StevenBlack project"
-  echo "   --claude           Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)"
   echo "   --launchagents     Install LaunchAgents (mackup auto-backup)"
   echo "   --packages         3rd party packages and extensions (brew, cask, code, npm)"
   echo "   --passwordless     Run sudo without password"

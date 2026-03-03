@@ -34,8 +34,6 @@ sync-claude-sessions-skill@personal-os-skills
 
 # Dev tools
 plugin-dev@claude-code-plugins
-code-review@claude-code-plugins
-security-guidance@claude-code-plugins
 beads@beads-marketplace
 cartographer@cartographer-marketplace
 safety-net@cc-marketplace

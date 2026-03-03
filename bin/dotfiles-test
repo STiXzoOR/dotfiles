@@ -463,7 +463,7 @@ test_claude_bootstrap() {
   done
 
   # Test rules exist
-  local rules=("claude/rules/context7.md" "claude/rules/vault-lookback.md")
+  local rules=("claude/rules/context7.md" "claude/rules/vault-lookback.md" "claude/rules/gnu-tools.md")
   for rule in "${rules[@]}"; do
     if [[ -f "$DOTFILES_DIR/$rule" ]]; then
       pass "File exists: $rule"
