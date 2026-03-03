@@ -284,6 +284,16 @@ setup_qmd() {
   else
     warn "QMD embed timed out or failed (run 'qmd embed' manually)"
   fi
+
+  # Register QMD MCP server with Claude Code (stored in ~/.claude.json)
+  if command -v claude &>/dev/null; then
+    action "Registering QMD MCP server"
+    if claude mcp add --transport stdio qmd -- qmd mcp 2>>"$CLAUDE_INSTALL_LOG"; then
+      ok "QMD MCP server registered"
+    else
+      warn "QMD MCP registration failed (run 'claude mcp add --transport stdio qmd -- qmd mcp' manually)"
+    fi
+  fi
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────────────

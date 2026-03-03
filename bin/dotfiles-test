@@ -516,11 +516,11 @@ test_claude_bootstrap() {
     fail "File missing: claude/vault-templates/top-of-mind.md"
   fi
 
-  # Test settings template has QMD MCP server configured
-  if grep -q '"qmd"' "$DOTFILES_DIR/claude/settings.template.json" 2>/dev/null; then
-    pass "settings.template.json: QMD MCP server configured"
+  # Test install script registers QMD MCP server via 'claude mcp add'
+  if grep -q 'claude mcp add.*qmd' "$DOTFILES_DIR/scripts/install_claude.sh" 2>/dev/null; then
+    pass "install_claude.sh: QMD MCP registration via 'claude mcp add'"
   else
-    fail "settings.template.json: QMD MCP server missing"
+    fail "install_claude.sh: QMD MCP registration missing"
   fi
 
   # Test npm.list no longer has claude-code
