@@ -6,7 +6,7 @@
       },
       "REPO_MANAGEMENT": {}
     },
-    "selectedTabId": "75e5286a-2a98-479c-a0db-966e5aa5998b",
+    "selectedTabId": "d63edf41-79e2-4467-a33e-a20d09d88ceb",
     "tabs": [
       {
         "id": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
@@ -44,14 +44,6 @@
         "type": "REPO",
         "repoName": "predictive-engine-v2",
         "repoPath": "/Users/stix/Work/mote/predictive-engine-v2/",
-        "skipWSLChecks": null
-      },
-      {
-        "id": "0d8df44e-be6b-4ca4-b77b-272d536e3ed8",
-        "isWorktree": false,
-        "type": "REPO",
-        "repoName": "text-help-predictions",
-        "repoPath": "/Users/stix/Desktop/test_2/text-help-predictions/",
         "skipWSLChecks": null
       },
       {
@@ -101,6 +93,30 @@
         "repoName": "webflow-cms-manager",
         "repoPath": "/Users/stix/Work/mote/webflow-cms-manager/",
         "skipWSLChecks": null
+      },
+      {
+        "id": "1ddac540-618a-435c-8e1f-6266818f107e",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "mote-claude-tools",
+        "repoPath": "/Users/stix/Work/mote/mote-claude-tools/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "d63edf41-79e2-4467-a33e-a20d09d88ceb",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "mote-ios",
+        "repoPath": "/Users/stix/Work/mote/mote-ios/",
+        "skipWSLChecks": null
+      },
+      {
+        "id": "26abaee1-abd8-4d90-bbc1-42fb31467188",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "backend",
+        "repoPath": "/Users/stix/Work/mote/backend/",
+        "skipWSLChecks": null
       }
     ]
   },
@@ -129,7 +145,7 @@
       "width": 215
     },
     "DetailPanel": {
-      "width": 408
+      "width": 354
     }
   },
   "externalEditor": "VS Code",
@@ -204,7 +220,7 @@
     }
   },
   "repoInit": {
-    "lastOpenedRepoPath": "/Users/stix/Work/mote/webflow-cms-manager"
+    "lastOpenedRepoPath": "/Users/stix/Work/mote/backend"
   },
   "ai": {
     "sendCodeApproved": true
