@@ -15,3 +15,5 @@ setopt HIST_REDUCE_BLANKS
 
 # OrbStack: load from profiles/local.zsh if needed
 # source ~/.orbstack/shell/init.zsh 2>/dev/null || :
+
+export PATH="$HOME/.local/bin:$PATH"

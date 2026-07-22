@@ -6,7 +6,7 @@
       },
       "REPO_MANAGEMENT": {}
     },
-    "selectedTabId": "d63edf41-79e2-4467-a33e-a20d09d88ceb",
+    "selectedTabId": "2a7057e2-c384-4c53-bd78-a0a56e819ad4",
     "tabs": [
       {
         "id": "f8f842cb-7fa8-4fb9-9585-b8c61d3273f3",
@@ -21,15 +21,7 @@
         "isWorktree": false,
         "type": "REPO",
         "repoName": "frontend",
-        "repoPath": "/Users/stix/Work/mote/frontend/",
-        "skipWSLChecks": false
-      },
-      {
-        "id": "86b57ae5-c331-4ed1-8116-0fb5b55e2b05",
-        "type": "REPO",
-        "repoName": "electricity_partial_bill_calculator",
-        "repoPath": "/Users/stix/Projects/electricity_partial_bill_calculator/",
-        "skipWSLChecks": false
+        "repoPath": "/Users/stix/Work/mote/frontend/"
       },
       {
         "id": "3ca417fc-99d0-4f3e-bb41-e4f2b1d379e4",
@@ -117,6 +109,27 @@
         "repoName": "backend",
         "repoPath": "/Users/stix/Work/mote/backend/",
         "skipWSLChecks": null
+      },
+      {
+        "id": "e0afd340-b900-4c78-9b9e-2f411542f815",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "cassandrabot",
+        "repoPath": "/Users/stix/Projects/cassandrabot/"
+      },
+      {
+        "id": "f6e2ed85-bbc0-4fb6-adb0-ec7cfb8afedb",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "affogato",
+        "repoPath": "/Users/stix/Projects/affogato/"
+      },
+      {
+        "id": "4a4ed459-7672-49f9-b904-660e3fb4d630",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "baborrow",
+        "repoPath": "/Users/stix/Projects/baborrow/"
       }
     ]
   },
@@ -126,7 +139,7 @@
   "userName": "Neoptolemos Kyriakou",
   "editor": {
     "fontFamily": "\"Fira Code\"",
-    "wordWrap": true
+    "wordWrap": false
   },
   "fileNodeList": {
     "viewMode": "full_path",
@@ -160,7 +173,7 @@
     "fontFamily": "\"MesloLGS Nerd Font Mono\"",
     "cursorStyle": "bar",
     "fontSize": 14,
-    "cliPanelVisible": false
+    "cliPanelViewMode": "hidden"
   },
   "useCustomTerminalCmd": false,
   "zoom": 1,
@@ -220,7 +233,8 @@
     }
   },
   "repoInit": {
-    "lastOpenedRepoPath": "/Users/stix/Work/mote/backend"
+    "lastOpenedRepoPath": "/Users/stix/Projects/baborrow",
+    "lastRepoInitPath": "/Users/stix/Projects"
   },
   "ai": {
     "sendCodeApproved": true
@@ -228,6 +242,17 @@
   "actions": {
     "commit": {
       "ignoreWhiteSpace": false
+    }
+  },
+  "hostingServiceFrecencyMetadata": {
+    "github": {
+      "id": "github",
+      "timestamps": [
+        1779792780527,
+        1779792835088,
+        1779792868743
+      ],
+      "total": 3
     }
   }
 }

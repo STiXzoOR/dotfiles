@@ -147,3 +147,9 @@
 
 [dotfiles]
 	lastupdate = 2025-10-06 12:15:54
+[credential "https://github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential

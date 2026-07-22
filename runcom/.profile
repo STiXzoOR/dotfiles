@@ -38,3 +38,5 @@ export DOTFILES_DIR
 [[ -f "$DOTFILES_DIR/system/.profile_loader" ]] && source "$DOTFILES_DIR/system/.profile_loader"
 
 [[ -f "$HOME/.local/bin/env" ]] && . "$HOME/.local/bin/env"
+
+export PATH="$HOME/.local/bin:$PATH"
