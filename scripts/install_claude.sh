@@ -17,6 +17,7 @@ FAILURES=()
 
 source "$ROOT_DIR/scripts/echos.sh"
 source "$ROOT_DIR/scripts/requirers.sh"
+source "$ROOT_DIR/scripts/lib/lists.sh"
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ install_claude_binary() {
 # ─── 2. Register marketplaces ────────────────────────────────────────────────
 
 register_marketplaces() {
-  if [[ ! -f "$CLAUDE_DIR/marketplaces.list" ]]; then
+  if [[ ! -f "$CLAUDE_DIR/marketplaces.list" && ! -f "$CLAUDE_DIR/marketplaces.local.list" ]]; then
     warn "No marketplaces.list found, skipping"
     return
   fi
@@ -80,23 +81,21 @@ register_marketplaces() {
   CLAUDE_MARKETPLACES_CACHE="$(claude plugin marketplace list --json 2>/dev/null || echo "")"
 
   local total count=0
-  total=$(grep -cvE '^[[:space:]]*(#|$)' "$CLAUDE_DIR/marketplaces.list" || echo 0)
+  total=$(count_list "$CLAUDE_DIR" marketplaces)
 
   while IFS= read -r line || [[ -n "$line" ]]; do
-    # Skip comments and empty lines
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ -z "${line// /}" ]] && continue
 
     count=$((count + 1))
     running "[$count/$total] marketplace $line"
     try_or_track "marketplace: $line" require_claude_marketplace "$line"
-  done <"$CLAUDE_DIR/marketplaces.list"
+  done < <(read_list "$CLAUDE_DIR" marketplaces)
 }
 
 # ─── 3. Install plugins ──────────────────────────────────────────────────────
 
 install_plugins() {
-  if [[ ! -f "$CLAUDE_DIR/plugins.list" ]]; then
+  if [[ ! -f "$CLAUDE_DIR/plugins.list" && ! -f "$CLAUDE_DIR/plugins.local.list" ]]; then
     warn "No plugins.list found, skipping"
     return
   fi
@@ -108,10 +107,9 @@ install_plugins() {
   CLAUDE_PLUGINS_CACHE="$(claude plugin list --json 2>/dev/null || echo "")"
 
   local total count=0 skipped=0
-  total=$(grep -cvE '^[[:space:]]*(#|$)' "$CLAUDE_DIR/plugins.list" || echo 0)
+  total=$(count_list "$CLAUDE_DIR" plugins)
 
   while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ -z "${line// /}" ]] && continue
 
     count=$((count + 1))
@@ -125,7 +123,7 @@ install_plugins() {
 
     running "[$count/$total] plugin $line"
     try_or_track "plugin: $line" require_claude_plugin "$line"
-  done <"$CLAUDE_DIR/plugins.list"
+  done < <(read_list "$CLAUDE_DIR" plugins)
 
   if [[ $skipped -gt 0 ]]; then
     ok "$skipped plugins already installed, skipped"

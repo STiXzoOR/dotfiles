@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+#
+# dotfiles-baseline - Snapshot the effective value of every macOS default
+#                     declared by macos/*.sh
+#
+# macOS major upgrades silently drop or rename preference keys. Recording what
+# actually reads back BEFORE an upgrade lets you diff afterwards, so version
+# gating is based on measured breakage instead of guesswork.
+#
+# Usage:
+#   dotfiles-baseline capture [label]   Write a snapshot (default label: OS version)
+#
+set -uo pipefail
+
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+BASELINE_DIR="${DOTFILES_BASELINE_DIR:-$DOTFILES_DIR/macos/baselines}"
+
+# Emit "domain key" for every `defaults write` in the macos scripts.
+extract_keys() {
+  grep -hoE '^defaults write [A-Za-z0-9.-]+ +"?[A-Za-z0-9_.-]+"?' \
+    "$DOTFILES_DIR"/macos/defaults*.sh 2>/dev/null |
+    sed 's/defaults write //; s/"//g' |
+    sort -u
+}
+
+# Emit "domain<TAB>key<TAB>value", or ABSENT when the OS does not honour it.
+capture_values() {
+  local domain key value
+  while read -r domain key; do
+    [[ -z "$domain" || -z "$key" ]] && continue
+    if value=$(defaults read "$domain" "$key" 2>/dev/null); then
+      value=$(printf '%s' "$value" | tr '\n' ' ' | sed 's/  */ /g')
+      printf '%s\t%s\t%s\n' "$domain" "$key" "$value"
+    else
+      printf '%s\t%s\tABSENT\n' "$domain" "$key"
+    fi
+  done < <(extract_keys)
+}
+
+cmd_capture() {
+  local label="${1:-$(sw_vers -productVersion)}"
+  mkdir -p "$BASELINE_DIR"
+  local out="$BASELINE_DIR/$label.tsv"
+  capture_values >"$out"
+
+  local total absent present
+  total=$(wc -l <"$out" | tr -d ' ')
+  absent=$(grep -c $'\tABSENT$' "$out" || true)
+  present=$((total - absent))
+
+  echo "baseline: $out"
+  echo "  declared:  $total"
+  echo "  effective: $present"
+  echo "  absent:    $absent"
+}
+
+# List "domain key" pairs in a snapshot, filtered by whether the OS honours them.
+# $2 = "live" for keys with a value, "absent" for keys the OS ignores.
+keys_where() {
+  local file="$1" want="$2"
+  awk -F'\t' -v want="$want" \
+    '(want=="absent" && $3=="ABSENT") || (want=="live" && $3!="ABSENT") {print $1" "$2}' \
+    "$file" | sort
+}
+
+cmd_diff() {
+  local before="$BASELINE_DIR/${1:-}.tsv" after="$BASELINE_DIR/${2:-}.tsv"
+  [[ -f "$before" ]] || { echo "no such baseline: ${1:-}" >&2; return 1; }
+  [[ -f "$after" ]] || { echo "no such baseline: ${2:-}" >&2; return 1; }
+
+  echo "=== keys that STOPPED working (${1} -> ${2}) ==="
+  comm -12 <(keys_where "$before" live) <(keys_where "$after" absent) |
+    sed 's/^/  BROKE: /'
+}
+
+case "${1:-}" in
+  capture)
+    shift
+    cmd_capture "$@"
+    ;;
+  diff)
+    shift
+    cmd_diff "$@"
+    ;;
+  *)
+    echo "Usage: dotfiles-baseline {capture [label]|diff <before> <after>}" >&2
+    exit 1
+    ;;
+esac

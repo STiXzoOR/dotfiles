@@ -31,3 +31,6 @@ profiles/local.zsh
 
 # Brewfile lock (optional - can be committed for reproducibility)
 Brewfile.lock.json
+
+# Private/work Claude marketplaces + plugins (repo is public)
+claude/*.local.list

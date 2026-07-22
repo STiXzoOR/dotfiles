@@ -967,6 +967,111 @@ test_dead_code_cleanup() {
 }
 
 #############################################################################
+# MACOS DEFAULTS BASELINE
+#############################################################################
+
+test_defaults_baseline() {
+  section "macOS Defaults Baseline"
+
+  local tool="$DOTFILES_DIR/bin/dotfiles-baseline"
+
+  if [[ ! -x "$tool" ]]; then
+    fail "bin/dotfiles-baseline is missing or not executable"
+    return
+  fi
+  pass "bin/dotfiles-baseline is executable"
+
+  # Every "defaults write <domain> <key>" in macos/*.sh must appear in a
+  # captured snapshot, so an OS upgrade can be diffed key-by-key.
+  local declared captured tmpdir
+  tmpdir=$(mktemp -d)
+  declared=$(grep -hoE '^defaults write [A-Za-z0-9.-]+ +"?[A-Za-z0-9_.-]+"?' \
+    "$DOTFILES_DIR"/macos/defaults*.sh 2>/dev/null | sort -u | wc -l | tr -d ' ')
+
+  if DOTFILES_BASELINE_DIR="$tmpdir" "$tool" capture testsnap >/dev/null 2>&1; then
+    captured=$(wc -l <"$tmpdir/testsnap.tsv" 2>/dev/null | tr -d ' ')
+    if [[ "$captured" == "$declared" && "$declared" != "0" ]]; then
+      pass "Captures all $declared declared domain/key pairs"
+    else
+      fail "Baseline captured $captured of $declared declared keys"
+    fi
+
+    # Keys the OS no longer honours must be recorded as ABSENT, not dropped.
+    if grep -q $'\tABSENT$' "$tmpdir/testsnap.tsv" 2>/dev/null; then
+      pass "Records unsupported keys as ABSENT"
+    else
+      fail "No ABSENT markers — dead keys are being silently dropped"
+    fi
+  else
+    fail "dotfiles-baseline capture failed"
+  fi
+
+  # Diffing two snapshots must surface keys the new OS stopped honouring.
+  local difftmp
+  difftmp=$(mktemp -d)
+  printf 'com.apple.finder\tShowStatusBar\t1\n' >"$difftmp/before.tsv"
+  printf 'com.apple.finder\tShowStatusBar\tABSENT\n' >"$difftmp/after.tsv"
+
+  local out
+  out=$(DOTFILES_BASELINE_DIR="$difftmp" "$tool" diff before after 2>/dev/null)
+  if [[ "$out" == *"BROKE"* && "$out" == *"ShowStatusBar"* ]]; then
+    pass "Diff reports keys that stopped working"
+  else
+    fail "Diff did not report a key that regressed to ABSENT"
+  fi
+
+  rm -rf "$difftmp"
+  rm -rf "$tmpdir"
+}
+
+#############################################################################
+# CLAUDE LIST MERGING (public + gitignored local)
+#############################################################################
+
+test_claude_list_merge() {
+  section "Claude List Merging"
+
+  local lib="$DOTFILES_DIR/scripts/lib/lists.sh"
+
+  if [[ ! -f "$lib" ]]; then
+    fail "scripts/lib/lists.sh is missing"
+    return
+  fi
+  pass "scripts/lib/lists.sh exists"
+
+  local tmpdir out
+  tmpdir=$(mktemp -d)
+  printf '# comment\npublic-one\n\npublic-two\n' >"$tmpdir/plugins.list"
+  printf '# private\nwork-only\n' >"$tmpdir/plugins.local.list"
+
+  out=$(bash -c "source '$lib'; read_list '$tmpdir' plugins" 2>/dev/null)
+
+  # The public list must still be read.
+  if [[ "$out" == *"public-one"* && "$out" == *"public-two"* ]]; then
+    pass "Reads entries from the public list"
+  else
+    fail "Public list entries missing from read_list output"
+  fi
+
+  # Private entries live in a gitignored .local.list so a public repo
+  # never carries work marketplaces or plugins.
+  if [[ "$out" == *"work-only"* ]]; then
+    pass "Merges entries from the gitignored .local list"
+  else
+    fail "read_list did not merge .local.list entries"
+  fi
+
+  # Comments and blank lines must not become install targets.
+  if [[ "$out" == *"#"* ]]; then
+    fail "read_list leaked comment lines"
+  else
+    pass "Strips comments and blank lines"
+  fi
+
+  rm -rf "$tmpdir"
+}
+
+#############################################################################
 # MAIN
 #############################################################################
 
@@ -993,6 +1098,8 @@ main() {
   test_config_modernization
   test_dead_code_cleanup
   test_claude_bootstrap
+  test_defaults_baseline
+  test_claude_list_merge
   test_shell_startup
 
   # Summary

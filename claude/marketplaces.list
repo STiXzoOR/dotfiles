@@ -19,8 +19,20 @@ kenryu42/cc-marketplace
 affaan-m/everything-claude-code
 guinacio/claude-image-gen
 CloudAI-X/claude-workflow-v2
+yamadashy/repomix
+thedotmack/claude-mem
+MadAppGang/claude-code
+
+# Vendor tooling
+warpdotdev/claude-code-warp
+openai/codex-plugin-cc
+railwayapp/railway-skills
 
 # Framework-specific
 hopeoverture/worldbuilding-app-skills
 davila7/claude-code-templates
 jezweb/claude-skills
+dpearson2699/swift-ios-skills
+
+# Private/work marketplaces belong in claude/marketplaces.local.list
+# (gitignored) — this repo is public.

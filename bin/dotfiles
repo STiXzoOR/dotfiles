@@ -52,7 +52,7 @@ sub_install_help() {
   echo "   --fonts            Local fonts"
   echo "   --help             This help message"
   echo "   --hosts            Ad-blocking hosts file from StevenBlack project"
-  echo "   --launchagents     Install LaunchAgents (mackup auto-backup)"
+  echo "   --launchagents     Install LaunchAgents (see launchagents/disabled/)"
   echo "   --packages         3rd party packages and extensions (brew, cask, code, npm)"
   echo "   --passwordless     Run sudo without password"
   echo "   --prezto           Zsh framework"
@@ -429,7 +429,17 @@ sub_install_vim() {
 
 sub_install_launchagents() {
   bot "LaunchAgents Setup\n"
-  read -r -p "Do you want to install LaunchAgents (mackup auto-backup)? [y|N] " response
+
+  # Only top-level plists are installed. launchagents/disabled/ holds agents
+  # that are intentionally not loaded (see the README there).
+  local available
+  available=$(find "$DOTFILES_DIR/launchagents" -maxdepth 1 -name '*.plist' | wc -l | tr -d ' ')
+  if [[ "$available" == "0" ]]; then
+    warn "No enabled LaunchAgents to install (see launchagents/disabled/)"
+    return
+  fi
+
+  read -r -p "Do you want to install $available LaunchAgent(s)? [y|N] " response
   if [[ $response =~ (y|yes|Y) ]]; then
     bot "Installing LaunchAgents..."
     mkdir -p ~/Library/LaunchAgents

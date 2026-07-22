@@ -55,6 +55,8 @@ brew "psgrep"                       # Process grep
 brew "wget"                         # HTTP client
 brew "httpie"                       # Modern HTTP client
 brew "ssh-copy-id"                  # SSH key installer
+brew "mosh"                         # Roaming-tolerant SSH
+brew "tailscale"                    # Tailnet CLI (GUI app installed separately)
 
 # Development tools
 brew "git-delta"                    # Better git diff
@@ -62,11 +64,19 @@ brew "gh"                           # GitHub CLI
 brew "shfmt"                        # Shell formatter
 brew "shellcheck"                   # Shell script linter
 brew "bats-core"                    # Bash testing framework
+brew "ast-grep"                     # Structural code search
+brew "circleci"                     # CircleCI CLI
+brew "awscli"                       # AWS CLI
+brew "swiftlint"                    # Swift linter
+brew "tmux"                         # Terminal multiplexer
 
 # Programming languages
 brew "python"                       # Python 3
 brew "go"                           # Go language
 brew "cmake"                        # Build system
+brew "ruby"                         # Ruby
+brew "pipx"                         # Isolated Python app installs
+brew "postgresql@17"                # Postgres server
 
 # Media tools
 brew "ffmpeg"                       # Media converter
@@ -74,11 +84,19 @@ brew "imagemagick"                  # Image manipulation
 brew "optipng"                      # PNG optimizer
 brew "webp"                         # WebP tools
 brew "yt-dlp"                       # Video downloader
+brew "pngquant"                     # PNG compressor
+brew "ghostscript"                  # PostScript/PDF interpreter
+brew "librsvg"                      # SVG rendering
+brew "poppler"                      # PDF utilities
+brew "qpdf"                         # PDF transformation
 
 # Misc utilities
 brew "dos2unix"                     # Line ending converter
 brew "uni"                          # Unicode tool
 brew "grip"                         # GitHub markdown preview
+brew "pandoc"                       # Document converter
+brew "cliclick"                     # CLI mouse/keyboard control
+brew "libimobiledevice"             # iOS device communication
 
 # Tap-specific
 brew "lotyp/formulae/dockutil"      # Dock management
@@ -95,6 +113,7 @@ cask "google-chrome"
 
 # Development
 cask "visual-studio-code"
+cask "webstorm"
 cask "gitkraken"
 cask "sourcetree"
 cask "arduino"
@@ -102,6 +121,8 @@ cask "arduino-ide"
 cask "ngrok"
 cask "goreleaser"
 cask "kaleidoscope"
+cask "codexbar"                     # Codex menubar client
+cask "claude-usage-tracker"         # Claude Code usage monitor
 
 # Design
 cask "adobe-creative-cloud"
@@ -127,6 +148,8 @@ cask "topnotch"                     # Notch hider
 cask "flux-app"                     # Blue light filter
 cask "obsidian"                     # Knowledge base / vault
 cask "setapp"                       # App subscription
+cask "balenaetcher"                 # Flash OS images to SD/USB
+cask "basictex"                     # Minimal TeX distribution
 
 # Media
 cask "spotify"
@@ -135,7 +158,6 @@ cask "iina"                         # Modern video player
 
 # Remote & VPN
 cask "anydesk"
-cask "teamviewer"
 cask "protonvpn"
 cask "tunnelblick"
 cask "tailscale"
@@ -170,6 +192,7 @@ cask "font-fontawesome"
 cask "font-geist-mono-nerd-font"
 cask "font-hack"
 cask "font-hack-nerd-font"
+cask "font-ibm-plex-mono"
 cask "font-inter"
 cask "font-menlo-for-powerline"
 cask "font-meslo-for-powerline"
