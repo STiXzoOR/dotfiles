@@ -130,6 +130,13 @@
         "type": "REPO",
         "repoName": "baborrow",
         "repoPath": "/Users/stix/Projects/baborrow/"
+      },
+      {
+        "id": "675be857-ac5d-43ae-a5ae-656e838c03d3",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "cyprus-road-signs",
+        "repoPath": "/Users/stix/Projects/cyprus-road-signs/"
       }
     ]
   },
@@ -233,7 +240,7 @@
     }
   },
   "repoInit": {
-    "lastOpenedRepoPath": "/Users/stix/Projects/baborrow",
+    "lastOpenedRepoPath": "/Users/stix/Projects/cyprus-road-signs",
     "lastRepoInitPath": "/Users/stix/Projects"
   },
   "ai": {
