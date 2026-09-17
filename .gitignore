@@ -9,7 +9,8 @@ __pycache__/
 .Python
 node_modules
 apps/gitkraken/profiles/*/**
-!apps/gitkraken/profiles/*/profile
+# NOTE: the live profile holds userEmail/userName and every local repo path.
+# It is seeded from apps/gitkraken/profile.template by macos/defaults-gitkraken.sh.
 config/karabiner/automatic_backups
 config/spicetify/*
 !config/spicetify/Themes

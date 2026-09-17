@@ -17,6 +17,14 @@
         "skipWSLChecks": false
       },
       {
+        "id": "26abaee1-abd8-4d90-bbc1-42fb31467188",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "backend",
+        "repoPath": "/Users/stix/Work/mote/backend/",
+        "skipWSLChecks": null
+      },
+      {
         "id": "2a7057e2-c384-4c53-bd78-a0a56e819ad4",
         "isWorktree": false,
         "type": "REPO",
@@ -47,38 +55,6 @@
         "skipWSLChecks": null
       },
       {
-        "id": "a0d6e1ea-112b-448d-b0d8-aa33e79934a3",
-        "isWorktree": false,
-        "type": "REPO",
-        "repoName": "swizzin-scripts",
-        "repoPath": "/Users/stix/Projects/swizzin-scripts/",
-        "skipWSLChecks": null
-      },
-      {
-        "id": "b6a9f6d2-1892-4188-8f72-0af2ec713c69",
-        "isWorktree": false,
-        "type": "REPO",
-        "repoName": "decypharr",
-        "repoPath": "/Users/stix/Projects/decypharr/",
-        "skipWSLChecks": null
-      },
-      {
-        "id": "a9ac5e37-be54-4bbc-a85c-969e3095d395",
-        "isWorktree": false,
-        "type": "REPO",
-        "repoName": "taggarr",
-        "repoPath": "/Users/stix/Projects/taggarr/",
-        "skipWSLChecks": null
-      },
-      {
-        "id": "75e5286a-2a98-479c-a0db-966e5aa5998b",
-        "isWorktree": false,
-        "type": "REPO",
-        "repoName": "thesis_v2",
-        "repoPath": "/Users/stix/Projects/thesis_v2/",
-        "skipWSLChecks": null
-      },
-      {
         "id": "f2895c08-df75-4d89-9cec-308049666502",
         "isWorktree": false,
         "type": "REPO",
@@ -103,21 +79,6 @@
         "skipWSLChecks": null
       },
       {
-        "id": "26abaee1-abd8-4d90-bbc1-42fb31467188",
-        "isWorktree": false,
-        "type": "REPO",
-        "repoName": "backend",
-        "repoPath": "/Users/stix/Work/mote/backend/",
-        "skipWSLChecks": null
-      },
-      {
-        "id": "e0afd340-b900-4c78-9b9e-2f411542f815",
-        "isWorktree": false,
-        "type": "REPO",
-        "repoName": "cassandrabot",
-        "repoPath": "/Users/stix/Projects/cassandrabot/"
-      },
-      {
         "id": "f6e2ed85-bbc0-4fb6-adb0-ec7cfb8afedb",
         "isWorktree": false,
         "type": "REPO",
@@ -132,15 +93,35 @@
         "repoPath": "/Users/stix/Projects/baborrow/"
       },
       {
-        "id": "675be857-ac5d-43ae-a5ae-656e838c03d3",
+        "id": "cd52c947-409f-498e-a5e7-f75dc67f0099",
         "isWorktree": false,
         "type": "REPO",
-        "repoName": "cyprus-road-signs",
-        "repoPath": "/Users/stix/Projects/cyprus-road-signs/"
+        "repoName": "altsource",
+        "repoPath": "/Users/stix/Projects/altsource/"
+      },
+      {
+        "id": "d0c7dffa-7475-42f9-aed1-9461cb215fac",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "altshelf",
+        "repoPath": "/Users/stix/Projects/altshelf/"
+      },
+      {
+        "id": "711c9811-f2b4-4bb3-836e-934fdd7650ed",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "apple-ds",
+        "repoPath": "/Users/stix/Projects/apple-ds/"
+      },
+      {
+        "id": "4f4e1b7a-cb1f-4350-a973-a2b0f22e220c",
+        "isWorktree": false,
+        "type": "REPO",
+        "repoName": "folio",
+        "repoPath": "/Users/stix/Projects/folio/"
       }
     ]
   },
-  "profileIcon": "gravatar",
   "profileName": "STiX",
   "userEmail": "neostixz@gmail.com",
   "userName": "Neoptolemos Kyriakou",
@@ -168,7 +149,7 @@
       "width": 354
     }
   },
-  "externalEditor": "VS Code",
+  "externalEditor": "Xcode",
   "ssh": {
     "privateKey": "/Users/stix/.ssh/id_ed25519",
     "publicKey": "/Users/stix/.ssh/id_ed25519.pub",
@@ -240,7 +221,7 @@
     }
   },
   "repoInit": {
-    "lastOpenedRepoPath": "/Users/stix/Projects/cyprus-road-signs",
+    "lastOpenedRepoPath": "/Users/stix/Projects/folio",
     "lastRepoInitPath": "/Users/stix/Projects"
   },
   "ai": {

@@ -1,0 +1,104 @@
+{
+  "tabInfo": {
+    "permanentTabs": [],
+    "selectedTabId": null,
+    "tabs": []
+  },
+  "profileName": "",
+  "userEmail": "",
+  "userName": "",
+  "editor": {
+    "fontFamily": "\"Fira Code\"",
+    "wordWrap": false
+  },
+  "fileNodeList": {
+    "viewMode": "full_path",
+    "sort": "name_ascending"
+  },
+  "defaultTerminal": "iTerm2",
+  "fileView": {
+    "diffDisplayMode": "split"
+  },
+  "layout": {
+    "CommitMessage": {
+      "rightPanelHeight": 200
+    },
+    "RefPanel": {
+      "open": true,
+      "width": 215
+    },
+    "DetailPanel": {
+      "width": 354
+    }
+  },
+  "externalEditor": "Xcode",
+  "ssh": {
+    "privateKey": "",
+    "publicKey": "",
+    "useLocalAgent": false,
+    "appVersion": "8.1.0"
+  },
+  "organizationId": null,
+  "cli": {
+    "fontFamily": "\"MesloLGS Nerd Font Mono\"",
+    "cursorStyle": "bar",
+    "fontSize": 14,
+    "cliPanelViewMode": "hidden"
+  },
+  "useCustomTerminalCmd": false,
+  "zoom": 1,
+  "projects": [],
+  "ui": {
+    "theme": "dark",
+    "repoManagementTab": {
+      "orderedSectionIds": [],
+      "sectionsById": {}
+    }
+  },
+  "focusView": {
+    "provider": "github",
+    "issueTracker": {
+      "provider": "github",
+      "settings": {
+        "azureOrganizationId": null,
+        "azureProject": null,
+        "jiraProjectId": null,
+        "jiraResourceId": null,
+        "repoId": null,
+        "trelloBoardId": null
+      }
+    },
+    "selectedProjectId": "47c2be4e11464b94a68a2880ad9eb160"
+  },
+  "recentProjects": [],
+  "integration": {},
+  "externalTools": {
+    "editor": {
+      "externalEditorType": "custom",
+      "externalEditorName": null,
+      "customEditor": {
+        "path": "/Applications/WebStorm.app/Contents/MacOS/webstorm"
+      }
+    },
+    "terminal": {
+      "externalTerminalType": "custom",
+      "externalTerminalName": null,
+      "customTerminal": {
+        "path": "/Applications/Warp.app"
+      }
+    }
+  },
+  "repoInit": {
+    "lastOpenedRepoPath": "",
+    "lastRepoInitPath": ""
+  },
+  "ai": {
+    "sendCodeApproved": true
+  },
+  "actions": {
+    "commit": {
+      "ignoreWhiteSpace": false
+    }
+  },
+  "hostingServiceFrecencyMetadata": {}
+}
