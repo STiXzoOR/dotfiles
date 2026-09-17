@@ -17,6 +17,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="/tmp/dotfiles-setup.log"
 
+# Shared with bin/dotfiles so both install paths stay in step.
+source "$ROOT_DIR/scripts/lib/ssh.sh"
+
 # Require macOS
 if [[ "$(uname)" != "Darwin" ]]; then
   echo "Error: This dotfiles setup is designed for macOS only."
@@ -582,6 +585,8 @@ generate_ssh_key() {
 
   if [[ -f "$HOME/.ssh/id_ed25519" ]]; then
     print_success "SSH key already exists"
+    dotfiles_ensure_ssh_config
+    print_success "SSH config in place (AddKeysToAgent / UseKeychain)"
     return
   fi
 
@@ -593,13 +598,26 @@ generate_ssh_key() {
   local email
   email=$(ask_input "Enter email for SSH key")
 
-  start_spinner "Generating SSH key..."
-  ssh-keygen -t ed25519 -C "$email" -f "$HOME/.ssh/id_ed25519" -N "" >> "$LOG_FILE" 2>&1
-  stop_spinner true "SSH key generated"
+  print_info "ssh-keygen will ask for a passphrase. Use one -- it is stored in the"
+  print_info "macOS Keychain below, so you only ever type it here."
+  echo ""
 
-  # Start ssh-agent and add key
+  # Deliberately not spinner-wrapped or redirected to the log: ssh-keygen needs
+  # the terminal to read the passphrase.
+  if ssh-keygen -t ed25519 -C "$email" -f "$HOME/.ssh/id_ed25519"; then
+    print_success "SSH key generated"
+  else
+    print_warning "SSH key generation failed or was cancelled; skipping SSH setup"
+    return 0
+  fi
+
+  dotfiles_ensure_ssh_config
+  print_success "SSH config written (AddKeysToAgent / UseKeychain)"
+
+  # Store the passphrase in the Keychain so later shells load the key silently.
   eval "$(ssh-agent -s)" >> "$LOG_FILE" 2>&1
-  ssh-add "$HOME/.ssh/id_ed25519" >> "$LOG_FILE" 2>&1 2>&1 || true
+  ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519" || \
+    print_warning "Could not add key to the agent; run: ssh-add --apple-use-keychain ~/.ssh/id_ed25519"
 
   print_info "Your public key:"
   echo ""

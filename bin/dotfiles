@@ -20,6 +20,7 @@ PATH="$HOMEBREW_PREFIX/bin:$DOTFILES_DIR/bin:$PATH"
 
 source "$ROOT_DIR/scripts/echos.sh"
 source "$ROOT_DIR/scripts/requirers.sh"
+source "$ROOT_DIR/scripts/lib/ssh.sh"
 
 sub_help() {
   echo -e "\nUsage: $BIN_NAME <command>"
@@ -218,16 +219,7 @@ sub_install_ssh() {
 
   action "Adding SSH key to SSH Agent"
   eval "$(ssh-agent -s)"
-  if ! grep -q "IdentityFile ~/.ssh/id_ed25519" "$HOME/.ssh/config" 2>/dev/null; then
-    [[ -f "$HOME/.ssh/config" ]] && cp "$HOME/.ssh/config" "$HOME/.ssh/config.backup.$(date +%Y%m%d%H%M%S)"
-    cat >> "$HOME/.ssh/config" <<'SSH_EOF'
-
-Host *
-  AddKeysToAgent yes
-  UseKeychain yes
-  IdentityFile ~/.ssh/id_ed25519
-SSH_EOF
-  fi
+  dotfiles_ensure_ssh_config
   ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519"
   ok
 
