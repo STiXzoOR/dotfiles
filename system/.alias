@@ -4,6 +4,7 @@
 
 alias _="sudo"
 alias clauded="claude --dangerously-skip-permissions"
+alias codexxx="codex --sandbox workspace-write --ask-for-approval never"
 alias rr="rm -rf -I"
 alias g="git"
 alias library="cd $HOME/Library"
