@@ -17,8 +17,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="/tmp/dotfiles-setup.log"
 
-# Shared with bin/dotfiles so both install paths stay in step.
-source "$ROOT_DIR/scripts/lib/ssh.sh"
+# Every install step is delegated to this; see run_cli().
+DOTFILES_CLI="$ROOT_DIR/bin/dotfiles"
 
 # Require macOS
 if [[ "$(uname)" != "Darwin" ]]; then
@@ -308,6 +308,33 @@ ask_checklist() {
 }
 
 #############################################################################
+# Delegation
+#############################################################################
+
+# bin/dotfiles owns every install step. The wizard only decides whether to run
+# one and how to frame it -- it never re-implements the work. Re-implementing
+# is exactly what let these two drift apart: the wizard sat untouched for
+# months while the CLI collected fixes.
+#
+# The CLI prompts for its own sub-choices, so these run attached to the
+# terminal: no spinner, no redirect to the log.
+run_cli() {
+  local label="$1"
+  shift
+
+  print_step "$label"
+  echo ""
+
+  if "$DOTFILES_CLI" "$@"; then
+    echo ""
+    print_success "$label"
+  else
+    echo ""
+    print_warning "$label did not complete (retry: dotfiles $*)"
+  fi
+}
+
+#############################################################################
 # System Detection & Validation
 #############################################################################
 
@@ -375,27 +402,7 @@ check_prerequisites() {
 
 install_homebrew() {
   print_section "Homebrew Installation"
-
-  if command -v brew &>/dev/null; then
-    print_success "Homebrew already installed"
-    if ask_yes_no "Update Homebrew?"; then
-      start_spinner "Updating Homebrew..."
-      brew update >> "$LOG_FILE" 2>&1
-      stop_spinner true "Homebrew updated"
-    fi
-  else
-    print_step "Installing Homebrew..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-    # Source brew for this session
-    if $IS_APPLE_SILICON; then
-      eval "$(/opt/homebrew/bin/brew shellenv)"
-    else
-      eval "$(/usr/local/bin/brew shellenv)"
-    fi
-
-    print_success "Homebrew installed"
-  fi
+  run_cli "Homebrew" install --homebrew
 }
 
 install_packages() {
@@ -406,73 +413,32 @@ install_packages() {
     return
   fi
 
-  local options=(
-    "Essential tools only (git, zsh, starship, fnm)"
-    "Development setup (adds languages, editors, databases)"
-    "Full installation (all packages in Brewfile)"
-    "Custom selection"
-    "Skip package installation"
-  )
+  if ! ask_yes_no "Install packages (Brewfile, npm, VS Code extensions)?" "y"; then
+    print_info "Skipping package installation"
+    return
+  fi
 
-  local choice
-  choice=$(ask_menu "Select installation type:" "${options[@]}")
-
-  case $choice in
-    0)
-      # Essential only
-      start_spinner "Installing essential packages..."
-      brew install git zsh starship fnm stow >> "$LOG_FILE" 2>&1
-      stop_spinner true "Essential packages installed"
-      ;;
-    1)
-      # Development setup
-      start_spinner "Installing development packages..."
-      brew install git zsh starship fnm stow vim neovim python node go rust \
-                   ripgrep fd bat eza fzf zoxide >> "$LOG_FILE" 2>&1
-      stop_spinner true "Development packages installed"
-      ;;
-    2)
-      # Full installation
-      start_spinner "Installing all packages from Brewfile..."
-      brew bundle install --file="$ROOT_DIR/Brewfile" >> "$LOG_FILE" 2>&1
-      stop_spinner true "All packages installed"
-      ;;
-    3)
-      # Custom - show categories
-      print_info "Custom selection coming soon. Running full install."
-      start_spinner "Installing packages..."
-      brew bundle install --file="$ROOT_DIR/Brewfile" >> "$LOG_FILE" 2>&1
-      stop_spinner true "Packages installed"
-      ;;
-    4)
-      print_info "Skipping package installation"
-      ;;
-  esac
+  run_cli "Packages" install --packages
 }
 
 setup_shell() {
   print_section "Shell Configuration"
 
-  # Install Prezto if not present
-  if [[ ! -d "$HOME/.zprezto" ]]; then
-    if ask_yes_no "Install Prezto (Zsh framework)?"; then
-      start_spinner "Installing Prezto..."
-      git clone --recursive https://github.com/sorin-ionescu/prezto.git "$HOME/.zprezto" >> "$LOG_FILE" 2>&1
-      stop_spinner true "Prezto installed"
-    fi
+  if ask_yes_no "Install Prezto (Zsh framework)?" "y"; then
+    run_cli "Prezto" install --prezto
   else
-    print_success "Prezto already installed"
+    print_info "Skipping Prezto"
   fi
 
-  # Change default shell
+  # Changing the login shell is the one part of this step the CLI does not own.
   local current_shell
   current_shell=$(basename "$SHELL")
   if [[ "$current_shell" != "zsh" ]]; then
     if ask_yes_no "Change default shell to Zsh?"; then
       local zsh_path
-      zsh_path=$(which zsh)
+      zsh_path=$(command -v zsh)
       if ! grep -q "$zsh_path" /etc/shells; then
-        echo "$zsh_path" | sudo tee -a /etc/shells > /dev/null
+        echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null
       fi
       chsh -s "$zsh_path"
       print_success "Default shell changed to Zsh"
@@ -485,145 +451,53 @@ setup_shell() {
 link_dotfiles() {
   print_section "Dotfiles Linking"
 
-  local backup_dir
-  backup_dir="$HOME/.dotfiles_backup/$(date +%Y.%m.%d.%H.%M.%S)"
+  print_info "Existing dotfiles are backed up to ~/.dotfiles_backup by the linker."
 
-  print_info "Existing dotfiles will be backed up to: $backup_dir"
-
-  if ! ask_yes_no "Link dotfiles to home directory?"; then
+  if ! ask_yes_no "Link dotfiles to home directory?" "y"; then
     print_info "Skipping dotfile linking"
     return
   fi
 
-  mkdir -p "$backup_dir"
-
-  # Backup existing files
-  start_spinner "Backing up existing dotfiles..."
-  pushd "$ROOT_DIR/runcom" &>/dev/null
-  for file in .*; do
-    [[ "$file" == "." || "$file" == ".." || "$file" == ".DS_Store" ]] && continue
-    if [[ -e "$HOME/$file" ]] && [[ ! -L "$HOME/$file" ]]; then
-      mv "$HOME/$file" "$backup_dir/" 2>/dev/null || true
-    fi
-  done
-  popd &>/dev/null
-  stop_spinner true "Backup complete"
-
-  # Link dotfiles using stow
-  start_spinner "Linking dotfiles..."
-  pushd "$ROOT_DIR" &>/dev/null
-
-  [[ -d "$HOME/.config" ]] || mkdir -p "$HOME/.config"
-  stow -t "$HOME" runcom 2>> "$LOG_FILE"
-  stow -t "$HOME/.config" config 2>> "$LOG_FILE"
-
-  popd &>/dev/null
-  stop_spinner true "Dotfiles linked"
+  run_cli "Dotfiles linking" link
 }
 
 configure_macos() {
   print_section "macOS Configuration"
 
-  if ! ask_yes_no "Apply macOS system defaults?"; then
-    print_info "Skipping macOS configuration"
-    return
+  if ask_yes_no "Apply macOS system defaults?"; then
+    run_cli "macOS defaults" configure --defaults
+  else
+    print_info "Skipping macOS defaults"
   fi
 
-  start_spinner "Applying system defaults..."
-  for file in "$ROOT_DIR/macos"/defaults*.sh; do
-    [[ -f "$file" ]] && source "$file" >> "$LOG_FILE" 2>&1
-  done
-  stop_spinner true "System defaults applied"
-
   if ask_yes_no "Configure Dock?"; then
-    start_spinner "Configuring Dock..."
-    [[ -f "$ROOT_DIR/macos/dock.sh" ]] && source "$ROOT_DIR/macos/dock.sh" >> "$LOG_FILE" 2>&1
-    stop_spinner true "Dock configured"
+    run_cli "Dock" configure --dock
   fi
 }
 
 setup_node() {
   print_section "Node.js Setup"
 
-  if command -v fnm &>/dev/null; then
-    print_success "fnm (Fast Node Manager) found"
-
-    if ask_yes_no "Install Node.js LTS?"; then
-      start_spinner "Installing Node.js LTS..."
-      eval "$(fnm env)"
-      fnm install --lts >> "$LOG_FILE" 2>&1
-      fnm default lts-latest >> "$LOG_FILE" 2>&1
-      stop_spinner true "Node.js LTS installed"
-    fi
+  if ask_yes_no "Install fnm and the latest LTS Node?" "y"; then
+    run_cli "Node.js" install --node
   else
-    print_warning "fnm not found, skipping Node.js setup"
+    print_info "Skipping Node.js setup"
   fi
 }
 
 setup_vim() {
   print_section "Editor Setup"
 
-  if [[ -f "$HOME/.vimrc" ]] && [[ -d "$HOME/.vim/bundle/Vundle.vim" ]]; then
-    if ask_yes_no "Install Vim plugins?"; then
-      start_spinner "Installing Vim plugins..."
-      vim +PluginInstall +qall >> "$LOG_FILE" 2>&1 2>&1
-      stop_spinner true "Vim plugins installed"
-    fi
-  fi
-
-  if command -v nvim &>/dev/null && [[ -d "$HOME/.config/nvim" ]]; then
-    if ask_yes_no "Setup Neovim plugins (lazy.nvim)?"; then
-      start_spinner "Installing Neovim plugins..."
-      nvim --headless "+Lazy! sync" +qa >> "$LOG_FILE" 2>&1 2>&1 || true
-      stop_spinner true "Neovim plugins installed"
-    fi
+  if ask_yes_no "Install Vim/Neovim plugins?"; then
+    run_cli "Editor plugins" install --vim
+  else
+    print_info "Skipping editor setup"
   fi
 }
 
 generate_ssh_key() {
   print_section "SSH Key Setup"
-
-  if [[ -f "$HOME/.ssh/id_ed25519" ]]; then
-    print_success "SSH key already exists"
-    dotfiles_ensure_ssh_config
-    print_success "SSH config in place (AddKeysToAgent / UseKeychain)"
-    return
-  fi
-
-  if ! ask_yes_no "Generate new SSH key?"; then
-    print_info "Skipping SSH key generation"
-    return
-  fi
-
-  local email
-  email=$(ask_input "Enter email for SSH key")
-
-  print_info "ssh-keygen will ask for a passphrase. Use one -- it is stored in the"
-  print_info "macOS Keychain below, so you only ever type it here."
-  echo ""
-
-  # Deliberately not spinner-wrapped or redirected to the log: ssh-keygen needs
-  # the terminal to read the passphrase.
-  if ssh-keygen -t ed25519 -C "$email" -f "$HOME/.ssh/id_ed25519"; then
-    print_success "SSH key generated"
-  else
-    print_warning "SSH key generation failed or was cancelled; skipping SSH setup"
-    return 0
-  fi
-
-  dotfiles_ensure_ssh_config
-  print_success "SSH config written (AddKeysToAgent / UseKeychain)"
-
-  # Store the passphrase in the Keychain so later shells load the key silently.
-  eval "$(ssh-agent -s)" >> "$LOG_FILE" 2>&1
-  ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519" || \
-    print_warning "Could not add key to the agent; run: ssh-add --apple-use-keychain ~/.ssh/id_ed25519"
-
-  print_info "Your public key:"
-  echo ""
-  cat "$HOME/.ssh/id_ed25519.pub"
-  echo ""
-  print_info "Add this key to GitHub: https://github.com/settings/keys"
+  run_cli "SSH key" install --ssh
 }
 
 #############################################################################

@@ -52,12 +52,15 @@ sub_install_help() {
   echo "   --claude           Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)"
   echo "   --fonts            Local fonts"
   echo "   --help             This help message"
+  echo "   --homebrew         Homebrew itself (install, or update && upgrade)"
   echo "   --hosts            Ad-blocking hosts file from StevenBlack project"
   echo "   --launchagents     Install LaunchAgents (see launchagents/disabled/)"
+  echo "   --node             fnm and the latest LTS Node"
   echo "   --packages         3rd party packages and extensions (brew, cask, code, npm)"
   echo "   --passwordless     Run sudo without password"
   echo "   --prezto           Zsh framework"
   echo "   --ssh              SSH Key"
+  echo "   --vim              Vim/Neovim plugins"
 }
 
 sub_configure_help() {
@@ -110,46 +113,12 @@ sub_install() {
 
   fi
 
-  running "checking homebrew..."
-  if ! command-exists brew; then
-    action "installing homebrew"
-    if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
-      error "unable to install homebrew, script $0 abort!"
-      exit 2
-    fi
-    source_brew
-    brew analytics off
-  else
-    ok
-    bot "Homebrew"
-    read -r -p "run brew update && upgrade? [y|N] " response
-    if [[ $response =~ (y|yes|Y) ]]; then
-      action "updating homebrew..."
-      source_brew
-      brew update
-      ok "homebrew updated"
-      action "upgrading brew packages..."
-      brew upgrade
-      ok "brews upgraded"
-    else
-      skip "skipped brew package upgrades."
-    fi
-  fi
-
-  mkdir -p "$HOME"/Library/Caches/Homebrew/Formula
-  brew doctor
+  sub_install_homebrew
 
   action "installing stow..."
   require_brew stow
 
-  action "installing fnm..."
-  require_brew fnm
-  ok
-
-  action "installing lts node..."
-  require_fnm lts-latest
-  fnm default lts-latest
-  ok
+  sub_install_node
 
   bot "Woot. All done!. You should run the complementary commands to have your machine fully configured and ready to use:\n"
   echo "$BIN_NAME install hosts"
@@ -195,6 +164,48 @@ sub_install_passwordless() {
     echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD: $HOMEBREW_PREFIX/bin/brew, /usr/sbin/softwareupdate, /usr/bin/xattr, /usr/bin/pkill coreaudiod" | sudo tee "/etc/sudoers.d/$LOGNAME"
     bot "You can now run sudo commands without password!"
   fi
+}
+
+sub_install_homebrew() {
+  running "checking homebrew..."
+  if ! command-exists brew; then
+    action "installing homebrew"
+    if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+      error "unable to install homebrew, script $0 abort!"
+      exit 2
+    fi
+    source_brew
+    brew analytics off
+  else
+    ok
+    bot "Homebrew"
+    read -r -p "run brew update && upgrade? [y|N] " response
+    if [[ $response =~ (y|yes|Y) ]]; then
+      action "updating homebrew..."
+      source_brew
+      brew update
+      ok "homebrew updated"
+      action "upgrading brew packages..."
+      brew upgrade
+      ok "brews upgraded"
+    else
+      skip "skipped brew package upgrades."
+    fi
+  fi
+
+  mkdir -p "$HOME"/Library/Caches/Homebrew/Formula
+  brew doctor
+}
+
+sub_install_node() {
+  action "installing fnm..."
+  require_brew fnm
+  ok
+
+  action "installing lts node..."
+  require_fnm lts-latest
+  fnm default lts-latest
+  ok
 }
 
 sub_install_ssh() {
