@@ -197,6 +197,31 @@ t "CB.8" "installer verifies settings references" \
   'grep -q "verify_settings_refs" scripts/install_claude.sh'
 
 #############################################################################
+section "SL — status line (tracked into a public repo, now audited)"
+#############################################################################
+
+t "SL.1" "usage cache is not in world-shared /tmp" \
+  '! grep -qE "^cache_file=\"?/tmp/" claude/statusline.sh'
+t "SL.2" "cache dir is created with restrictive permissions" \
+  'grep -qE "(mkdir -m 0?700|chmod 0?700)" claude/statusline.sh'
+t "SL.3" "cache file is written with restrictive permissions" \
+  'grep -qE "chmod 0?600" claude/statusline.sh'
+t "SL.4" "an unreadable cache mtime cannot break the age arithmetic" \
+  'code_of claude/statusline.sh | grep -qE "cache_mtime\) *cache_mtime=0|cache_mtime=0 *;;|cache_mtime:-0"'
+t "SL.4b" "every stat-derived mtime is normalised before arithmetic" '
+  n=$(code_of claude/statusline.sh | grep -cE "_mtime=\\\$\\(stat")
+  g=$(code_of claude/statusline.sh | grep -cE "\\*\\[!0-9\\]\\*\\)")
+  [ "$g" -ge "$n" ]'
+t "SL.5" "User-Agent is not pinned to a stale hardcoded version" \
+  '! code_of claude/statusline.sh | grep -qE "claude-code/[0-9]+\.[0-9]+\.[0-9]+"'
+t "SL.6" "renders and exits 0 with no token and no network" '
+  out=$(echo "{\"context_window\":{\"current_usage\":{\"input_tokens\":1}},\"model\":{\"display_name\":\"X\"},\"workspace\":{\"current_dir\":\"$PWD\"}}" \
+        | env -u ANTHROPIC_API_KEY PATH=/usr/bin:/bin bash claude/statusline.sh 2>/dev/null)
+  [ -n "$out" ]'
+t "SL.7" "shellcheck clean" \
+  'shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 claude/statusline.sh'
+
+#############################################################################
 printf "\n%s\n" "────────────────────────────────────────"
 printf "passed=%d failed=%d\n" "$pass" "$fail"
 if [ "$fail" -gt 0 ]; then

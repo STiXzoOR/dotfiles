@@ -240,19 +240,47 @@ get_oauth_token() {
     echo ""
 }
 
+# The User-Agent used to be pinned to claude-code/2.1.34 while the installed
+# CLI had moved on to 2.1.274. Read it from the binary, cached for a day since
+# `claude --version` costs more than the rest of this script put together.
+cli_version=""
+version_cache="${XDG_CACHE_HOME:-$HOME/.cache}/claude/cli-version"
+if [ -f "$version_cache" ]; then
+    vc_mtime=$(stat -c %Y "$version_cache" 2>/dev/null || stat -f %m "$version_cache" 2>/dev/null)
+    case "$vc_mtime" in ''|*[!0-9]*) vc_mtime=0 ;; esac
+    if [ "$vc_mtime" -gt 0 ] && [ $(( $(date +%s) - vc_mtime )) -lt 86400 ]; then
+        cli_version=$(cat "$version_cache" 2>/dev/null)
+    fi
+fi
+if [ -z "$cli_version" ] && command -v claude >/dev/null 2>&1; then
+    cli_version=$(claude --version 2>/dev/null | awk '{print $1}')
+    [ -n "$cli_version" ] && printf '%s' "$cli_version" > "$version_cache" 2>/dev/null
+fi
+
 # ── Fetch usage data (cached) ──────────────────────────
-cache_file="/tmp/claude/statusline-usage-cache.json"
+# Holds the response of an authenticated usage call, so it does not belong in
+# a world-shared, predictable /tmp path. 0700 dir + 0600 file, under the
+# user's own cache dir.
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/claude"
+cache_file="$cache_dir/statusline-usage-cache.json"
 cache_max_age=60
-mkdir -p /tmp/claude
+mkdir -p "$cache_dir" 2>/dev/null
+chmod 0700 "$cache_dir" 2>/dev/null
+
+# One-time migration off the old shared location.
+if [ -f /tmp/claude/statusline-usage-cache.json ]; then
+    rm -f /tmp/claude/statusline-usage-cache.json 2>/dev/null
+fi
 
 needs_refresh=true
 usage_data=""
 
 if [ -f "$cache_file" ]; then
     cache_mtime=$(stat -c %Y "$cache_file" 2>/dev/null || stat -f %m "$cache_file" 2>/dev/null)
+    case "$cache_mtime" in ''|*[!0-9]*) cache_mtime=0 ;; esac
     now=$(date +%s)
     cache_age=$(( now - cache_mtime ))
-    if [ "$cache_age" -lt "$cache_max_age" ]; then
+    if [ "$cache_mtime" -gt 0 ] && [ "$cache_age" -lt "$cache_max_age" ]; then
         needs_refresh=false
         usage_data=$(cat "$cache_file" 2>/dev/null)
     fi
@@ -266,11 +294,12 @@ if $needs_refresh; then
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $token" \
             -H "anthropic-beta: oauth-2025-04-20" \
-            -H "User-Agent: claude-code/2.1.34" \
+            -H "User-Agent: claude-code/${cli_version:-unknown}" \
             "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
         if [ -n "$response" ] && echo "$response" | jq -e '.five_hour' >/dev/null 2>&1; then
             usage_data="$response"
-            echo "$response" > "$cache_file"
+            (umask 077 && echo "$response" > "$cache_file")
+            chmod 0600 "$cache_file" 2>/dev/null
         fi
     fi
     if [ -z "$usage_data" ] && [ -f "$cache_file" ]; then
