@@ -40,6 +40,9 @@ done
 
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 
+# Shared stat(1) portability helpers (GNU vs BSD).
+source "$DOTFILES_DIR/scripts/lib/fs.sh"
+
 #############################################################################
 # Profiling Functions
 #############################################################################
@@ -104,7 +107,6 @@ profile_files() {
     "$DOTFILES_DIR/system/.fnm"
     "$DOTFILES_DIR/system/.fzf"
     "$DOTFILES_DIR/system/.zoxide"
-    "$DOTFILES_DIR/system/.fix"
     "$DOTFILES_DIR/system/.completion"
     "$DOTFILES_DIR/modules/prezto/init.zsh"
   )
@@ -162,10 +164,15 @@ check_caches() {
   )
 
   for cache in "${caches[@]}"; do
-    local path="$cache_dir/$cache"
-    if [[ -f "$path" ]]; then
-      local size=$(wc -c < "$path" | tr -d ' ')
-      local age_days=$(( ($(date +%s) - $(stat -f %m "$path" 2>/dev/null || stat -c %Y "$path" 2>/dev/null)) / 86400 ))
+    # NOT `path`: in zsh that name is tied to the PATH array, so `local path`
+    # inside a function wipes PATH and every external command vanishes.
+    local cache_path="$cache_dir/$cache"
+    if [[ -f "$cache_path" ]]; then
+      # Declare and assign on one line: zsh's `local name` with no value
+      # PRINTS name=value when the parameter already exists.
+      local size="$(wc -c < "$cache_path" | tr -d ' ')"
+      local age_days="$(dotfiles_age_days "$cache_path")"
+      [[ -n "$age_days" ]] || age_days=0
       printf "${GREEN}✓${NC} %-25s %6d bytes  %3dd old\n" "$cache" "$size" "$age_days"
     else
       printf "${RED}✗${NC} %-25s ${DIM}(missing)${NC}\n" "$cache"

@@ -29,23 +29,13 @@ check_shellcheck() {
     return 0
   fi
 
+  # Every staged bash script, wherever it lives -- no path allowlist, so
+  # scripts/lib/ and new bin/ tools are covered the day they are added.
   local bash_files=""
-  # These are zsh scripts, skip shellcheck -s bash for them
-  local zsh_scripts="bin/dotfiles-test bin/dotfiles-doctor bin/dotfiles-cheatsheet bin/dotfiles-profiler"
-
   for file in $STAGED_FILES; do
-    case "$file" in
-      bin/dotfiles|bin/dotfiles-*|scripts/*.sh|macos/*.sh)
-        if [[ -f "$file" ]]; then
-          # Skip zsh scripts from bash shellcheck
-          local is_zsh=false
-          for zf in $zsh_scripts; do
-            [[ "$file" == "$zf" ]] && is_zsh=true
-          done
-          $is_zsh || bash_files="$bash_files $file"
-        fi
-        ;;
-    esac
+    if [[ "$(shell_dialect "$file")" == "bash" ]]; then
+      bash_files="$bash_files $file"
+    fi
   done
 
   if [[ -n "$bash_files" ]]; then
@@ -98,6 +88,34 @@ check_bash_syntax() {
 # Check zsh syntax
 #############################################################################
 
+#############################################################################
+# Shell dialect detection
+#############################################################################
+
+# Both the zsh syntax check and the shellcheck pass used to carry hardcoded
+# file lists, which silently went stale: bin/plistbuddy is zsh and was missing
+# from the exclusion list, and scripts/lib/ was matched by neither. Ask the
+# file itself instead.
+#
+# Prints: zsh | bash | none
+shell_dialect() {
+  local file="$1" first
+  [[ -f "$file" ]] || { echo none; return; }
+  first=$(head -1 "$file" 2>/dev/null)
+  case "$first" in
+    *zsh*) echo zsh ;;
+    *bash* | *"/bin/sh"*) echo bash ;;
+    *)
+      # No shebang: treat dotfiles under runcom/ and system/ as zsh fragments,
+      # since they are sourced by the zsh startup files.
+      case "$file" in
+        runcom/.* | system/.*) echo zsh ;;
+        *) echo none ;;
+      esac
+      ;;
+  esac
+}
+
 check_zsh_syntax() {
   if ! command -v zsh &>/dev/null; then
     echo -e "${YELLOW}Warning: zsh not installed, skipping zsh syntax check${NC}"
@@ -106,13 +124,9 @@ check_zsh_syntax() {
 
   local zsh_files=""
   for file in $STAGED_FILES; do
-    case "$file" in
-      runcom/.*|system/.*|bin/dotfiles-test|bin/dotfiles-doctor)
-        if [[ -f "$file" ]]; then
-          zsh_files="$zsh_files $file"
-        fi
-        ;;
-    esac
+    if [[ "$(shell_dialect "$file")" == "zsh" ]]; then
+      zsh_files="$zsh_files $file"
+    fi
   done
 
   if [[ -n "$zsh_files" ]]; then

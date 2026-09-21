@@ -172,7 +172,7 @@ cask "altserver"
 # QuickLook plugins
 cask "qlmarkdown"
 cask "qlstephen"
-cask "qlvideo"
+cask "quicklook-video"
 cask "quicklook-json"
 cask "quicklookase"
 cask "syntax-highlight"
@@ -210,6 +210,7 @@ mas "LocalSend", id: 1661733229
 mas "Magnet", id: 441258766
 mas "Messenger", id: 1480068668
 mas "SponsorBlock", id: 1573461917
+mas "Tailscale", id: 1475387142
 mas "Windows App", id: 1295203466
 
 # ============================================================================

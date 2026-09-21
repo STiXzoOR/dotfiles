@@ -23,6 +23,9 @@ FIX_MODE=false
 
 # Get dotfiles directory
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+
+# Shared stat(1) portability helpers (GNU vs BSD).
+source "$DOTFILES_DIR/scripts/lib/fs.sh"
 if [[ ! -d "$DOTFILES_DIR" ]]; then
   DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 fi
@@ -203,7 +206,8 @@ check_cache() {
     local tool="${cache_info##*:}"
 
     if [[ -f "$cache_dir/$cache_file" ]]; then
-      local age=$(( ($(date +%s) - $(stat -f %m "$cache_dir/$cache_file" 2>/dev/null || stat -c %Y "$cache_dir/$cache_file" 2>/dev/null)) / 86400 ))
+      local age="$(dotfiles_age_days "$cache_dir/$cache_file")"
+      [[ -n "$age" ]] || age=0
       if [[ $age -gt 7 ]]; then
         warn "$cache_file is $age days old (consider refreshing)"
       else

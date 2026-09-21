@@ -1,5 +1,5 @@
 [Setting]
-prefs_path              = /Users/stix/Library/Application Support/Spotify/prefs
+prefs_path              = __HOME__/Library/Application Support/Spotify/prefs
 inject_css              = 1
 check_spicetify_upgrade = 0
 spotify_path            = /Applications/Spotify.app/Contents/Resources

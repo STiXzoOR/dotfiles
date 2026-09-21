@@ -334,7 +334,6 @@ main() {
       "$DOTFILES_DIR/system/.function_fs:Filesystem"
       "$DOTFILES_DIR/system/.function_network:Network"
       "$DOTFILES_DIR/system/.function_text:Text Processing"
-      "$DOTFILES_DIR/system/.function_macos:macOS"
       "$DOTFILES_DIR/system/.function_fun:Fun"
     )
 

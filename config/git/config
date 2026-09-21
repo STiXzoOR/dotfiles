@@ -1,6 +1,7 @@
 [user]
-	name = Neoptolemos Kyriakou
-	email = neostixz@gmail.com
+	# Identity lives in config.local (gitignored): this repo is public, and a
+	# hardcoded name/email makes every fresh clone commit as someone else.
+	# git config --file ~/.config/git/config.local user.name "Your Name"
 
 [github]
 	user = STiXzoOR
@@ -153,3 +154,7 @@
 [credential "https://gist.github.com"]
 	helper = 
 	helper = !/opt/homebrew/bin/gh auth git-credential
+
+[include]
+	# Machine-local identity and overrides; never tracked.
+	path = config.local

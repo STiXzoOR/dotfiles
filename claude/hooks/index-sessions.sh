@@ -8,7 +8,11 @@ EXTRACT_SCRIPT="$HOME/.claude/skills/recall/scripts/extract-sessions.py"
 LOG_FILE="$HOME/.claude/hooks/index-sessions.log"
 
 # Rotate log if > 1MB
-if [[ -f "$LOG_FILE" ]] && [[ $(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE" 2>/dev/null) -gt 1048576 ]]; then
+# GNU stat must be probed first: to GNU, -f means *filesystem* and prints
+# info instead of failing, so the BSD-first form never reaches its fallback
+# and the comparison silently became 0 -gt 1048576.
+log_size=$(stat -c%s "$LOG_FILE" 2>/dev/null || stat -f%z "$LOG_FILE" 2>/dev/null)
+if [[ -f "$LOG_FILE" ]] && [[ "${log_size:-0}" -gt 1048576 ]]; then
   tail -n 500 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
 fi
 

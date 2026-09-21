@@ -21,6 +21,7 @@ PATH="$HOMEBREW_PREFIX/bin:$DOTFILES_DIR/bin:$PATH"
 source "$ROOT_DIR/scripts/echos.sh"
 source "$ROOT_DIR/scripts/requirers.sh"
 source "$ROOT_DIR/scripts/lib/ssh.sh"
+source "$ROOT_DIR/scripts/lib/fs.sh"
 
 sub_help() {
   echo -e "\nUsage: $BIN_NAME <command>"
@@ -355,6 +356,13 @@ sub_install_packages() {
   if [[ -f "Brewfile" ]]; then
     read -r -p "Install packages using Brewfile (brew bundle)? [y|N] " response
     if [[ $response =~ (y|yes|Y) ]]; then
+      # Third-party taps must be trusted explicitly on current Homebrew, or
+      # bundle warns and cannot verify them.
+      grep '^tap "' Brewfile | sed -E 's/^tap "([^"]+)".*/\1/' |
+        while IFS= read -r t; do
+          [ -n "$t" ] && brew tap "$t" >/dev/null 2>&1 || true
+        done
+
       action "Installing packages via brew bundle..."
       brew bundle install --file=Brewfile
       ok "Homebrew packages installed"
@@ -397,25 +405,13 @@ sub_install_packages() {
     fi
   fi
 
-  # Fallback to legacy .list files
-  read -r -p "Install packages using legacy .list files? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
-    install_packages "tap.list" "require_tap" "Homebrew taps"
-    install_packages "brew.list" "require_brew" "Homebrew utilities"
-    install_packages "cask.list" "require_cask" "Homebrew desktop apps"
-    install_packages "npm.list" "require_npm" "NPM global packages"
-    install_packages "mas.list" "require_mas" "Mac App Store apps"
-    install_packages "code.list" "require_code" "VS Code extensions"
-
-    running "cleanup homebrew"
-    brew cleanup --force >/dev/null 2>&1
-    rm -f -r /Library/Caches/Homebrew/* >/dev/null 2>&1
-    xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook" 2>/dev/null
-    popd >/dev/null 2>&1 || exit
-    ok
-  else
-    skip
-  fi
+  # The legacy tap/brew/cask/mas .list files are gone: the Brewfile is the one
+  # source of truth and had drifted 10 months ahead of them. npm.list and
+  # code.list remain -- brew bundle covers neither npm globals nor VS Code
+  # extensions -- and are handled in the Brewfile branch above.
+  error "Brewfile not found at $ROOT_DIR/Brewfile"
+  popd >/dev/null 2>&1 || true
+  return 1
 }
 
 sub_install_vim() {
@@ -539,6 +535,34 @@ sub_link() {
     pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
 
     [[ -d "$XDG_CONFIG_HOME" ]] || mkdir -p "$XDG_CONFIG_HOME"
+
+    # Seed configs that hold machine-specific paths and are therefore not
+    # tracked. Never clobbers an existing file.
+    dotfiles_seed_from_template \
+      "$ROOT_DIR/config/spicetify/config-xpui.ini.template" \
+      "$ROOT_DIR/config/spicetify/config-xpui.ini"
+
+    # Git identity is deliberately not tracked. Without config.local git
+    # cannot commit at all, so ask once rather than failing later.
+    if [[ ! -f "$ROOT_DIR/config/git/config.local" ]]; then
+      bot "Git identity"
+      read -r -p "  Your name for git commits: " _git_name
+      read -r -p "  Your email for git commits: " _git_email
+      if [[ -n "$_git_name" && -n "$_git_email" ]]; then
+        cat >"$ROOT_DIR/config/git/config.local" <<GITLOCAL
+# Machine-local git identity. Gitignored: the dotfiles repo is public.
+[user]
+	name = $_git_name
+	email = $_git_email
+GITLOCAL
+        chmod 600 "$ROOT_DIR/config/git/config.local"
+        ok "wrote config/git/config.local"
+      else
+        warn "skipped -- set it later with: git config --file ~/.config/git/config.local user.name \"...\""
+      fi
+      unset _git_name _git_email
+    fi
+
     stow -t "$HOME" runcom
     stow -t "$XDG_CONFIG_HOME" config
     mkdir -p "$HOME/.local/runtime"
@@ -557,36 +581,21 @@ sub_unlink() {
     exit 1
   fi
 
-  pushd "$HOME/.dotfiles_backup/$1" >/dev/null 2>&1 || exit
+  local backup_dir="$HOME/.dotfiles_backup/$1"
+  if [[ ! -d "$backup_dir" ]]; then
+    error "no such backup: $backup_dir"
+    exit 1
+  fi
 
-  for file in .*; do
-    if [[ $file == "." || $file == ".." || $file == '.DS_Store' ]]; then
-      continue
-    fi
+  running "restoring $backup_dir"
+  if dotfiles_restore_backup "$backup_dir"; then
+    ok "restored into $HOME"
+  else
+    error "restore failed; $backup_dir left untouched"
+    exit 1
+  fi
 
-    running "$HOME/$file"
-    if [[ -e ~/$file ]]; then
-      unlink "$file"
-      echo -en "project dotfile $file unlinked"
-      ok
-    fi
-
-    if [[ -e ./$file ]]; then
-      mv "./$file" "$HOME/"
-      echo -en "$1 backup restored"
-      ok
-    fi
-    echo -en '\tdone'
-    ok
-  done
-
-  popd >/dev/null 2>&1 || exit
-  pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
-
-  stow --delete -t "$HOME" runcom
-  stow --delete -t "$XDG_CONFIG_HOME" config
-
-  popd >/dev/null 2>&1 || exit
+  bot "Restore complete. Anything real that was in the way was renamed to *.replaced.<timestamp>."
 }
 
 sub_update() {
@@ -666,6 +675,10 @@ sub_clean() {
   bot "Polishing this old rusty piece of machinery!\n"
   brew cleanup
   bot "Woot! All done."
+
+  running "pruning stale fnm multishell dirs"
+  dotfiles_prune_fnm_multishells
+  ok
 }
 
 sub_open() {

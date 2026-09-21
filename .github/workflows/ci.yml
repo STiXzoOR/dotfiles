@@ -19,21 +19,29 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
 
-      - name: Run shellcheck on bash scripts
+      # Discover by shebang rather than a hardcoded list: the old glob
+      # `scripts/*.sh` never matched scripts/lib/, and new bin/ tools were
+      # invisible until someone remembered to add them here.
+      - name: Run shellcheck on every bash script
         run: |
-          shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 -s bash \
-            bin/dotfiles \
-            bin/dotfiles-secrets \
-            bin/dotfiles-setup \
-            scripts/*.sh \
-            macos/*.sh
+          set -euo pipefail
+          mapfile -t files < <(
+            git ls-files | while IFS= read -r f; do
+              [ -f "$f" ] || continue
+              head -1 "$f" | grep -qE '^#!.*bash' && echo "$f"
+            done
+          )
+          printf 'linting %d bash files\n' "${#files[@]}"
+          printf '  %s\n' "${files[@]}"
+          shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 -s bash "${files[@]}"
 
       - name: Check bash syntax
         run: |
-          for file in bin/dotfiles scripts/*.sh macos/*.sh; do
-            if [[ -f "$file" ]]; then
-              bash -n "$file" || exit 1
-            fi
+          set -euo pipefail
+          git ls-files | while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            head -1 "$f" | grep -qE '^#!.*bash' || continue
+            bash -n "$f"
           done
 
   syntax:
@@ -50,40 +58,24 @@ jobs:
 
       - name: Check zsh syntax
         run: |
-          files=(
-            runcom/.zshrc
-            runcom/.zprofile
-            runcom/.zlogin
-            runcom/.profile
-            runcom/.zpreztorc
-            system/.alias
-            system/.bindings
-            system/.completion
-            system/.env
-            system/.fix
-            system/.fnm
-            system/.function
-            system/.function_fs
-            system/.function_fun
-            system/.function_network
-            system/.function_text
-            system/.fzf
-            system/.grep
-            system/.path
-            system/.pnpm
-            system/.starship
-            system/.zoxide
-            bin/dotfiles-test
-            bin/dotfiles-doctor
-            bin/dotfiles-cheatsheet
-            bin/dotfiles-profiler
+          # Shebang-derived, plus the extensionless zsh fragments that
+          # runcom/ and system/ hold. The old hand-written list included
+          # system/.fix, which does not exist -- guarded by [[ -f ]], so it
+          # skipped silently and nobody noticed the gap.
+          mapfile -t files < <(
+            git ls-files 'runcom/*' 'system/*' 'bin/*' | while IFS= read -r f; do
+              [ -f "$f" ] || continue
+              if head -1 "$f" | grep -q zsh; then echo "$f"
+              elif [ -z "$(head -1 "$f" | grep '^#!')" ]; then
+                case "$f" in runcom/.*|system/.*) echo "$f" ;; esac
+              fi
+            done
           )
 
+          printf 'checking %d zsh files\n' "${#files[@]}"
           for file in "${files[@]}"; do
-            if [[ -f "$file" ]]; then
-              echo "Checking $file..."
-              zsh -n "$file" || exit 1
-            fi
+            echo "Checking $file..."
+            zsh -n "$file" || exit 1
           done
 
   test:
@@ -106,6 +98,9 @@ jobs:
         run: |
           chmod +x bin/dotfiles-test
           ./bin/dotfiles-test --quick
+
+      - name: Run audit regression suite
+        run: ./tests/audit-regressions.sh
         env:
           DOTFILES_DIR: ${{ github.workspace }}
 

@@ -14,7 +14,9 @@ apps/gitkraken/profiles/*/**
 config/karabiner/automatic_backups
 config/spicetify/*
 !config/spicetify/Themes
-!config/spicetify/*.ini
+# The live config-xpui.ini holds an absolute prefs_path and is rewritten by
+# spicetify itself; seeded from config-xpui.ini.template by dotfiles link.
+!config/spicetify/*.ini.template
 runcom/.vim/backup/*
 !runcom/.vim/backup/.gitignore
 runcom/.vim/temp/*
@@ -35,3 +37,10 @@ Brewfile.lock.json
 
 # Private/work Claude marketplaces + plugins (repo is public)
 claude/*.local.list
+
+# Machine-local git identity (this repo is public)
+config/git/config.local
+
+# Local logs -- do not rely on the user's global gitignore for these
+*.log
+.claude/
