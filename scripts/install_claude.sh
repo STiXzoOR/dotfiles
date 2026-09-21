@@ -157,6 +157,46 @@ copy_claude_files() {
 
 # ─── 5. Merge settings template ──────────────────────────────────────────────
 
+install_statusline() {
+  # settings.template.json points statusLine at this script. It used to exist
+  # only on the author's machine, so a fresh bootstrap wrote a settings file
+  # referencing a file that was never installed.
+  local src="$CLAUDE_DIR/statusline.sh"
+  [[ -f "$src" ]] || { warn "No statusline.sh in the repo, skipping"; return; }
+
+  action "Installing status line"
+  cp "$src" "$CLAUDE_HOME/statusline.sh"
+  chmod +x "$CLAUDE_HOME/statusline.sh"
+  ok "statusline.sh"
+}
+
+verify_settings_refs() {
+  # Every command a hook or the status line points at must actually exist by
+  # the end of the bootstrap; a dangling reference fails silently at runtime.
+  local settings="$CLAUDE_HOME/settings.json"
+  [[ -f "$settings" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  action "Verifying settings references"
+  local missing=0 path
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    path="${path/#\$HOME/$HOME}"
+    if [[ ! -e "$path" ]]; then
+      warn "settings references a missing file: $path"
+      missing=$((missing + 1))
+    fi
+  done < <(
+    jq -r '
+      [ (.hooks // {} | .[]? | .[]? | .hooks[]?.command),
+        (.statusLine.command // empty) ]
+      | .[]
+      | scan("\\$HOME/[^\" ]+|/[A-Za-z0-9_./-]+\\.(sh|py)")
+    ' "$settings" 2>/dev/null | sort -u
+  )
+  [[ "$missing" -eq 0 ]] && ok "all referenced files present"
+}
+
 merge_settings() {
   local template="$CLAUDE_DIR/settings.template.json"
   local target="$CLAUDE_HOME/settings.json"
@@ -309,7 +349,9 @@ main() {
   install_plugins
   copy_claude_files "$CLAUDE_DIR/rules" "$CLAUDE_HOME/rules" "rules"
   copy_claude_files "$CLAUDE_DIR/hooks" "$CLAUDE_HOME/hooks" "hooks" "true"
+  install_statusline
   merge_settings
+  verify_settings_refs
   setup_vault
   setup_qmd
 

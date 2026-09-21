@@ -180,8 +180,21 @@ t "CB.2" "superpowers marketplace is present" \
 t "CB.3" "compound engineering marketplace is present" \
   'grep -qi "compound-engineering" claude/marketplaces.list'
 t "CB.4" "every plugin resolves to one of those two marketplaces" '
-  bad=$(grep -vE "^\s*(#|$)" claude/plugins.list | grep -vE "@(superpowers-marketplace|every-marketplace)$" | wc -l)
+  bad=$(grep -vE "^[[:space:]]*(#|$)" claude/plugins.list \
+        | grep -vE "@(superpowers-marketplace|compound-engineering-plugin)$" | wc -l)
   [ "$bad" -eq 0 ]'
+t "CB.5" "exactly two plugins" '
+  n=$(grep -cvE "^[[:space:]]*(#|$)" claude/plugins.list); [ "$n" -eq 2 ]'
+t "CB.6" "the status line script the settings reference is tracked" \
+  '[ -n "$(git ls-files claude/statusline.sh)" ]'
+t "CB.7" "every hook the settings template references exists in the repo" '
+  ok=1
+  for h in $(grep -oE "\\$HOME/\.claude/hooks/[a-z-]+\.sh" claude/settings.template.json | sort -u); do
+    [ -f "claude/hooks/$(basename "$h")" ] || ok=0
+  done
+  [ "$ok" -eq 1 ]'
+t "CB.8" "installer verifies settings references" \
+  'grep -q "verify_settings_refs" scripts/install_claude.sh'
 
 #############################################################################
 printf "\n%s\n" "────────────────────────────────────────"

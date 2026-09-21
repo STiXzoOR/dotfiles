@@ -114,6 +114,11 @@ function require_claude_plugin() {
   else
     if claude plugin install "$1" 2>>"${CLAUDE_INSTALL_LOG:-/dev/null}"; then
       ok
+    elif [[ "$1" == *@* ]] &&
+      claude plugin install "$plugin_name" 2>>"${CLAUDE_INSTALL_LOG:-/dev/null}"; then
+      # A marketplace's id comes from its own marketplace.json and can change
+      # upstream, which would otherwise break a pinned plugin@marketplace id.
+      ok "resolved $plugin_name without a marketplace qualifier"
     else
       warn "failed to install $1"
       return 1

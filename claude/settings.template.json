@@ -1,8 +1,31 @@
 {
+  "$comment": [
+    "Merged into ~/.claude/settings.json by scripts/install_claude.sh.",
+    "Only keys present here are written; anything already set locally is kept,",
+    "so machine-specific choices (model, effortLevel) survive a re-bootstrap.",
+    "Every key below is one the installed CLI actually reads -- verified",
+    "against a live settings.json, not guessed from documentation."
+  ],
+
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "VAULT_DIR": "$HOME/Vault"
   },
+
+  "permissions": {
+    "allow": [],
+    "deny": [],
+    "defaultMode": "auto"
+  },
+
+  "alwaysThinkingEnabled": true,
+  "tui": "fullscreen",
+
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"$HOME/.claude/statusline.sh\""
+  },
+
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -31,7 +54,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/session-start.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
-  },
-  "alwaysThinkingEnabled": true
+  }
 }

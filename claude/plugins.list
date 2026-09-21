@@ -1,54 +1,19 @@
 # Claude Code Plugins
-# Format: plugin@marketplace
-# Used by: scripts/install_claude.sh
-# To find available plugins: claude plugin list --available
+# Format: plugin@marketplace  (or a bare plugin name to let Claude resolve it)
+# Used by: scripts/install_claude.sh  (dotfiles install --claude)
+#
+# One plugin per marketplace in claude/marketplaces.list. Anything else goes
+# in claude/plugins.local.list (gitignored) or is installed per-project.
+#
+# Marketplace ids come from each repo's .claude-plugin/marketplace.json, not
+# from the repo name -- compound-engineering-plugin registers itself as
+# "compound-engineering-plugin". The installer falls back to resolving a bare
+# plugin name if the qualified id does not match, so a renamed marketplace
+# upstream does not break the bootstrap.
 
-# Official Anthropic plugins
-context7@claude-plugins-official
-frontend-design@claude-plugins-official
-hookify@claude-plugins-official
-vercel@claude-plugins-official
-code-simplifier@claude-plugins-official
-feature-dev@claude-plugins-official
-code-review@claude-plugins-official
-security-guidance@claude-plugins-official
-typescript-lsp@claude-plugins-official
-playwright@claude-plugins-official
-gopls-lsp@claude-plugins-official
-figma@claude-plugins-official
-expo@claude-plugins-official
-railway@claude-plugins-official
-ralph-loop@claude-plugins-official
-
-# Anthropic skills
-document-skills@anthropic-agent-skills
-
-# Superpowers
 superpowers@superpowers-marketplace
+compound-engineering@compound-engineering-plugin
 
-# Compound Engineering
-compound-engineering@every-marketplace
-
-# Personal OS
-recall-skill@personal-os-skills
-sync-claude-sessions-skill@personal-os-skills
-
-# Dev tools
-plugin-dev@claude-code-plugins
-ralph-wiggum@claude-code-plugins
-beads@beads-marketplace
-cartographer@cartographer-marketplace
-safety-net@cc-marketplace
-everything-claude-code@everything-claude-code
-media-pipeline@media-pipeline-marketplace
-project-starter@claude-workflow
-
-# Vendor tooling
-warp@claude-code-warp
-codex@openai-codex
-
-# Platform skills
-all-ios-skills@swift-ios-skills
-
-# Private/work plugins belong in claude/plugins.local.list (gitignored) —
-# this repo is public.
+# To discover what a marketplace offers:
+#   claude plugin list --available
+#   claude plugin details <name>     # component inventory + token cost
