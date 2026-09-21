@@ -3,6 +3,18 @@
 
 if (( $+commands[fnm] )); then
   eval "$(fnm env --use-on-cd --corepack-enabled --shell zsh)"
+
+  # Self-heal: fnm points PATH at a per-shell symlink under
+  # $XDG_RUNTIME_DIR/fnm_multishells. If that link goes missing -- an
+  # over-eager cleanup, a cleared runtime dir -- every node/npm/npx lookup in
+  # this shell and anything it spawns fails with "command not found", and
+  # there is no recovery short of restarting the process. Recreating it is
+  # one stat and, rarely, one symlink.
+  if [[ -n "$FNM_MULTISHELL_PATH" && ! -e "$FNM_MULTISHELL_PATH" ]]; then
+    mkdir -p "${FNM_MULTISHELL_PATH:h}" 2>/dev/null
+    ln -sfn "${FNM_DIR:-$HOME/.local/share/fnm}/aliases/default" \
+      "$FNM_MULTISHELL_PATH" 2>/dev/null
+  fi
 fi
 
 # Helper function to upgrade global npm packages

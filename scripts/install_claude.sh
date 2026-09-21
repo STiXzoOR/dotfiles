@@ -157,6 +157,54 @@ copy_claude_files() {
 
 # ─── 5. Merge settings template ──────────────────────────────────────────────
 
+setup_recall_venv() {
+  # Installing the recall plugin is not enough: the Stop hook invokes
+  # $HOME/.claude/skills/recall/.venv/bin/python3 directly, and nothing
+  # creates that venv. A fresh machine would install the plugin and still
+  # have a hook that fails with "no such file or directory".
+  local skill_dir="$CLAUDE_HOME/skills/recall"
+  local venv="$skill_dir/.venv"
+
+  if [[ ! -d "$skill_dir" ]]; then
+    warn "recall skill not present yet, skipping venv (re-run after plugins install)"
+    return 0
+  fi
+
+  if [[ -x "$venv/bin/python3" ]]; then
+    ok "recall venv already present ($("$venv/bin/python3" --version 2>&1))"
+  else
+    action "Creating recall venv"
+    if command -v uv &>/dev/null; then
+      uv venv "$venv" >>"$CLAUDE_INSTALL_LOG" 2>&1
+    else
+      python3 -m venv "$venv" >>"$CLAUDE_INSTALL_LOG" 2>&1
+    fi
+    if [[ -x "$venv/bin/python3" ]]; then
+      ok "recall venv created"
+    else
+      warn "could not create recall venv"
+      return 0
+    fi
+  fi
+
+  # extract-sessions.py (the hook path) is stdlib-only, so the hook already
+  # works. networkx and pyvis are only needed by `recall graph`; a failure
+  # here must not fail the bootstrap.
+  if ! "$venv/bin/python3" -c "import networkx, pyvis" >/dev/null 2>&1; then
+    action "Installing recall graph dependencies"
+    if command -v uv &>/dev/null; then
+      uv pip install --python "$venv/bin/python3" networkx pyvis >>"$CLAUDE_INSTALL_LOG" 2>&1 || true
+    else
+      "$venv/bin/python3" -m pip install networkx pyvis >>"$CLAUDE_INSTALL_LOG" 2>&1 || true
+    fi
+    if "$venv/bin/python3" -c "import networkx, pyvis" >/dev/null 2>&1; then
+      ok "networkx + pyvis"
+    else
+      warn "recall graph deps unavailable ('recall graph' will not work; the Stop hook is unaffected)"
+    fi
+  fi
+}
+
 install_statusline() {
   # settings.template.json points statusLine at this script. It used to exist
   # only on the author's machine, so a fresh bootstrap wrote a settings file
@@ -350,6 +398,7 @@ main() {
   copy_claude_files "$CLAUDE_DIR/rules" "$CLAUDE_HOME/rules" "rules"
   copy_claude_files "$CLAUDE_DIR/hooks" "$CLAUDE_HOME/hooks" "hooks" "true"
   install_statusline
+  setup_recall_venv
   merge_settings
   verify_settings_refs
   setup_vault

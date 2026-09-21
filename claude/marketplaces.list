@@ -2,11 +2,12 @@
 # Format: github_org/repo, or a full git URL for non-standard repos.
 # Used by: scripts/install_claude.sh  (dotfiles install --claude)
 #
-# Deliberately two. This list previously carried 20 marketplaces and 36
+# Deliberately small. This list previously carried 20 marketplaces and 36
 # plugins; most were installed once, never used, and every one of them costs
 # context on every session plus a network round-trip on every bootstrap.
-# These two are the process backbone -- everything else is better added
-# per-project or in the gitignored *.local.list files.
+# What remains is the process backbone plus whatever the bootstrap itself
+# depends on -- everything else is better added per-project or in the
+# gitignored *.local.list files.
 
 # Superpowers -- brainstorming, TDD, systematic debugging, plan writing and
 # execution, code review, worktrees, subagent dispatch.
@@ -15,6 +16,13 @@ obra/superpowers-marketplace
 # Compound Engineering -- the ce-* workflow: brainstorm, plan, work, review,
 # simplify, commit, handoff.
 https://github.com/EveryInc/compound-engineering-plugin.git
+
+# Personal OS -- recall and sync-claude-sessions. Load-bearing, not optional:
+# setup_qmd registers a "sessions" collection over $VAULT_DIR/Claude-Sessions,
+# and only sync-claude-sessions writes there. Both the UserPromptSubmit and
+# Stop hooks in settings.template.json invoke these two skills directly, so
+# dropping this marketplace leaves the QMD/vault bootstrap half-wired.
+ArtemXTech/personal-os-skills
 
 # Private/work marketplaces belong in claude/marketplaces.local.list
 # (gitignored) -- this repo is public.

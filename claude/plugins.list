@@ -2,8 +2,9 @@
 # Format: plugin@marketplace  (or a bare plugin name to let Claude resolve it)
 # Used by: scripts/install_claude.sh  (dotfiles install --claude)
 #
-# One plugin per marketplace in claude/marketplaces.list. Anything else goes
-# in claude/plugins.local.list (gitignored) or is installed per-project.
+# One plugin per marketplace in claude/marketplaces.list, plus the two the
+# bootstrap itself needs. Anything else goes in claude/plugins.local.list
+# (gitignored) or is installed per-project.
 #
 # Marketplace ids come from each repo's .claude-plugin/marketplace.json, not
 # from the repo name -- compound-engineering-plugin registers itself as
@@ -13,6 +14,13 @@
 
 superpowers@superpowers-marketplace
 compound-engineering@compound-engineering-plugin
+
+# Required by the QMD/Obsidian bootstrap, not a preference:
+#   recall                -> extract-sessions.py, driven by the Stop hook
+#   sync-claude-sessions  -> populates $VAULT_DIR/Claude-Sessions, which
+#                            setup_qmd registers as the "sessions" collection
+recall-skill@personal-os-skills
+sync-claude-sessions-skill@personal-os-skills
 
 # To discover what a marketplace offers:
 #   claude plugin list --available

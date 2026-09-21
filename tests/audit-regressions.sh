@@ -173,25 +173,58 @@ section "S7 / Claude bootstrap"
 
 t "S7.1" "XDG_RUNTIME_DIR does not accumulate fnm multishells forever" \
   'grep -qE "TMPDIR|fnm_multishells" system/.env scripts/lib/*.sh bin/dotfiles 2>/dev/null'
-t "CB.1" "exactly two marketplaces are bootstrapped" '
-  n=$(grep -cvE "^\s*(#|$)" claude/marketplaces.list); [ "$n" -eq 2 ]'
+# Counting entries was the wrong invariant: it made "slim" the goal and let a
+# needed marketplace be dropped while the tests stayed green. What matters is
+# that the set is closed -- nothing listed is unused, and nothing the
+# bootstrap references is unprovided.
+t "CB.1" "every listed marketplace is used by at least one plugin" '
+  bad=0
+  while IFS= read -r mkt; do
+    [ -n "$mkt" ] || continue
+    short=$(basename "$mkt" .git)
+    grep -vE "^[[:space:]]*(#|$)" claude/plugins.list \
+      | grep -qE "@($short|${short%%-plugin})$" || bad=1
+  done < <(grep -vE "^[[:space:]]*(#|$)" claude/marketplaces.list)
+  [ "$bad" -eq 0 ]'
 t "CB.2" "superpowers marketplace is present" \
   'grep -q "superpowers-marketplace" claude/marketplaces.list'
 t "CB.3" "compound engineering marketplace is present" \
   'grep -qi "compound-engineering" claude/marketplaces.list'
-t "CB.4" "every plugin resolves to one of those two marketplaces" '
-  bad=$(grep -vE "^[[:space:]]*(#|$)" claude/plugins.list \
-        | grep -vE "@(superpowers-marketplace|compound-engineering-plugin)$" | wc -l)
+t "CB.4" "every plugin names a marketplace that is listed" '
+  bad=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in *@*) mkt="${line##*@}" ;; *) continue ;; esac
+    grep -vE "^[[:space:]]*(#|$)" claude/marketplaces.list \
+      | sed -E "s|.*/||; s|\.git$||" | grep -qx "$mkt" \
+      || grep -qx "$mkt" <<< "compound-engineering-plugin" || bad=1
+  done < <(grep -vE "^[[:space:]]*(#|$)" claude/plugins.list)
   [ "$bad" -eq 0 ]'
-t "CB.5" "exactly two plugins" '
-  n=$(grep -cvE "^[[:space:]]*(#|$)" claude/plugins.list); [ "$n" -eq 2 ]'
+# Guards against the vacuous pass: if the extraction finds nothing the test
+# fails, rather than quietly reporting success over an empty loop. An earlier
+# version of this test did exactly that -- it stayed green while the
+# marketplace providing these skills had been removed.
+t "CB.5" "every skill the settings and hooks invoke is provided by a plugin" '
+  skills=$(grep -ohE "[.]claude/skills/[a-z-]+" \
+             claude/settings.template.json claude/hooks/*.sh \
+           | sed "s|.*/||" | sort -u)
+  [ -n "$skills" ] || { echo "    (extracted no skills -- assertion is vacuous)"; false; }
+  bad=0
+  for skill in $skills; do
+    grep -vE "^[[:space:]]*(#|$)" claude/plugins.list | grep -q "^$skill" || bad=1
+  done
+  [ "$bad" -eq 0 ]'
+t "CB.5b" "the recall venv the Stop hook invokes is created by the installer" \
+  'grep -q "setup_recall_venv" scripts/install_claude.sh'
+t "CB.5c" "the venv step tolerates missing graph deps without failing the bootstrap" \
+  'code_of scripts/install_claude.sh | sed -n "/setup_recall_venv()/,/^}/p" | grep -q "|| true"'
 t "CB.6" "the status line script the settings reference is tracked" \
   '[ -n "$(git ls-files claude/statusline.sh)" ]'
 t "CB.7" "every hook the settings template references exists in the repo" '
+  hooks=$(grep -ohE "[.]claude/hooks/[a-z-]+[.]sh" claude/settings.template.json | sed "s|.*/||" | sort -u)
+  [ -n "$hooks" ] || { echo "    (extracted no hooks -- assertion is vacuous)"; false; }
   ok=1
-  for h in $(grep -oE "\\$HOME/\.claude/hooks/[a-z-]+\.sh" claude/settings.template.json | sort -u); do
-    [ -f "claude/hooks/$(basename "$h")" ] || ok=0
-  done
+  for h in $hooks; do [ -f "claude/hooks/$h" ] || ok=0; done
   [ "$ok" -eq 1 ]'
 t "CB.8" "installer verifies settings references" \
   'grep -q "verify_settings_refs" scripts/install_claude.sh'
