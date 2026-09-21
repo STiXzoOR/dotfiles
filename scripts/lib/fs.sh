@@ -79,18 +79,56 @@ dotfiles_restore_backup() {
 # Housekeeping
 #############################################################################
 
-# fnm creates a multishell directory per shell. Its default home is $TMPDIR,
-# which macOS clears at boot -- but system/.env points XDG_RUNTIME_DIR at
-# ~/.local/runtime, which is never cleared, so they accumulate without bound
-# (39,778 of them by the time this was found). Prune stale ones.
+# fnm creates a multishell directory per shell, named "<pid>_<timestamp>".
+# Its default home is $TMPDIR, which macOS clears at boot -- but system/.env
+# points XDG_RUNTIME_DIR at ~/.local/runtime, which is never cleared, so they
+# accumulate without bound (39,803 of them by the time this was found).
+#
+# Age is NOT a safe proxy for "unused": a Claude Code or terminal session open
+# for more than a day still resolves node through its own multishell dir, and
+# deleting it takes `node` off PATH for that process with no way to recover
+# short of restarting it. That is exactly what an earlier age-only version of
+# this function did. Delete a directory only when its owning PID is gone.
 dotfiles_prune_fnm_multishells() {
   _dfp_dir="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/fnm_multishells"
   [ -d "$_dfp_dir" ] || { unset _dfp_dir; return 0; }
 
-  # Anything older than a day cannot belong to a live shell worth keeping.
-  find "$_dfp_dir" -mindepth 1 -maxdepth 1 -mtime +1 -exec rm -rf {} + 2>/dev/null
+  _dfp_removed=0
+  while IFS= read -r _dfp_path; do
+    [ -n "$_dfp_path" ] || continue
 
-  unset _dfp_dir
+    # Never remove the one this very shell is using.
+    [ "$_dfp_path" = "${FNM_MULTISHELL_PATH:-}" ] && continue
+
+    # Nor any directory still on PATH. A process inherits PATH entries from a
+    # parent that may since have exited, so the owning PID can be dead while
+    # the entry is still live for us and every child we spawn.
+    case ":$PATH:" in
+      *":$_dfp_path/bin:"*) continue ;;
+    esac
+
+    _dfp_name=${_dfp_path##*/}
+    _dfp_pid=${_dfp_name%%_*}
+
+    # Unrecognised name: leave it alone rather than guess.
+    case "$_dfp_pid" in
+      '' | *[!0-9]*) continue ;;
+    esac
+
+    # kill -0 succeeds while the process exists (and on EPERM, which also
+    # means it exists), so a live owner is always spared.
+    if kill -0 "$_dfp_pid" 2>/dev/null; then
+      continue
+    fi
+
+    rm -rf "$_dfp_path" 2>/dev/null && _dfp_removed=$((_dfp_removed + 1))
+  done << EOF
+$(find "$_dfp_dir" -mindepth 1 -maxdepth 1 2>/dev/null)
+EOF
+
+  [ -n "${DOTFILES_VERBOSE:-}" ] && echo "pruned $_dfp_removed stale fnm multishell dirs"
+  unset _dfp_dir _dfp_path _dfp_name _dfp_pid _dfp_removed
+  return 0
 }
 
 # Seed a config file from its tracked template, expanding __HOME__.

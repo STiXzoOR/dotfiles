@@ -222,6 +222,35 @@ t "SL.7" "shellcheck clean" \
   'shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 claude/statusline.sh'
 
 #############################################################################
+section "S7.2 — the fnm prune must never delete a live shell's multishell"
+#############################################################################
+
+t "S7.2a" "prune is PID-aware, not age-only" \
+  'code_of scripts/lib/fs.sh | grep -qE "kill -0|/proc/|ps -p"'
+t "S7.2b" "prune spares a directory whose PID is still running" '
+  W=$(mktemp -d); mkdir -p "$W/fnm_multishells"
+  live="$W/fnm_multishells/$$_1700000000"
+  dead="$W/fnm_multishells/99999999_1700000000"
+  mkdir -p "$live" "$dead"
+  # make both look old, so age alone would delete them
+  touch -t 202001010000 "$live" "$dead"
+  ( . scripts/lib/fs.sh; XDG_RUNTIME_DIR="$W" dotfiles_prune_fnm_multishells )
+  [ -e "$live" ] && [ ! -e "$dead" ]'
+t "S7.2d" "prune spares a dead-PID dir that is still on PATH" '
+  W=$(mktemp -d); mkdir -p "$W/fnm_multishells"
+  onpath="$W/fnm_multishells/99999997_1700000000"
+  mkdir -p "$onpath/bin"; touch -t 202001010000 "$onpath"
+  ( . scripts/lib/fs.sh
+    PATH="$onpath/bin:$PATH" XDG_RUNTIME_DIR="$W" dotfiles_prune_fnm_multishells )
+  [ -e "$onpath" ]'
+t "S7.2c" "prune never touches the running shell FNM_MULTISHELL_PATH" '
+  W=$(mktemp -d); mkdir -p "$W/fnm_multishells"
+  keep="$W/fnm_multishells/99999998_1700000000"
+  mkdir -p "$keep"; touch -t 202001010000 "$keep"
+  ( . scripts/lib/fs.sh; XDG_RUNTIME_DIR="$W" FNM_MULTISHELL_PATH="$keep" dotfiles_prune_fnm_multishells )
+  [ -e "$keep" ]'
+
+#############################################################################
 printf "\n%s\n" "────────────────────────────────────────"
 printf "passed=%d failed=%d\n" "$pass" "$fail"
 if [ "$fail" -gt 0 ]; then
