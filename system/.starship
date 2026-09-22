@@ -10,4 +10,11 @@ export STARSHIP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/starship/config.toml"
 
 if (( $+commands[starship] )); then
   eval "$(starship init zsh)"
+
+  # starship's init sets RPROMPT to a second `starship prompt --right` process,
+  # which zsh runs on every prompt even when the config draws nothing on the
+  # right: about 30 ms a command, half the per-command lag zsh-bench measured.
+  # Drop it unless the config asks for a right prompt. $(<file) is a read, not
+  # a process.
+  [[ -r "$STARSHIP_CONFIG" && "$(<"$STARSHIP_CONFIG")" == *right_format* ]] || RPROMPT=
 fi

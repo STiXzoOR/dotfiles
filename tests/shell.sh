@@ -154,6 +154,7 @@ cat <<'ZSHEOF'
 prompt_starship_precmd() { :; }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd prompt_starship_precmd
+RPROMPT='$(starship prompt --right)'
 ZSHEOF
 STUBEOF
   cat >"$1/.stubs/fzf" <<'STUBEOF'
@@ -500,6 +501,12 @@ t "H2.4" "no Powerlevel10k anywhere in the login path" \
   '[ "$(code_of runcom/.zshrc runcom/.zpreztorc system/.starship | grep -ciE "p10k|powerlevel|system/[.]prompt|DEFAULT_USER")" -eq 0 ]'
 t "H2.5" "Starship is sourced after prezto, whose zle-keymap-select it wraps" \
   '[ "$(_first_line system/.starship runcom/.zshrc)" -gt "$(_first_line prezto/init.zsh runcom/.zshrc)" ]'
+t "H2.6a" "no right-prompt starship run when the config has no right_format" \
+  '[ "$(zshrun "print -r -- \"RP=\$RPROMPT\"")" = "RP=" ]'
+t "H2.6b" "the right prompt stays when the config sets right_format" \
+  'H=$(_zsh_sandbox) && mkdir -p "$H/.config/starship" &&
+   printf "right_format = \"\$time\"\\n" >"$H/.config/starship/config.toml" &&
+   case "$(ZSHRUN_HOME="$H" zshrun "print -r -- \"RP=\$RPROMPT\"")" in "RP=\$(starship prompt --right)") true ;; *) false ;; esac'
 t "H2.6" "no doc still names Powerlevel10k as the prompt" \
   '[ "$(cat README.md AGENTS.md docs/agents/*.md | grep -ciE "powerlevel|p10k")" -eq 0 ]'
 
