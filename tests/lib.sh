@@ -41,6 +41,16 @@ section() { printf "\n%s\n" "$1"; }
 # about whether a comment happens to name the thing it replaced.
 code_of() { sed -E 's/^[[:space:]]*#.*$//' "$@"; }
 
+# _first_line <pattern> <file> -- the line number of the first line of <file>
+# containing <pattern> as a fixed string, or 0 if none does.
+#
+# Reads through code_of, so an ordering assertion cannot be satisfied by a
+# comment that names the thing. code_of blanks rather than deletes, so line
+# numbers still line up with the file.
+_first_line() {
+  code_of "$2" | awk -v p="$1" 'index($0, p) && !n { n = NR } END { print n + 0 }'
+}
+
 # A throwaway directory under $TMPDIR, removed by finish. Never under $HOME.
 sandbox() {
   local d

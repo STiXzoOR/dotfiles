@@ -1,6 +1,13 @@
+# Starship prompt. Sourced from .zshrc after prezto, for rich terminals only
+# (system/.term_host).
+#
+# STARSHIP_CONFIG is needed: starship looks for ~/.config/starship.toml by
+# default, and config/starship/ stows to ~/.config/starship/config.toml.
+#
+# No cache, unlike .zoxide and .fzf: `starship init zsh` costs a few
+# milliseconds, and a cache would be one more thing to invalidate.
 export STARSHIP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/starship/config.toml"
 
-# Initialize Starship prompt
-if command -v starship &>/dev/null; then
+if (( $+commands[starship] )); then
   eval "$(starship init zsh)"
 fi

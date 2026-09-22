@@ -56,6 +56,7 @@ brew "mas"                          # Mac App Store CLI
 brew "topgrade"                     # System upgrade tool
 brew "zoxide"                       # Smarter cd command
 brew "atuin"                        # Searchable shell history
+brew "starship"                     # Shell prompt (rich terminals; Warp draws its own)
 brew "psgrep"                       # Process grep
 brew "rtk"                          # Token-optimising command proxy
 brew "timescam/tap/pay-respects"    # Command correction (replaces thefuck)

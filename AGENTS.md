@@ -40,8 +40,10 @@ These affect nearly every task.
   `docs/solutions/` is a point-in-time record, not current state.
 - **Submodules**: Prezto lives in `modules/`, app themes under `apps/`. Always
   `git submodule update --init --recursive` after a clone.
-- **Prezto, not Oh My Zsh**: prompt is Powerlevel10k via Prezto's prompt
-  module. A Starship config exists in `system/.starship` but is **not sourced**.
+- **Prezto, not Oh My Zsh**: the prompt is Starship (`system/.starship`,
+  `config/starship/`), sourced from `.zshrc` for rich terminals only; prezto's
+  own theme is off. `system/.term_host` sorts shells into warp, rich and dumb,
+  and Warp shells load no prompt and no line-editor plugins.
 - **mise, not NVM or FNM**: Node, Python-for-tooling, pnpm/yarn/uv and every
   CLI that used to be an `npm i -g` are declared in `config/mise/config.toml`
   and pinned in `config/mise/mise.lock`. Use `require_mise()` and

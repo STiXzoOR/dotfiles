@@ -7,8 +7,10 @@ _fzf_cache="${XDG_CACHE_HOME:-$HOME/.cache}/fzf-init.zsh"
 # whole option table with `eval "options=(...)"`. In a shell with no terminal
 # the `zle` option cannot be changed, so that restore prints "can't change
 # option: zle" twice on stderr. Nothing it defines is usable without a line
-# editor, so skip it entirely there.
-if (( $+commands[fzf] )) && [[ -t 0 ]]; then
+# editor, so skip it there, and in Warp, which has its own editor and file
+# search (system/.term_host). A detected class already implies a terminal;
+# -t 0 stays for a class set by hand, which does not.
+if (( $+commands[fzf] )) && [[ -t 0 && "$DOTFILES_TERM_HOST" != (warp|dumb) ]]; then
   # Regenerate cache if missing or fzf binary is newer
   if [[ ! -f "$_fzf_cache" ]] || [[ "$commands[fzf]" -nt "$_fzf_cache" ]]; then
     mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"

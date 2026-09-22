@@ -5,26 +5,37 @@
 **Prezto** (not Oh My Zsh) — chosen for performance. Configured via
 `runcom/.zpreztorc`.
 
-**Prompt**: Powerlevel10k, via Prezto's prompt module. Config in
-`system/.prompt`. A Starship config exists at `system/.starship` and
-`config/starship/` but is **not sourced**; nothing reads it today.
+**Prompt**: Starship. `system/.starship` initialises it, for rich terminals
+only, and `config/starship/config.toml` configures it. Prezto's own prompt
+theme is `off` in every host.
+
+## Host classification
+
+`system/.term_host` sorts every interactive shell into one of three hosts,
+before prezto loads, and sets `DOTFILES_TERM_HOST`:
+
+| Host   | When                                              | Loads                                                                                |
+| ------ | ------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `dumb` | no terminal (`zsh -l -i -c` from scripts, agents) | environment, completion, zoxide                                                      |
+| `warp` | `TERM_PROGRAM=WarpTerminal`                       | environment, completion, zoxide, atuin's recording hooks                             |
+| `rich` | any other terminal                                | everything: Starship, prezto's line-editor modules, fzf, fzf-tab, atuin, `.bindings` |
+
+Warp is the only host detected positively; anything unrecognised is rich. To
+override detection, set `DOTFILES_TERM_HOST` in `profiles/local.zsh` under a
+condition that picks out the host. The reasoning is in
+`docs/superpowers/specs/2026-09-22-zsh-2026-design.md`.
 
 ## Source Order
 
-`runcom/.zshrc` names only four files from `system/` directly:
+`runcom/.profile` loads the environment for every login shell, bash
+included: `.env`, `.function*`, `.path`, `.mise`, `.editor`, `.grep`, then
+the zsh-only `.alias`, `.fnm`, `.pay-respects` and `.pnpm`, then dircolors,
+then the machine profiles through `system/.profile_loader`. Read `.profile`
+for the exact order and the reasons for it.
 
-`.prompt` → `.completion` → `.zoxide` → `.bindings`
-
-Everything else in `system/` is loaded through `system/.profile_loader`, which
-is what `.zprofile` and `.zshrc` go through. Read `.profile_loader` for the
-real order rather than trusting a flat list here. The list this document used
-to carry was wrong in two ways: it presented everything as sourced directly by
-`.zshrc`, and it named a `system/` file that has never existed.
-
-The files it loads are `.env`, `.path`, `.alias`, the `.function*` set, `.fzf`,
-`.mise`, `.pnpm`, `.grep`, `.dir_colors` and `.pay-respects`. `.mise` is loaded
-from the shell-agnostic list, right after `.path`, so a non-interactive bash
-login shell gets the shims too.
+`runcom/.zshrc` then sources, in order: `.term_host`, prezto, `.starship`
+(rich), `.completion`, `.zoxide`, `.fzf`, `.atuin`, fzf-tab (rich) and
+`.bindings` (rich), and last the `profiles/*.post.zsh` hooks.
 
 ## Machine Profiles
 

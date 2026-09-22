@@ -138,17 +138,6 @@ _path_pos() { # _path_pos <pattern> <login-shell $path output>
   printf '%s\n' "$2" | awk -v p="$1" 'index($0, p) && !n { n = NR } END { print n + 0 }'
 }
 
-# Line number of the first line of <file> containing <pattern>, or 0.
-#
-# Reads through code_of, which blanks whole-line comments while keeping the
-# numbering: both files below explain .mise and the activation switch in prose
-# that names them, and an ordering assertion satisfied by a comment is not an
-# assertion. code_of blanks rather than deletes, so line numbers still line up
-# with the file.
-_first_line() { # _first_line <pattern> <file>
-  code_of "$2" | awk -v p="$1" 'index($0, p) && !n { n = NR } END { print n + 0 }'
-}
-
 t "M2.1" "a login shell puts the mise shims at the front of PATH" \
   '_W=$(_mise_sandbox --with-shims) &&
    _P=$(_mise_zshrun "$_W" "print -l \$path") &&
@@ -170,10 +159,11 @@ t "M2.4" "the shims cost nothing: mise activate is never in the login path" \
   '[ -f system/.mise ] &&
    [ "$(code_of runcom/.profile runcom/.zprofile system/.mise | grep -c "mise activate")" -eq 0 ]'
 
-t "M2.5" "activation is opt-in and sits after the instant-prompt guard" \
-  '[ "$(_first_line DOTFILES_MISE_ACTIVATE runcom/.zshrc)" -gt \
-     "$(_first_line p10k-instant-prompt runcom/.zshrc)" ] &&
-   grep -q "DOTFILES_MISE_ACTIVATE:-0" runcom/.zshrc'
+# The instant-prompt block this used to be ordered against went with
+# Powerlevel10k, and a _first_line of a missing pattern is 0, so keeping that
+# half would pass on nothing.
+t "M2.5" "activation is opt-in" \
+  '[ "$(code_of runcom/.zshrc | grep -c "DOTFILES_MISE_ACTIVATE:-0")" -eq 1 ]'
 
 t "M2.6" "the index hook reaches qmd through the shims on a minimal PATH" \
   '_W=$(sandbox) &&

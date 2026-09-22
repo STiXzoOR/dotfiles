@@ -23,42 +23,46 @@ zstyle ':prezto:*:*' color 'yes'
 
 # Set the Prezto modules to load (browse modules).
 # The order matters.
-zstyle ':prezto:load' pmodule \
-  'environment' \
-  'terminal' \
-  'editor' \
-  'history' \
-  'directory' \
-  'spectrum' \
-  'utility' \
-  'git' \
-  'homebrew' \
-  'osx' \
-  'ssh' \
-  'python' \
-  'completion' \
-  'prompt' \
-  'syntax-highlighting' \
-  'history-substring-search' \
+_pmodules=(
+  'environment'
+  'terminal'
+  'editor'
+  'history'
+  'directory'
+  'spectrum'
+  'utility'
+  'git'
+  'homebrew'
+  'osx'
+  'ssh'
+  'python'
+  'completion'
+  'prompt'
+  'syntax-highlighting'
+  'history-substring-search'
   'autosuggestions'
+)
+
+# These four are built on the line editor, so Warp, which has its own, and a
+# shell with no terminal skip them (system/.term_host). autosuggestions and
+# history-substring-search pmodload 'editor' themselves, so all four go
+# together or not at all. ${a:|b} keeps a's order.
+_zle_pmodules=('editor' 'syntax-highlighting' 'history-substring-search' 'autosuggestions')
+[[ "$DOTFILES_TERM_HOST" == (warp|dumb) ]] && _pmodules=(${_pmodules:|_zle_pmodules})
+
+zstyle ':prezto:load' pmodule $_pmodules
+unset _pmodules _zle_pmodules
 
 #
 # Prompt
 #
 
 # Set the prompt theme to load.
-# Setting it to 'random' loads a random theme.
-# Auto set to 'off' on dumb terminals.
 #
-# A shell with no controlling terminal -- `zsh -l -i -c ...` from a script, a
-# hook or an agent -- has no line editor and no job control, so powerlevel10k's
-# gitstatus daemon cannot start and prints a multi-line failure banner on every
-# such shell. There is nothing to draw a prompt on either, so load none.
-if [[ -t 0 ]]; then
-  zstyle ':prezto:module:prompt' theme 'powerlevel10k'
-else
-  zstyle ':prezto:module:prompt' theme 'off'
-fi
+# None, in every host. Rich terminals get Starship, which .zshrc sources after
+# prezto; Warp draws its own prompt and ignores PS1 (WARP_HONOR_PS1=0); a shell
+# with no terminal has nothing to draw one on (system/.term_host).
+zstyle ':prezto:module:prompt' theme 'off'
 
 #
 # Autosuggestions

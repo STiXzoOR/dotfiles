@@ -65,15 +65,15 @@ When I finish with your machine, you will have a fully configured development en
 
 ![Terminal Screenshot](./resources/terminal.png)
 
-The shell prompt is Powerlevel10k, loaded through Prezto's prompt module, and displays:
+The shell prompt is [Starship](https://starship.rs), configured in `config/starship/config.toml`, and displays:
 
 - Current directory path
 - Git branch and status
-- Node.js version (via FNM)
+- Language versions for the project (Node.js, Python, Go, Rust, and more)
 - Command execution time
 - And much more
 
-A Starship config is tracked at `system/.starship` and `config/starship/`, but nothing sources it.
+Starship draws the prompt in ordinary terminals. Warp draws its own, so a Warp shell loads no prompt, no line-editor plugins and no key bindings; `system/.term_host` decides which kind of terminal a shell is in.
 
 The dotfiles configure Neovim as a terminal-based IDE, managed with lazy.nvim.
 
@@ -487,7 +487,7 @@ The following is the software installed by default:
 - coreutils, dos2unix
 - dockutil
 - mackup, mas
-- starship (cross-shell prompt; installed, but the active prompt is Powerlevel10k)
+- starship (cross-shell prompt)
 - stow (dotfile symlink management)
 - thefuck
 - topgrade (universal package upgrader)

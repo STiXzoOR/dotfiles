@@ -11,7 +11,7 @@
 | `runcom/`       | Dotfiles stowed to `~/` — `.zshrc`, `.zprofile`, `.zpreztorc`, `.profile`                                    |
 | `config/`       | XDG config stowed to `~/.config/` — `git/`, `nvim/`, `karabiner/`, `prettier/`, `husky/`, `starship/`        |
 | `modules/`      | Git submodules — `prezto/` (the zsh framework). App themes are submodules under `apps/`                      |
-| `system/`       | Shell config sourced by `.zshrc` — `.alias`, `.env`, `.path`, `.function*`, `.fzf`, `.prompt`, …             |
+| `system/`       | Shell config sourced by `.zshrc` — `.alias`, `.env`, `.path`, `.function*`, `.fzf`, `.starship`, `.term_host`, …             |
 | `claude/`       | Claude Code bootstrap manifests — `marketplaces.list`, `plugins.list`, `settings.template.json`, `rules/`, `hooks/`, `statusline.sh`, `vault-templates/` |
 | `apps/`         | App themes — Terminal, Xcode, Warp, GitKraken, VLC, VS Code                                                  |
 | `fonts/`        | Powerline fonts with `install.sh`                                                                            |

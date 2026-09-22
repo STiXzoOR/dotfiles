@@ -1,0 +1,39 @@
+# Which kind of host this interactive shell runs in: warp, rich or dumb.
+#
+# Sourced by .zshrc before prezto, so that .zpreztorc and every file .zshrc
+# sources after it can read DOTFILES_TERM_HOST instead of probing again.
+#
+#   dumb  no terminal on stdin: `zsh -l -i -c` from a script, a hook or an
+#         agent -- including one started from inside Warp. There is no line
+#         editor, and nothing to draw a prompt on.
+#   warp  TERM_PROGRAM=WarpTerminal. Warp draws its own prompt (it sets
+#         WARP_HONOR_PS1=0) and brings its own editor, suggestions, history
+#         search and completion menu; its docs list zsh-autosuggestions, fzf,
+#         zle-line-init and custom key bindings as incompatible.
+#   rich  every other terminal: Terminal.app, VS Code, JetBrains (which sets no
+#         TERM_PROGRAM), and tmux -- tmux inside Warp included, since tmux
+#         sets TERM_PROGRAM itself. Gets the full stack.
+#
+# Warp is the only host detected positively. Anything unrecognised is rich, so
+# a host nobody has tested gets too much rather than no prompt. Readers test
+# `!= (warp|dumb)` for rich-only code, never `== rich`, for the same reason: a
+# shell in which this file never ran still gets the full stack.
+#
+# A value that is already set wins. That is the override for a host detection
+# gets wrong -- set it in profiles/local.zsh, under a condition that picks out
+# that host -- and it is how tests/shell.sh drives each host without owning a
+# terminal. Anything but the three names is discarded. A detected value is not
+# exported, so every child shell decides for itself.
+case "$DOTFILES_TERM_HOST" in
+  warp | rich | dumb) ;;
+  *)
+    unset DOTFILES_TERM_HOST
+    if [[ ! -t 0 ]]; then
+      DOTFILES_TERM_HOST=dumb
+    elif [[ "$TERM_PROGRAM" == WarpTerminal ]]; then
+      DOTFILES_TERM_HOST=warp
+    else
+      DOTFILES_TERM_HOST=rich
+    fi
+    ;;
+esac

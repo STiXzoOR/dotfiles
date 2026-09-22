@@ -6,6 +6,18 @@
 # `bindkey -d`, so anything bound earlier is discarded, and `fzf --zsh` binds
 # ctrl-R to its own history widget, so atuin has to come second to take that
 # key (2026-09-21 tooling research, section 2).
+#
+# What loads depends on the host (system/.term_host):
+#   rich  everything but the up-arrow binding.
+#   warp  the recording hooks alone, so commands typed in Warp reach the same
+#         history as every other terminal. No bindings: ctrl-R and ? stay with
+#         Warp, whose docs list custom key bindings as a source of broken
+#         input. --disable-ai is what removes the ? binding.
+#   dumb  nothing: a `zsh -c` shell runs no precmd or preexec to record.
 if (( $+commands[atuin] )); then
-  eval "$(atuin init zsh --disable-up-arrow 2>/dev/null)"
+  case "$DOTFILES_TERM_HOST" in
+    dumb) ;;
+    warp) eval "$(atuin init zsh --disable-up-arrow --disable-ctrl-r --disable-ai 2>/dev/null)" ;;
+    *) eval "$(atuin init zsh --disable-up-arrow 2>/dev/null)" ;;
+  esac
 fi

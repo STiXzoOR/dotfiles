@@ -930,19 +930,20 @@ test_config_modernization() {
     fi
   fi
 
-  # Test Starship config exists (inactive while p10k is primary, kept for future use)
-  local starship_file="$DOTFILES_DIR/system/.starship"
-  if [[ -f "$starship_file" ]]; then
-    pass "Starship: config file preserved for future use"
+  # Test Starship is the prompt: .zshrc sources it, for rich terminals
+  if grep -qE '^[^#]*source "\$DOTFILES_DIR/system/\.starship"' "$DOTFILES_DIR/runcom/.zshrc"; then
+    pass "Prompt: .zshrc sources Starship"
+  else
+    fail "Prompt: .zshrc does not source system/.starship"
   fi
 
-  # Test Powerlevel10k is configured as the active prompt
+  # Test prezto draws no prompt of its own
   local zpreztorc="$DOTFILES_DIR/runcom/.zpreztorc"
   if [[ -f "$zpreztorc" ]]; then
-    if grep -q "theme 'powerlevel10k'" "$zpreztorc"; then
-      pass "Prompt: Powerlevel10k configured as active theme"
+    if grep -q "theme 'off'" "$zpreztorc" && ! grep -q "powerlevel10k" "$zpreztorc"; then
+      pass "Prompt: prezto theme is off"
     else
-      fail "Prompt: Powerlevel10k not set as theme in zpreztorc"
+      fail "Prompt: prezto still loads a theme"
     fi
   fi
 

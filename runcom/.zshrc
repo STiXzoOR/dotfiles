@@ -1,12 +1,5 @@
 # zmodload zsh/zprof # Enable for debugging
 
-# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
-# Initialization code that may require console input (password prompts, [y/n]
-# confirmations, etc.) must go above this block; everything else may go below.
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
-fi
-
 #
 # Executes commands at the start of an interactive session.
 #
@@ -15,10 +8,10 @@ fi
 #
 
 ##################################################################################################
-# Hide Username from Prompt
+# Host classification: warp, rich or dumb (read by .zpreztorc and everything below)
 ##################################################################################################
 
-export DEFAULT_USER="$USER"
+source "$DOTFILES_DIR/system/.term_host"
 
 ##################################################################################################
 # SSH agent + macOS Keychain
@@ -63,11 +56,13 @@ fpath=("$DOTFILES_DIR/completions" $fpath)
 [[ -s "$DOTFILES_DIR/modules/prezto/init.zsh" ]] && . "$DOTFILES_DIR/modules/prezto/init.zsh"
 
 ##################################################################################################
-# Prompt configuration (Powerlevel10k)
+# Prompt (Starship, rich terminals only)
 ##################################################################################################
 
-# Source p10k config if it exists
-[[ -f "$DOTFILES_DIR/system/.prompt" ]] && source "$DOTFILES_DIR/system/.prompt"
+# After prezto, whose editor module defines zle-keymap-select: starship's init
+# wraps an existing widget rather than replacing it, so switching vi mode still
+# redraws the prompt.
+[[ "$DOTFILES_TERM_HOST" != (warp|dumb) ]] && source "$DOTFILES_DIR/system/.starship"
 
 ##################################################################################################
 # Completion settings
@@ -84,7 +79,9 @@ source "$DOTFILES_DIR/system/.zoxide"
 ##################################################################################################
 
 # Order matters. `fzf --zsh` binds ctrl-R to its own history widget, so atuin
-# has to be sourced second to take that key.
+# has to be sourced second to take that key. Both decide per host themselves
+# (system/.term_host): .fzf loads on a rich terminal only, and .atuin keeps its
+# recording hooks in Warp.
 source "$DOTFILES_DIR/system/.fzf"
 source "$DOTFILES_DIR/system/.atuin"
 
@@ -94,16 +91,19 @@ source "$DOTFILES_DIR/system/.atuin"
 ##################################################################################################
 
 # Replaces the completion menu with the finder already configured for ctrl-T
-# and ctrl-R. Guarded on the file so that a checkout whose submodules have not
-# been initialised still gets a working shell.
-[[ -s "$DOTFILES_DIR/modules/fzf-tab/fzf-tab.plugin.zsh" ]] &&
+# and ctrl-R. Rich terminals only: Warp has its own completion menu. Guarded
+# on the file so that a checkout whose submodules have not been initialised
+# still gets a working shell.
+[[ "$DOTFILES_TERM_HOST" != (warp|dumb) && -s "$DOTFILES_DIR/modules/fzf-tab/fzf-tab.plugin.zsh" ]] &&
   source "$DOTFILES_DIR/modules/fzf-tab/fzf-tab.plugin.zsh"
 
 ##################################################################################################
 # Key bindings (must be after Prezto for history-substring-search)
 ##################################################################################################
 
-source "$DOTFILES_DIR/system/.bindings"
+# Rich terminals only: the widgets these bind load only there, and Warp's docs
+# list custom key bindings as a source of broken input.
+[[ "$DOTFILES_TERM_HOST" != (warp|dumb) ]] && source "$DOTFILES_DIR/system/.bindings"
 
 ##################################################################################################
 # Recursive globbing with "**"

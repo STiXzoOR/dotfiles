@@ -26,7 +26,7 @@ t "D1.8" "keg-only readline and ssh-copy-id removed" \
 t "D1.9" "mackup, thefuck, fnm removed; pay-respects added" \
   '! grep -qE "^brew \"(mackup|thefuck|fnm)\"" Brewfile && grep -qE "^brew \"(timescam/tap/)?pay-respects\"" Brewfile'
 t "D1.10" "tools the machine relies on are declared" \
-  '(for f in rtk asc xcodegen atuin gitleaks age lazygit difftastic; do grep -q "\"$f\"" Brewfile || exit 1; done)'
+  '(for f in rtk asc xcodegen atuin gitleaks age lazygit difftastic starship; do grep -q "\"$f\"" Brewfile || exit 1; done)'
 t "D1.11" "claude-usage-tracker tap is declared or the cask removed" \
   '! grep -q claude-usage-tracker Brewfile || grep -q "hamed-elfayome/claude-usage" Brewfile'
 t "D1.12" "brew bundle list parses the file" \
