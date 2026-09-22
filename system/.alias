@@ -3,7 +3,7 @@
 #############################################################
 
 alias _="sudo"
-alias clauded="claude --dangerously-skip-permissions"
+alias clauded="CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --dangerously-skip-permissions"
 alias codexxx="codex --sandbox workspace-write --ask-for-approval never"
 alias rr="rm -rf -I"
 alias g="git"
