@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+#
+# dotfiles claude — inspect the installed Claude Code setup against this repo.
+#
+# Read-only, always. Three of the five P1 findings in the 2026-09-21 audit had
+# one root cause: claude/ in the repo had drifted from ~/.claude and nobody
+# could see it, because the bootstrap had demonstrably never been run on the
+# machine it was written on. A one-line check turns that whole class of
+# regression into something CI and a pre-commit hook can catch.
+#
+#   dotfiles claude diff      compare the repo's hooks, rules, status line and
+#                             the template's authoritative keys against
+#                             ~/.claude; exit 1 on any drift
+#   dotfiles claude verify    run each hook command in ~/.claude/settings.json
+#                             with a synthetic payload under a restricted PATH
+#                             and report the exit codes
+#
+# This script never writes under $HOME. `verify` sets CLAUDE_HOOK_DRY_RUN=1,
+# which the repo's hooks honour by resolving their dependencies, reporting what
+# they found and exiting without doing any work -- so running it cannot kick
+# off a background index or a session sync.
+
+set -uo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CLAUDE_DIR="$ROOT_DIR/claude"
+CLAUDE_HOME="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+
+if [ -f "$ROOT_DIR/scripts/echos.sh" ]; then
+  # shellcheck source=/dev/null
+  source "$ROOT_DIR/scripts/echos.sh"
+else
+  ok() { printf '  ok   %s\n' "$1"; }
+  warn() { printf '  warn %s\n' "$1"; }
+  error() { printf '  FAIL %s\n' "$1"; }
+  action() { printf '\n%s\n' "$1"; }
+fi
+
+DRIFT=0
+
+note_drift() {
+  error "$1"
+  DRIFT=1
+}
+
+# ─── diff ────────────────────────────────────────────────────────────────────
+
+diff_tree() { # diff_tree <repo dir> <installed dir> <label>
+  local src="$1" dest="$2" label="$3" file name
+
+  [ -d "$src" ] || return 0
+
+  if [ ! -d "$dest" ]; then
+    note_drift "$label: $dest does not exist (run 'dotfiles install --claude')"
+    return 0
+  fi
+
+  for file in "$src"/*; do
+    [ -f "$file" ] || continue
+    name="$(basename "$file")"
+    if [ ! -f "$dest/$name" ]; then
+      note_drift "$label/$name is not installed"
+    elif ! cmp -s "$file" "$dest/$name"; then
+      note_drift "$label/$name differs from the repo"
+    else
+      ok "$label/$name"
+    fi
+  done
+}
+
+diff_file() { # diff_file <repo file> <installed file> <label>
+  local src="$1" dest="$2" label="$3"
+
+  [ -f "$src" ] || return 0
+  if [ ! -f "$dest" ]; then
+    note_drift "$label is not installed"
+  elif ! cmp -s "$src" "$dest"; then
+    note_drift "$label differs from the repo"
+  else
+    ok "$label"
+  fi
+}
+
+# The template owns hooks, statusLine, env, autoUpdatesChannel and
+# minimumVersion; every other key is the machine's own business, so only these
+# are compared. $HOME is expanded on both sides before comparing, because
+# Claude Code stores the unexpanded form and expands it at run time.
+diff_settings() {
+  local template="$CLAUDE_DIR/settings.template.json"
+  local installed="$CLAUDE_HOME/settings.json"
+  local key want got
+
+  [ -f "$template" ] || return 0
+  if [ ! -f "$installed" ]; then
+    warn "no $installed yet; skipping the settings comparison"
+    return 0
+  fi
+  if ! command -v jq > /dev/null 2>&1; then
+    warn "jq not installed; skipping the settings comparison"
+    return 0
+  fi
+
+  for key in hooks statusLine env autoUpdatesChannel minimumVersion; do
+    jq -e --arg k "$key" 'has($k)' "$template" > /dev/null 2>&1 || continue
+    want=$(jq -S --arg k "$key" '.[$k]' "$template" 2> /dev/null | sed "s|\\\$HOME|$HOME|g")
+    got=$(jq -S --arg k "$key" '.[$k] // null' "$installed" 2> /dev/null | sed "s|\\\$HOME|$HOME|g")
+    if [ "$want" = "$got" ]; then
+      ok "settings.$key"
+    else
+      note_drift "settings.$key differs from the template"
+    fi
+  done
+}
+
+cmd_diff() {
+  action "Comparing $CLAUDE_DIR against $CLAUDE_HOME"
+  diff_tree "$CLAUDE_DIR/hooks" "$CLAUDE_HOME/hooks" "hooks"
+  diff_tree "$CLAUDE_DIR/rules" "$CLAUDE_HOME/rules" "rules"
+  diff_file "$CLAUDE_DIR/statusline.sh" "$CLAUDE_HOME/statusline.sh" "statusline.sh"
+  diff_settings
+
+  echo ""
+  if [ "$DRIFT" -ne 0 ]; then
+    error "the installed Claude Code setup has drifted from this repo"
+    echo "  Review the differences, then run: dotfiles install --claude"
+    return 1
+  fi
+  ok "no drift"
+}
+
+# ─── verify ──────────────────────────────────────────────────────────────────
+
+# A path check alone still misses the interesting failures: an interpreter that
+# does not exist, a `timeout` that is not on a hook's PATH, a qmd inside a
+# per-PID fnm directory. Running each command is what catches those.
+cmd_verify() {
+  local settings="$CLAUDE_HOME/settings.json"
+  local failures=0 command_line rc output
+
+  if [ ! -f "$settings" ]; then
+    warn "no $settings; nothing to verify"
+    return 0
+  fi
+  if ! command -v jq > /dev/null 2>&1; then
+    error "jq is required for 'dotfiles claude verify'"
+    return 1
+  fi
+
+  action "Checking every path referenced by $settings"
+  if [ -f "$ROOT_DIR/scripts/install_claude.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ROOT_DIR/scripts/install_claude.sh" --lib
+    verify_settings_refs "$settings" || failures=$((failures + 1))
+  fi
+
+  action "Running each hook command with an empty payload"
+  while IFS= read -r command_line; do
+    [ -n "$command_line" ] || continue
+    output=$(printf '{}' |
+      env -i HOME="$HOME" \
+        PATH=/usr/bin:/bin:/opt/homebrew/bin \
+        CLAUDE_HOOK_DRY_RUN=1 \
+        VAULT_DIR="${VAULT_DIR:-$HOME/Vault}" \
+        bash -c "${command_line//\$HOME/$HOME}" 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      ok "exit 0: $command_line"
+    else
+      error "exit $rc: $command_line"
+      failures=$((failures + 1))
+    fi
+    [ -n "$output" ] && printf '       %s\n' "$output"
+  done < <(jq -r '.hooks // {} | .[]? | .[]? | .hooks[]?.command // empty' "$settings" 2> /dev/null)
+
+  echo ""
+  if [ "$failures" -gt 0 ]; then
+    error "$failures checks failed"
+    return 1
+  fi
+  ok "every hook command resolved and exited 0"
+}
+
+usage() {
+  echo ""
+  echo "Usage: dotfiles claude <command>"
+  echo ""
+  echo "Commands:"
+  echo "   diff     Compare claude/ in this repo against ~/.claude (read-only)"
+  echo "   verify   Run each configured hook command with a synthetic payload"
+  echo "   help     This help message"
+  echo ""
+}
+
+case "${1:-help}" in
+  diff) cmd_diff ;;
+  verify) cmd_verify ;;
+  help | --help | -h) usage ;;
+  *)
+    error "unknown command: $1"
+    usage
+    exit 1
+    ;;
+esac

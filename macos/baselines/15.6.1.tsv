@@ -46,7 +46,7 @@ com.apple.finder	FXInfoPanesExpanded	{ Comments = 1; General = 1; MetaData = 1; 
 com.apple.finder	FXPreferredGroupBy	Application
 com.apple.finder	FXPreferredViewStyle	clmv
 com.apple.finder	NewWindowTarget	PfDe
-com.apple.finder	NewWindowTargetPath	file:///Users/stix/Desktop/
+com.apple.finder	NewWindowTargetPath	file://$HOME/Desktop/
 com.apple.finder	OpenWindowForNewRemovableDisk	1
 com.apple.finder	QuitMenuItem	1
 com.apple.finder	ShowExternalHardDrivesOnDesktop	1
@@ -71,7 +71,7 @@ com.apple.mail	SpellCheckingBehavior	NoSpellCheckingEnabled
 com.apple.print.PrintingPrefs	Quit	ABSENT
 com.apple.QuickTimePlayerX	MGPlayMovieOnOpen	1
 com.apple.screencapture	disable-shadow	1
-com.apple.screencapture	location	/Users/stix/Desktop/Screenshots
+com.apple.screencapture	location	$HOME/Desktop/Screenshots
 com.apple.screencapture	type	png
 com.apple.SoftwareUpdate	AutomaticCheckEnabled	1
 com.apple.sound.beep.feedback	-bool	false
@@ -130,7 +130,7 @@ org.m0k.transmission	CheckRemoveDownloading	1
 org.m0k.transmission	DeleteOriginalTorrent	1
 org.m0k.transmission	DownloadAsk	0
 org.m0k.transmission	DownloadLocationConstant	1
-org.m0k.transmission	IncompleteDownloadFolder	/Users/stix/Documents/Torrents
+org.m0k.transmission	IncompleteDownloadFolder	$HOME/Documents/Torrents
 org.m0k.transmission	MagnetOpenAsk	0
 org.m0k.transmission	Queue	1
 org.m0k.transmission	QueueDownloadNumber	1

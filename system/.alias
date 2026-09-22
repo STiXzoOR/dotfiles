@@ -50,10 +50,15 @@ alias -s {js,jsx,ts,tsx}="code"
 # List declared aliases, functions, paths
 #############################################################
 
-alias aliases="alias | sed 's/=.*//'"
-alias functions="declare -f | grep '^[a-z].* ()' | sed 's/{$//'"
-alias path='echo -e ${PATH//:/\\n}'
-alias mpath='echo -e ${MANPATH//:/\\n}'
+# Prefixed with ls- because `aliases`, `functions` and `path` are all zsh
+# builtins or parameters. Aliases expand at parse time, so shadowing them here
+# -- .alias loads from .zprofile, before every prezto module -- would hand the
+# alias to any later file that used one of them at command position
+# (audit shell#11).
+alias lsaliases="alias | sed 's/=.*//'"
+alias lsfunctions="declare -f | grep '^[a-z].* ()' | sed 's/{$//'"
+alias lspath='echo -e ${PATH//:/\\n}'
+alias lsmanpath='echo -e ${MANPATH//:/\\n}'
 
 #############################################################
 # Directory listing/traversal
@@ -100,7 +105,7 @@ alias update='sudo softwareupdate -i -a; brew update; brew upgrade; brew upgrade
 #############################################################
 # Network
 #############################################################
-alias ip="curl -s ipinfo.io | jq -r '.ip'"
+alias ip="curl -s https://ipinfo.io | jq -r '.ip'"
 alias ipl="ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1'"
 
 #############################################################

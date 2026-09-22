@@ -1,0 +1,11 @@
+# atuin - shell history in SQLite: searchable, deduplicated, and not capped at
+# SAVEHIST. Replaces nothing; ctrl-R goes to atuin, Up stays on prezto's
+# history-substring-search.
+#
+# Sourced from .zshrc, after prezto and after .fzf. Prezto's editor module runs
+# `bindkey -d`, so anything bound earlier is discarded, and `fzf --zsh` binds
+# ctrl-R to its own history widget, so atuin has to come second to take that
+# key (2026-09-21 tooling research, section 2).
+if (( $+commands[atuin] )); then
+  eval "$(atuin init zsh --disable-up-arrow 2>/dev/null)"
+fi

@@ -10,6 +10,7 @@ You don't need to install or configure anything upfront! This works with a brand
 - [\\[.\_.]/ - Hi, I'm the MacOS bot](#_---hi-im-the-macos-bot)
   - [Forget About Manual Configuration](#forget-about-manual-configuration)
   - [Installation](#installation)
+  - [Claude Code](#claude-code)
   - [Restoring Dotfiles](#restoring-dotfiles)
   - [Additional](#additional)
     - [VIM as Terminal IDE](#vim-as-terminal-ide)
@@ -64,7 +65,7 @@ When I finish with your machine, you will have a fully configured development en
 
 ![Terminal Screenshot](./resources/terminal.png)
 
-The shell prompt uses Starship for cross-shell prompt customization, displaying useful information like:
+The shell prompt is Powerlevel10k, loaded through Prezto's prompt module, and displays:
 
 - Current directory path
 - Git branch and status
@@ -72,7 +73,9 @@ The shell prompt uses Starship for cross-shell prompt customization, displaying 
 - Command execution time
 - And much more
 
-The dotfiles configure Vim as a terminal-based IDE using Vundle for plugin management.
+A Starship config is tracked at `system/.starship` and `config/starship/`, but nothing sources it.
+
+The dotfiles configure Neovim as a terminal-based IDE, managed with lazy.nvim.
 
 Modern terminal features:
 
@@ -104,7 +107,37 @@ cd ~/.dotfiles
 ./bin/dotfiles install
 ```
 
-> Note: running "dotfiles install" will install everything(zsh, apps, settings). If you want to do it manually, run "dotfiles install help" to list all the available commands.
+> Note: running `./bin/dotfiles install` installs everything — zsh, apps and settings. To do it piece by piece, run `./bin/dotfiles install --help` for the flag list, or `./bin/dotfiles help` for every command.
+
+## Claude Code
+
+`./bin/dotfiles install --claude` bootstraps the AI-agent layer:
+
+```shell
+./bin/dotfiles install --claude
+```
+
+It installs the Claude Code native binary and verifies it against Anthropic's
+signed release manifest, registers the marketplaces in `claude/marketplaces.list`,
+installs the plugins in `claude/plugins.list`, copies the hooks, rules and
+status line from `claude/` into `~/.claude/`, merges `claude/settings.template.json`
+into `~/.claude/settings.json`, and sets up QMD over the Obsidian vault.
+
+Two read-only checks come with it:
+
+```shell
+./bin/dotfiles claude diff      # what has drifted between claude/ and ~/.claude
+./bin/dotfiles claude verify    # run each configured hook and report its exit code
+```
+
+The status line in `claude/statusline.sh` renders the model, context usage,
+directory, branch, elapsed time and plan limits entirely from the JSON payload
+Claude Code writes to its stdin. It reads no credentials and makes no network
+calls.
+
+Private or work marketplaces and plugins belong in
+`claude/marketplaces.local.list` and `claude/plugins.local.list`, which are
+gitignored.
 
 ## Restoring Dotfiles
 
@@ -432,7 +465,7 @@ The following will only happen if you agree on the prompt
 ## Software Installation
 
 Homebrew, fontconfig, git, FNM (Fast Node Manager for Node.js + npm), and zsh (latest) are all installed as foundational software for running this project.
-Additional software is configured in `packages/` directory and can be customized in your own fork/branch.
+Homebrew formulae, casks, taps and Mac App Store apps live in the `Brewfile`. Node, Python for tooling, pnpm/yarn/uv and every CLI that used to be an `npm i -g` are declared in `config/mise/config.toml` and pinned in `config/mise/mise.lock`. The `packages/` directory holds only `code.list`, for VS Code extensions. All of them can be customized in your own fork.
 The following is the software installed by default:
 
 ### Taps
@@ -454,7 +487,7 @@ The following is the software installed by default:
 - coreutils, dos2unix
 - dockutil
 - mackup, mas
-- starship (cross-shell prompt)
+- starship (cross-shell prompt; installed, but the active prompt is Powerlevel10k)
 - stow (dotfile symlink management)
 - thefuck
 - topgrade (universal package upgrader)
@@ -499,7 +532,7 @@ The following is the software installed by default:
 - optipng
 - uni
 - webp
-- youtube-dl
+- yt-dlp
 
 **Misc:**
 

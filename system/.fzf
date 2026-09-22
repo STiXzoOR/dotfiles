@@ -3,11 +3,16 @@
 
 _fzf_cache="${XDG_CACHE_HOME:-$HOME/.cache}/fzf-init.zsh"
 
-if (( $+commands[fzf] )); then
+# `fzf --zsh` defines widgets and key bindings and, on the way out, restores the
+# whole option table with `eval "options=(...)"`. In a shell with no terminal
+# the `zle` option cannot be changed, so that restore prints "can't change
+# option: zle" twice on stderr. Nothing it defines is usable without a line
+# editor, so skip it entirely there.
+if (( $+commands[fzf] )) && [[ -t 0 ]]; then
   # Regenerate cache if missing or fzf binary is newer
   if [[ ! -f "$_fzf_cache" ]] || [[ "$commands[fzf]" -nt "$_fzf_cache" ]]; then
     mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
-    fzf --zsh > "$_fzf_cache" 2>/dev/null
+    fzf --zsh >| "$_fzf_cache" 2>/dev/null
   fi
   [[ -f "$_fzf_cache" ]] && source "$_fzf_cache"
 fi

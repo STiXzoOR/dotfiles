@@ -8,26 +8,37 @@ SUB_COMMAND_NAME=$2
 STRIPPED_SUB_COMMAND_NAME="${SUB_COMMAND_NAME#--}"
 
 export DOTFILES_DIR="$ROOT_DIR"
-export XDG_CONFIG_HOME="$HOME/.config"
+# Respect a caller's XDG_CONFIG_HOME; this used to overwrite it.
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export STOW_DIR="$DOTFILES_DIR"
 export ACCEPT_EULA=Y
-if [[ "$(uname -m)" == "arm64" ]]; then
-  HOMEBREW_PREFIX="/opt/homebrew"
-else
-  HOMEBREW_PREFIX="/usr/local"
+# `dotfiles edit` ran "$DOTFILES_IDE" with nothing set anywhere in the repo:
+# it executed the empty string, returned 127, and the dispatcher reported
+# "'edit' is not a known command".
+export DOTFILES_IDE="${DOTFILES_IDE:-code}"
+# Apple silicon only. Homebrew drops Intel support in September 2027, this
+# repo's Brewfile and macOS defaults assume arm64 throughout, and the
+# alternate /usr/local prefix was never exercised.
+if [[ "$(uname -m)" != "arm64" ]]; then
+  echo "This repo supports Apple silicon only (Homebrew drops Intel in Sept 2027)." >&2
+  exit 1
 fi
+HOMEBREW_PREFIX="/opt/homebrew"
 PATH="$HOMEBREW_PREFIX/bin:$DOTFILES_DIR/bin:$PATH"
 
 source "$ROOT_DIR/scripts/echos.sh"
 source "$ROOT_DIR/scripts/requirers.sh"
 source "$ROOT_DIR/scripts/lib/ssh.sh"
+source "$ROOT_DIR/scripts/lib/fs.sh"
 
 sub_help() {
   echo -e "\nUsage: $BIN_NAME <command>"
   echo
   echo "Commands:"
+  echo "   baseline         Capture or diff a macOS defaults baseline"
   echo "   cheatsheet       Show aliases and functions cheatsheet"
-  echo "   clean            Clean up caches (brew, nvm, gem)"
+  echo "   claude           Inspect the installed Claude Code setup"
+  echo "   clean            Clean up Homebrew caches, unused mise versions and stale runtime dirs"
   echo "   configure        Configure system (defaults, dock)"
   echo "   doctor           Diagnose common issues"
   echo "   edit             Open dotfiles in IDE ($DOTFILES_IDE)"
@@ -55,12 +66,10 @@ sub_install_help() {
   echo "   --homebrew         Homebrew itself (install, or update && upgrade)"
   echo "   --hosts            Ad-blocking hosts file from StevenBlack project"
   echo "   --launchagents     Install LaunchAgents (see launchagents/disabled/)"
-  echo "   --node             fnm and the latest LTS Node"
-  echo "   --packages         3rd party packages and extensions (brew, cask, code, npm)"
-  echo "   --passwordless     Run sudo without password"
+  echo "   --node             mise, Node and the CLIs in config/mise/config.toml"
+  echo "   --packages         3rd party packages and extensions (brew, cask, code)"
   echo "   --prezto           Zsh framework"
   echo "   --ssh              SSH Key"
-  echo "   --vim              Vim/Neovim plugins"
 }
 
 sub_configure_help() {
@@ -76,42 +85,34 @@ sub_update_help() {
   echo -e "\nUsage: $BIN_NAME update <command>"
   echo
   echo "Commands:"
-  echo "   --system           Update packages and pkg managers (OS, brew, npm, gem)"
+  echo "   --system           Update packages and pkg managers (OS, brew, mise)"
   echo "   --help             This help message"
 }
 
 sub_install() {
   bot "Hi! I'm going to install tooling and tweak your system settings. Here I go..."
 
-  if ! grep -q 'NOPASSWD:' "/etc/sudoers.d/$LOGNAME" 2>/dev/null; then
-    echo "no sudoer file"
-    sudo -v
+  # Cache one sudo credential and keep it warm for the rest of the run.
+  #
+  # There is deliberately no NOPASSWD installer any more. The rule this used
+  # to write granted passwordless root over $HOMEBREW_PREFIX/bin/brew -- a
+  # file owned and writable by the very user being granted root over it -- and
+  # over /usr/bin/xattr with unrestricted arguments, which strips Gatekeeper
+  # quarantine anywhere on disk. Touch ID via /etc/pam.d/sudo_local is the
+  # supported way to stop retyping the password; `dotfiles doctor` reports on
+  # it and prints the recipe.
+  sudo -v
 
-    while true; do
-      sudo -n true
-      sleep 60
-      kill -0 "$$" || exit
-    done 2>/dev/null &
-
-    $0 install --passwordless
-  fi
+  while true; do
+    sudo -n true
+    sleep 60
+    kill -0 "$$" || exit
+  done 2>/dev/null &
 
   $0 install --ssh
 
   bot "ensuring build/install tools are available"
-  if ! xcode-select --print-path &>/dev/null; then
-    xcode-select --install &>/dev/null
-
-    until xcode-select --print-path &>/dev/null; do
-      sleep 5
-    done
-
-    print_result $? ' XCode Command Line Tools Installed'
-
-    sudo xcodebuild -license
-    print_result $? 'Agree with the XCode Command Line Tools licence'
-
-  fi
+  sub_install_clt || return 1
 
   sub_install_homebrew
 
@@ -120,31 +121,40 @@ sub_install() {
 
   sub_install_node
 
+  # Every one of these needs the -- prefix: the dispatcher matches
+  # $SUB_COMMAND_NAME against --${SUB_COMMAND_NAME#--}, so the bare-word forms
+  # this used to print all fell through to an error.
   bot "Woot. All done!. You should run the complementary commands to have your machine fully configured and ready to use:\n"
-  echo "$BIN_NAME install hosts"
-  echo "$BIN_NAME install prezto"
+  echo "$BIN_NAME install --hosts"
+  echo "$BIN_NAME install --prezto"
   echo "$BIN_NAME link (This should be run after prezto)"
-  echo "$BIN_NAME install vim"
-  echo "$BIN_NAME install fonts"
-  echo "$BIN_NAME install packages"
-  echo "$BIN_NAME install launchagents"
-  echo "$BIN_NAME configure defaults"
-  echo -e "$BIN_NAME configure dock\n"
+  echo "$BIN_NAME install --fonts"
+  echo "$BIN_NAME install --packages"
+  echo "$BIN_NAME install --launchagents"
+  echo "$BIN_NAME install --claude"
+  echo "$BIN_NAME configure --defaults"
+  echo -e "$BIN_NAME configure --dock\n"
 
-  read -r -p "Should i run them for you? [y|N] " response
-  if [[ $response =~ (yes|y|Y) ]]; then
+  if confirm "Should i run them for you?"; then
     $0 install --all
   fi
 
-  open /Applications/Warp.app
-  killall "Terminal" >/dev/null 2>&1
+  # This used to `open /Applications/Warp.app` and then kill Terminal --
+  # unconditionally, with no check that Warp existed. On a fresh machine Warp
+  # is installed by `install --packages`, which runs after this point, so the
+  # open failed and the killall closed the window showing the summary the user
+  # had just been told to read.
+  bot "Open a new shell (or run: exec \$SHELL) to pick up the new configuration."
 }
 
 sub_install_all() {
+  # Every step below prompts through confirm(); this is what makes --all
+  # actually non-interactive, as the help text has always claimed.
+  export DOTFILES_YES=1
+
   $0 install --hosts
   $0 install --prezto
   $0 link
-  $0 install --vim
   $0 install --fonts
   $0 install --packages
   $0 install --launchagents
@@ -152,17 +162,48 @@ sub_install_all() {
   $0 configure
 }
 
-sub_install_passwordless() {
-  echo -e "Do you want me to setup this machine to allow you to run sudo without a password?\nPlease read here to see what I am doing:\nhttp://wiki.summercode.com/sudo_without_a_password_in_mac_os_x \n"
+sub_install_clt() {
+  if xcode-select --print-path >/dev/null 2>&1; then
+    ok "Command Line Tools already installed"
+    return 0
+  fi
 
-  read -r -p "Make sudo passwordless? [y|N] " response
+  action "installing the Command Line Tools"
 
-  if [[ $response =~ (yes|y|Y) ]]; then
-    if ! grep -q "#includedir /private/etc/sudoers.d" /etc/sudoers; then
-      echo '#includedir /private/etc/sudoers.d' | sudo tee -a /etc/sudoers >/dev/null
-    fi
-    echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD: $HOMEBREW_PREFIX/bin/brew, /usr/sbin/softwareupdate, /usr/bin/xattr, /usr/bin/pkill coreaudiod" | sudo tee "/etc/sudoers.d/$LOGNAME"
-    bot "You can now run sudo commands without password!"
+  # `xcode-select --install` opens a GUI dialog and the old code then spun in
+  # `until xcode-select --print-path; do sleep 5; done` -- forever, if the
+  # dialog was dismissed. softwareupdate installs them headlessly, but only
+  # offers them while this sentinel file exists.
+  local sentinel="/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
+  local label
+  sudo touch "$sentinel"
+  label=$(softwareupdate --list 2>/dev/null |
+    grep -E '\*.*Command Line Tools' |
+    tail -1 |
+    sed -E 's/^[[:space:]]*\*[[:space:]]*(Label:[[:space:]]*)?//; s/[[:space:]]*$//')
+  sudo rm -f "$sentinel"
+
+  if [[ -z "$label" ]]; then
+    error "softwareupdate offered no Command Line Tools package; run: xcode-select --install"
+    return 1
+  fi
+
+  if ! sudo softwareupdate --install "$label" --agree-to-license; then
+    error "Command Line Tools install failed"
+    return 1
+  fi
+
+  sudo xcode-select -s /Library/Developer/CommandLineTools
+  print_result $? "Command Line Tools installed"
+
+  # xcodebuild needs full Xcode. With only the CLT present /usr/bin/xcodebuild
+  # is a shim that errors out, so the unconditional `sudo xcodebuild -license`
+  # this replaces could never succeed on the path that reached it.
+  local xc_path
+  xc_path=$(xcode-select -p 2>/dev/null)
+  if [[ "$xc_path" == *"Xcode.app"* ]]; then
+    sudo xcodebuild -license accept
+    print_result $? "Xcode licence accepted"
   fi
 }
 
@@ -179,8 +220,7 @@ sub_install_homebrew() {
   else
     ok
     bot "Homebrew"
-    read -r -p "run brew update && upgrade? [y|N] " response
-    if [[ $response =~ (y|yes|Y) ]]; then
+    if confirm "run brew update && upgrade?"; then
       action "updating homebrew..."
       source_brew
       brew update
@@ -198,30 +238,68 @@ sub_install_homebrew() {
 }
 
 sub_install_node() {
-  action "installing fnm..."
-  require_brew fnm
-  ok
+  # No trailing unconditional `ok`: require_* already prints one on success
+  # and returns non-zero on failure, so an extra ok here reported a failed
+  # install as a clean one all over again.
+  require_mise || return 1
 
-  action "installing lts node..."
-  require_fnm lts-latest
-  fnm default lts-latest
-  ok
+  # MISE_GLOBAL_CONFIG_FILE points at the copy in the repo rather than the
+  # stowed one, so `install --node` works on a machine where `dotfiles link`
+  # has not run yet -- which is the machine this subcommand exists for. An
+  # already-exported value wins, so a caller can install from another config.
+  action "installing node and the CLIs declared in config/mise/config.toml..."
+  if MISE_GLOBAL_CONFIG_FILE="${MISE_GLOBAL_CONFIG_FILE:-$ROOT_DIR/config/mise/config.toml}" \
+    mise install; then
+    ok "node and the declared CLIs are installed"
+  else
+    error "mise install failed"
+    return 1
+  fi
+
+  source_mise
 }
 
 sub_install_ssh() {
   bot "Setting up SSH\n"
 
+  local generate=0
   if [[ -f "$HOME/.ssh/id_ed25519" ]]; then
-    read -r -p "Looks like an SSH is already generated. Should i generate a new key nontheless? [y|N] " response
+    # Unattended, never regenerate. confirm() answers yes to everything under
+    # DOTFILES_YES, and yes here means "replace the key you already have" --
+    # the one answer an unattended run must not give itself.
+    if [[ "${DOTFILES_YES:-0}" == "1" ]]; then
+      skip "an SSH key already exists"
+    elif confirm "Looks like an SSH key is already generated. Should i generate a new one nonetheless?"; then
+      generate=1
+    fi
   else
-    response='yes'
+    generate=1
   fi
 
-  if [[ $response =~ (yes|y|Y) ]]; then
-    rm -f "$HOME/.ssh/id_ed25519"
-    rm -f "$HOME/.ssh/id_ed25519.pub"
+  if [[ $generate -eq 1 ]]; then
+    # Rename, never delete. A deleted keypair is unrecoverable, and the old one
+    # may still be the only credential authorised on a remote.
+    local _ssh_stamp
+    _ssh_stamp=$(date +%Y%m%d%H%M%S)
+    [[ -f "$HOME/.ssh/id_ed25519" ]] &&
+      mv "$HOME/.ssh/id_ed25519" "$HOME/.ssh/id_ed25519.bak.$_ssh_stamp"
+    [[ -f "$HOME/.ssh/id_ed25519.pub" ]] &&
+      mv "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ed25519.pub.bak.$_ssh_stamp"
     action "Generating a new SSH key"
-    read -r -p "Please enter an email to associate your ssh key: " ssh_email
+
+    # The comment on a key is a label, not a credential, so an unattended run
+    # can derive one rather than blocking on a prompt `DOTFILES_YES` does not
+    # reach. config/git/config.local is the identity this repo already asks
+    # for; failing that, user and host name the machine well enough.
+    local ssh_email=""
+    if [[ "${DOTFILES_YES:-0}" == "1" ]]; then
+      ssh_email=$(git config --file "$ROOT_DIR/config/git/config.local" user.email 2>/dev/null)
+      [[ -n "$ssh_email" ]] || ssh_email="${USER:-$(id -un)}@$(hostname -s)"
+      action "using $ssh_email as the key comment"
+    else
+      read -r -p "Please enter an email to associate your ssh key: " ssh_email
+    fi
+
     ssh-keygen -t ed25519 -C "$ssh_email" -f "$HOME/.ssh/id_ed25519"
     ok
   else
@@ -229,25 +307,43 @@ sub_install_ssh() {
   fi
 
   action "Adding SSH key to SSH Agent"
-  eval "$(ssh-agent -s)"
+  # No `eval "$(ssh-agent -s)"` here. That spawned a brand new agent, exported
+  # its socket into this script only, and orphaned the process on exit --
+  # leaking one agent per run and loading the key somewhere nothing else could
+  # reach it. macOS runs an agent through launchd, which is what
+  # AddKeysToAgent/UseKeychain in ~/.ssh/config are written for.
   dotfiles_ensure_ssh_config
-  ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519"
-  ok
+  if ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519"; then
+    ok
+  else
+    warn "could not add the key to the ssh agent"
+  fi
 
   echo -e "\nNote: You should add your SSH key to your github account by first running:\n"
   echo -e "pbcopy < ~/.ssh/id_ed25519.pub\n"
   echo -e "Then follow the guide below:\n\nhttps://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account \n"
 
-  read -r -p "Press [ENTER] to continue... "
+  [[ "${DOTFILES_YES:-0}" == "1" ]] || read -r -p "Press [ENTER] to continue... "
 }
 
 sub_install_prezto() {
   bot "Prezto Setup\n"
-  read -r -p "Install prezto zsh? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
-    action "installing pretzo-zsh"
-    zsh "$ROOT_DIR/scripts/install_prezto.zsh"
-    ok
+  if confirm "Install prezto zsh?"; then
+    action "installing prezto-zsh"
+
+    # A remote install clones without --recurse-submodules, so this is the
+    # only thing that puts prezto on disk before the script below reads it.
+    if ! dotfiles_ensure_submodule modules/prezto; then
+      error "could not initialise modules/prezto"
+      return 1
+    fi
+
+    if zsh "$ROOT_DIR/scripts/install_prezto.zsh"; then
+      ok
+    else
+      error "prezto install failed"
+      return 1
+    fi
   else
     skip
   fi
@@ -255,47 +351,73 @@ sub_install_prezto() {
 
 sub_install_hosts() {
   bot "Hosts file install\n"
-  read -r -p "Overwrite /etc/hosts using the StevenBlack hosts project? (optional local entries from ./configs/hosts.local) [y|N] " response
-  if [[ $response =~ (yes|y|Y) ]]; then
-    pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
+
+  # This used to clone a 1.9 GB submodule, build a Python venv inside it, pip
+  # install requests, run updateHostsFile.py and then hard-reset the submodule
+  # worktree. StevenBlack commits the built file, so a download does the same
+  # job with none of that -- and is fresher than the pinned submodule was.
+  if confirm "Overwrite /etc/hosts with the StevenBlack blocklist? Local entries come from ./system/hosts.local and exceptions from ./system/hosts.whitelist. If you already filter DNS upstream (NextDNS, Pi-hole) you can skip this."; then
+    local url="https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+    local tmp filtered lines
+    tmp=$(mktemp "${TMPDIR:-/tmp}/dotfiles-hosts.XXXXXX") || return 1
+    filtered=$(mktemp "${TMPDIR:-/tmp}/dotfiles-hosts.XXXXXX") || return 1
+
+    action "downloading $url"
+    if ! curl -fsSL --proto '=https' --tlsv1.2 "$url" -o "$tmp"; then
+      error "download failed; /etc/hosts left untouched"
+      rm -f "$tmp" "$filtered"
+      return 1
+    fi
+
+    # Validate before anything touches /etc/hosts. A captive portal or an
+    # error page served with HTTP 200 would otherwise replace name resolution
+    # for the whole machine with garbage.
+    lines=$(wc -l <"$tmp" | tr -d ' ')
+    if ! grep -q "# Title: StevenBlack/hosts" "$tmp" || [[ "$lines" -lt 10000 ]]; then
+      error "downloaded file is not the StevenBlack hosts file ($lines lines); aborting"
+      rm -f "$tmp" "$filtered"
+      return 1
+    fi
+    ok "downloaded $lines lines"
+
+    if [[ -f "$ROOT_DIR/system/hosts.whitelist" ]]; then
+      action "applying ./system/hosts.whitelist"
+      dotfiles_hosts_apply_whitelist "$tmp" "$ROOT_DIR/system/hosts.whitelist" >"$filtered"
+    else
+      cp "$tmp" "$filtered"
+    fi
+
+    if [[ -f "$ROOT_DIR/system/hosts.local" ]]; then
+      action "appending ./system/hosts.local"
+      printf '\n# --- local entries from dotfiles system/hosts.local ---\n' >>"$filtered"
+      cat "$ROOT_DIR/system/hosts.local" >>"$filtered"
+    fi
+
+    # Both copies are checked. These are the only writes in the flow that can
+    # take the machine off the network, so neither may fail silently: without
+    # the backup there is nothing to roll back to, and a half-done write is
+    # worse than no write at all.
     action "cp /etc/hosts /etc/hosts.backup"
-    sudo cp /etc/hosts /etc/hosts.backup
+    if ! sudo cp /etc/hosts /etc/hosts.backup; then
+      error "could not back up /etc/hosts; leaving it untouched"
+      rm -f "$tmp" "$filtered"
+      return 1
+    fi
+
+    if ! sudo cp "$filtered" /etc/hosts; then
+      error "could not write /etc/hosts; the previous copy is in /etc/hosts.backup"
+      rm -f "$tmp" "$filtered"
+      return 1
+    fi
+    sudo chmod 644 /etc/hosts
+    rm -f "$tmp" "$filtered"
+
+    action "flushing the DNS cache"
+    sudo dscacheutil -flushcache
+    sudo killall -HUP mDNSResponder
     ok
-    action "update stevenblack-hosts repo"
-    git submodule update --init modules/stevenblack-hosts
-    (cd modules/stevenblack-hosts && git pull origin master)
-    ok
-    if [ -f ./system/hosts.local ]; then
-      action "copy ./system/hosts.local to ./modules/stevenblack-hosts/myhosts"
-      cp ./system/hosts.local ./modules/stevenblack-hosts/myhosts
-      ok
-    fi
-    if [ -f ./system/hosts.whitelist ]; then
-      action "copy ./system/hosts.whitelist to ./modules/stevenblack-hosts/whitelist"
-      cp ./system/hosts.whitelist ./modules/stevenblack-hosts/whitelist
-      ok
-    fi
-    action "checking python3 and pip3"
-    if ! command -v python3 >/dev/null 2>&1; then
-      require_brew python
-    fi
-    if ! command -v pip3 >/dev/null 2>&1; then
-      python3 -m ensurepip --upgrade 2>/dev/null || true
-    fi
-    action "installing python dependencies from stevenblack-hosts requirements.txt"
-    # Create a virtual environment for stevenblack-hosts
-    python3 -m venv modules/stevenblack-hosts/venv
-    source modules/stevenblack-hosts/venv/bin/activate
-    pip install -r modules/stevenblack-hosts/requirements.txt
-    deactivate
-    action "python ./modules/stevenblack-hosts/updateHostsFile.py --auto --replace"
-    source modules/stevenblack-hosts/venv/bin/activate
-    (cd modules/stevenblack-hosts && python updateHostsFile.py --auto --replace)
-    deactivate
-    (cd modules/stevenblack-hosts && git reset --hard HEAD >/dev/null 2>&1)
-    ok
-    bot "Your /etc/hosts file has been updated. Last version is saved in /etc/hosts.backup"
-    popd >/dev/null 2>&1 || exit
+
+    bot "Your /etc/hosts file has been updated. The previous version is in /etc/hosts.backup"
   else
     skip
   fi
@@ -303,46 +425,19 @@ sub_install_hosts() {
 
 sub_install_fonts() {
   bot "Fonts install\n"
-  read -r -p "Install local fonts? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
+  if confirm "Install local fonts?"; then
     action "installing local fonts"
-    require_tap homebrew/cask-fonts
-    require_brew fontconfig
-    "$ROOT_DIR/fonts/install.sh"
-    ok
+    # No tap and no fontconfig here: fonts/install.sh only copies the bundled
+    # MesloHackNerd files into ~/Library/Fonts. homebrew/cask-fonts was merged
+    # into homebrew/cask in 2024 and tapping it now aborts with `odie`.
+    if "$ROOT_DIR/fonts/install.sh"; then
+      ok
+    else
+      error "font install failed"
+      return 1
+    fi
   else
     skip
-  fi
-}
-
-install_packages() {
-  local list_file=$1
-  local install_cmd=$2
-  local name=$3
-
-  if [[ ! -f "packages/$list_file" ]]; then
-    action "skipping $name (packages/$list_file not found)"
-    return
-  fi
-
-  # Check if file has any non-comment, non-empty lines
-  if ! grep -v '^[[:space:]]*#' "packages/$list_file" | grep -v '^[[:space:]]*$' >/dev/null 2>&1; then
-    action "skipping $name (no packages defined)"
-    return
-  fi
-
-  read -r -p "Do you want to install $name? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
-    action "installing $name"
-    while IFS= read -r package || [[ -n "$package" ]]; do
-      # Skip comments and empty lines
-      [[ $package =~ ^[[:space:]]*# ]] && continue
-      [[ -z "${package// /}" ]] && continue
-
-      $install_cmd "$package"
-    done <"packages/$list_file"
-  else
-    action "skipping $name installation"
   fi
 }
 
@@ -353,30 +448,42 @@ sub_install_packages() {
 
   # Check if Brewfile exists (preferred method)
   if [[ -f "Brewfile" ]]; then
-    read -r -p "Install packages using Brewfile (brew bundle)? [y|N] " response
-    if [[ $response =~ (y|yes|Y) ]]; then
-      action "Installing packages via brew bundle..."
-      brew bundle install --file=Brewfile
-      ok "Homebrew packages installed"
+    if confirm "Install packages using Brewfile (brew bundle)?"; then
+      # Homebrew 7 refuses to load formulae, casks or commands from an
+      # untrusted third-party tap, with no environment-variable escape hatch,
+      # so a fresh bootstrap fails outright at bundle time until every
+      # declared tap is trusted. `brew tap` alone no longer suffices.
+      action "trusting third-party taps declared in the Brewfile"
+      local _taps _tap
+      _taps=$(sed -n -E 's/^tap "([^"]+)".*/\1/p' Brewfile)
+      for _tap in $_taps; do
+        [[ -n "$_tap" ]] || continue
+        brew trust --tap "$_tap" >/dev/null 2>&1 || warn "could not trust tap $_tap"
+      done
 
-      # Handle npm packages separately (not in Brewfile)
-      if [[ -f "packages/npm.list" ]]; then
-        read -r -p "Install NPM global packages? [y|N] " npm_response
-        if [[ $npm_response =~ (y|yes|Y) ]]; then
-          action "Installing NPM packages..."
-          while IFS= read -r package || [[ -n "$package" ]]; do
-            [[ $package =~ ^[[:space:]]*# ]] && continue
-            [[ -z "${package// /}" ]] && continue
-            require_npm "$package"
-          done <"packages/npm.list"
-          ok "NPM packages installed"
-        fi
+      action "Installing packages via brew bundle..."
+      if brew bundle install --file=Brewfile; then
+        ok "Homebrew packages installed"
+      else
+        error "brew bundle install failed; see the output above"
+        popd >/dev/null 2>&1 || true
+        return 1
       fi
+
+      # mas entries need you signed in to the App Store, and mas may prompt
+      # for sudo. brew bundle reports those as failures if you are not.
+      if grep -q '^mas ' Brewfile; then
+        warn "mas entries need an App Store login; sign in and re-run if any were skipped"
+      fi
+
+      # No npm step. Every CLI that used to be a line in packages/npm.list is
+      # declared in config/mise/config.toml and installed by
+      # `dotfiles install --node`, pinned by config/mise/mise.lock.
+      action "node CLIs come from config/mise/config.toml (dotfiles install --node)"
 
       # Handle VS Code extensions separately
       if [[ -f "packages/code.list" ]]; then
-        read -r -p "Install VS Code extensions? [y|N] " code_response
-        if [[ $code_response =~ (y|yes|Y) ]]; then
+        if confirm "Install VS Code extensions?"; then
           action "Installing VS Code extensions..."
           while IFS= read -r extension || [[ -n "$extension" ]]; do
             [[ $extension =~ ^[[:space:]]*# ]] && continue
@@ -387,47 +494,27 @@ sub_install_packages() {
         fi
       fi
 
+      # `brew cleanup --force` already clears the cache. The unguarded
+      # recursive delete of /Library/Caches/Homebrew that followed ran
+      # unprivileged with all output discarded, so it did nothing and said
+      # nothing; and the recursive quarantine strip of ~/Library/QuickLook
+      # removed Gatekeeper from every QuickLook plugin, which run on a
+      # spacebar press.
       running "cleanup homebrew"
       brew cleanup --force >/dev/null 2>&1
-      rm -f -r /Library/Caches/Homebrew/* >/dev/null 2>&1
-      xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook" 2>/dev/null
       popd >/dev/null 2>&1 || exit
       ok
       return
     fi
   fi
 
-  # Fallback to legacy .list files
-  read -r -p "Install packages using legacy .list files? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
-    install_packages "tap.list" "require_tap" "Homebrew taps"
-    install_packages "brew.list" "require_brew" "Homebrew utilities"
-    install_packages "cask.list" "require_cask" "Homebrew desktop apps"
-    install_packages "npm.list" "require_npm" "NPM global packages"
-    install_packages "mas.list" "require_mas" "Mac App Store apps"
-    install_packages "code.list" "require_code" "VS Code extensions"
-
-    running "cleanup homebrew"
-    brew cleanup --force >/dev/null 2>&1
-    rm -f -r /Library/Caches/Homebrew/* >/dev/null 2>&1
-    xattr -d -r com.apple.quarantine "$HOME/Library/QuickLook" 2>/dev/null
-    popd >/dev/null 2>&1 || exit
-    ok
-  else
-    skip
-  fi
-}
-
-sub_install_vim() {
-  bot "VIM Setup\n"
-  read -r -p "Do you want to install vim plugins? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
-    action "Installing vim plugins"
-    vim +PluginInstall +qall >/dev/null 2>&1
-    ok
-  else
-    skip
-  fi
+  # The legacy tap/brew/cask/mas .list files are gone: the Brewfile is the one
+  # source of truth and had drifted 10 months ahead of them. npm.list is gone
+  # too, replaced by config/mise/config.toml. code.list remains -- brew bundle
+  # does not cover VS Code extensions -- and is handled in the branch above.
+  error "Brewfile not found at $ROOT_DIR/Brewfile"
+  popd >/dev/null 2>&1 || true
+  return 1
 }
 
 sub_install_launchagents() {
@@ -442,39 +529,63 @@ sub_install_launchagents() {
     return
   fi
 
-  read -r -p "Do you want to install $available LaunchAgent(s)? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
+  if confirm "Do you want to install $available LaunchAgent(s)?"; then
     bot "Installing LaunchAgents..."
-    mkdir -p ~/Library/LaunchAgents
+    mkdir -p "$HOME/Library/LaunchAgents"
+
+    local plist plist_name target rc=0
     for plist in "$DOTFILES_DIR"/launchagents/*.plist; do
-      if [ -f "$plist" ]; then
-        plist_name=$(basename "$plist")
-        ln -sf "$plist" ~/Library/LaunchAgents/
-        launchctl unload ~/Library/LaunchAgents/"$plist_name" 2>/dev/null || true
-        launchctl load ~/Library/LaunchAgents/"$plist_name"
+      [[ -f "$plist" ]] || continue
+      plist_name=$(basename "$plist")
+      target="$HOME/Library/LaunchAgents/$plist_name"
+
+      # Copy, never symlink. Whether launchd accepts a symlinked plist, and
+      # how Background Task Management registers one, is undocumented and
+      # was never verified; a copy behaves the same everywhere.
+      cp -f "$plist" "$target"
+
+      # bootout/bootstrap, not load/unload: the legacy verbs have been
+      # superseded since macOS 10.11. bootout fails when nothing is loaded,
+      # which is the normal first-install case, so its status is ignored.
+      launchctl bootout "gui/$UID/${plist_name%.plist}" 2>/dev/null || true
+      if launchctl bootstrap "gui/$UID" "$target"; then
         ok "Loaded $plist_name"
+      else
+        error "could not bootstrap $plist_name"
+        rc=1
       fi
     done
+
+    return "$rc"
   fi
 }
 
 sub_install_claude() {
   bot "Claude Code Bootstrap\n"
 
-  read -r -p "Install Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)? [y|N] " response
-  if [[ $response =~ (yes|y|Y) ]]; then
-    bash "$ROOT_DIR/scripts/install_claude.sh"
+  if confirm "Install Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)?"; then
+    bash "$ROOT_DIR/scripts/install_claude.sh" || return 1
   else
     skip
   fi
 }
 
 sub_configure() {
-  read -r -p "Do you want to update the system configurations? [y|N] " response
-  if [[ $response =~ ^(y|Y) ]]; then
+  # One prompt for the whole step. This used to ask, then shell out to
+  # `$0 configure --defaults` and `$0 configure --dock`, each of which asked
+  # again: three prompts for one decision. Call them directly instead, with
+  # the answer already given.
+  if confirm "Do you want to update the system configurations?"; then
     echo
-    $0 configure --defaults
-    $0 configure --dock
+    local _prev_yes="${DOTFILES_YES:-}"
+    export DOTFILES_YES=1
+    sub_configure_defaults
+    sub_configure_dock
+    if [[ -n "$_prev_yes" ]]; then
+      export DOTFILES_YES="$_prev_yes"
+    else
+      unset DOTFILES_YES
+    fi
   else
     skip
   fi
@@ -483,8 +594,7 @@ sub_configure() {
 sub_configure_defaults() {
   bot "OS Configuration\n"
 
-  read -r -p "Do you want to update the system defaults? [y|N] " response
-  if [[ $response =~ ^(y|Y) ]]; then
+  if confirm "Do you want to update the system defaults?"; then
     shopt -s nullglob
 
     for DEFAULTS_FILE in "$DOTFILES_DIR"/macos/defaults*.sh; do
@@ -501,8 +611,7 @@ sub_configure_defaults() {
 sub_configure_dock() {
   bot "Dock Configuration\n"
 
-  read -r -p "Do you want to update the dock configuration? [y|N] " response
-  if [[ $response =~ ^(y|Y) ]]; then
+  if confirm "Do you want to update the dock configuration?"; then
     . "$DOTFILES_DIR/macos/dock.sh"
 
     ok "Dock reloaded!"
@@ -513,80 +622,120 @@ sub_configure_dock() {
 
 sub_link() {
   bot "Dotfiles Setup\n"
-  read -r -p "symlink ../runcom/* and ../config/* files in ~/ ? [y|N] " response
-  if [[ $response =~ (y|yes|Y) ]]; then
-    action "creating symlinks for project dotfiles..."
-    now=$(date +"%Y.%m.%d.%H.%M.%S")
-
-    pushd "$ROOT_DIR"/runcom >/dev/null 2>&1 || exit
-
-    for file in .*; do
-      if [[ $file == "." || $file == ".." || $file == '.DS_Store' ]]; then
-        continue
-      fi
-
-      if [[ -e "$HOME/$file" ]]; then
-        running "$HOME/$file"
-        mkdir -p "$HOME/.dotfiles_backup/$now"
-        mv "$HOME/$file" "$HOME/.dotfiles_backup/$now/$file"
-        echo "backup saved as $HOME/.dotfiles_backup/$now/$file"
-      fi
-
-      unlink "$HOME/$file" >/dev/null 2>&1
-    done
-
-    popd >/dev/null 2>&1 || exit
-    pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
-
-    [[ -d "$XDG_CONFIG_HOME" ]] || mkdir -p "$XDG_CONFIG_HOME"
-    stow -t "$HOME" runcom
-    stow -t "$XDG_CONFIG_HOME" config
-    mkdir -p "$HOME/.local/runtime"
-    chmod 700 "$HOME/.local/runtime"
-
-    popd >/dev/null 2>&1 || exit
-  else
+  if ! confirm "symlink ../runcom/* and ../config/* files in ~/ ?"; then
     skip
+    return 0
   fi
+
+  action "creating symlinks for project dotfiles..."
+
+  local now backup_dir rc=0
+  now=$(date +"%Y.%m.%d.%H.%M.%S")
+  backup_dir="$HOME/.dotfiles_backup/$now"
+
+  [[ -d "$XDG_CONFIG_HOME" ]] || mkdir -p "$XDG_CONFIG_HOME"
+
+  # Two sweeps, because stow has two targets: runcom into $HOME and config
+  # into $XDG_CONFIG_HOME. The ~/.config half was never swept, so a
+  # pre-existing ~/.config/git or ~/.config/nvim aborted stow, and `unlink`
+  # had nothing saved to put back. The config bucket is nested under
+  # .config/ inside the backup so unlink can aim it at the right target.
+  dotfiles_backup_stow_targets "$ROOT_DIR/runcom" "$HOME" "$backup_dir"
+  dotfiles_backup_stow_targets "$ROOT_DIR/config" "$XDG_CONFIG_HOME" "$backup_dir/.config"
+
+  # Git identity is deliberately not tracked. Without config.local git
+  # cannot commit at all, so ask once rather than failing later.
+  if [[ ! -f "$ROOT_DIR/config/git/config.local" ]]; then
+    if [[ "${DOTFILES_YES:-0}" == "1" ]]; then
+      warn "no config/git/config.local and running unattended; git cannot commit until you set it:"
+      warn "  git config --file ~/.config/git/config.local user.name \"...\""
+      warn "  git config --file ~/.config/git/config.local user.email \"...\""
+    else
+      bot "Git identity"
+      read -r -p "  Your name for git commits: " _git_name
+      read -r -p "  Your email for git commits: " _git_email
+      if [[ -n "$_git_name" && -n "$_git_email" ]]; then
+        cat >"$ROOT_DIR/config/git/config.local" <<GITLOCAL
+# Machine-local git identity. Gitignored: the dotfiles repo is public.
+[user]
+	name = $_git_name
+	email = $_git_email
+GITLOCAL
+        chmod 600 "$ROOT_DIR/config/git/config.local"
+        ok "wrote config/git/config.local"
+      else
+        warn "skipped -- set it later with: git config --file ~/.config/git/config.local user.name \"...\""
+      fi
+      unset _git_name _git_email
+    fi
+  fi
+
+  pushd "$ROOT_DIR" >/dev/null 2>&1 || return 1
+  # --restow makes a re-run idempotent. Not --adopt: that pulls whatever is in
+  # the way into the tracked tree, overwriting the repo's own copy with the
+  # machine's. The sweeps above already cleared the targets.
+  stow --restow -t "$HOME" runcom || rc=1
+  stow --restow -t "$XDG_CONFIG_HOME" config || rc=1
+  popd >/dev/null 2>&1 || true
+
+  mkdir -p "$HOME/.local/runtime"
+  chmod 700 "$HOME/.local/runtime"
+
+  # This used to end in `popd || exit`, so the function's status was popd's
+  # and a stow conflict -- or a missing stow -- still read as success.
+  if [[ $rc -ne 0 ]]; then
+    error "stow reported a problem; see the output above"
+    return 1
+  fi
+
+  ok "linked runcom into $HOME and config into $XDG_CONFIG_HOME"
 }
 
 sub_unlink() {
   bot "Dotfiles Restore\n"
-  if [[ -z $1 ]]; then
+  if [[ -z "${1:-}" ]]; then
     error "you need to specify a backup folder date. Take a look in ~/.dotfiles_backup/ to see which backup date you wish to restore."
-    exit 1
+    return 1
   fi
 
-  pushd "$HOME/.dotfiles_backup/$1" >/dev/null 2>&1 || exit
+  local backup_dir="$HOME/.dotfiles_backup/$1"
+  if [[ ! -d "$backup_dir" ]]; then
+    error "no such backup: $backup_dir"
+    return 1
+  fi
 
-  for file in .*; do
-    if [[ $file == "." || $file == ".." || $file == '.DS_Store' ]]; then
-      continue
+  # An empty directory used to restore nothing and still print
+  # "[ok] restored into $HOME".
+  if [[ -z "$(find "$backup_dir" -mindepth 1 -maxdepth 1 2>/dev/null)" ]]; then
+    error "backup $backup_dir is empty; nothing to restore"
+    return 1
+  fi
+
+  # The .config bucket first, into $XDG_CONFIG_HOME. Removing the emptied
+  # bucket afterwards keeps the $HOME pass below from moving it to ~/.config.
+  local config_backup="$backup_dir/.config"
+  if [[ -d "$config_backup" ]]; then
+    running "restoring $config_backup"
+    if dotfiles_restore_backup "$config_backup" "$XDG_CONFIG_HOME"; then
+      rmdir "$config_backup" 2>/dev/null
+      ok "restored into $XDG_CONFIG_HOME"
+    else
+      error "restore failed; $config_backup left untouched"
+      return 1
     fi
+  fi
 
-    running "$HOME/$file"
-    if [[ -e ~/$file ]]; then
-      unlink "$file"
-      echo -en "project dotfile $file unlinked"
-      ok
+  if [[ -n "$(find "$backup_dir" -mindepth 1 -maxdepth 1 2>/dev/null)" ]]; then
+    running "restoring $backup_dir"
+    if dotfiles_restore_backup "$backup_dir"; then
+      ok "restored into $HOME"
+    else
+      error "restore failed; $backup_dir left untouched"
+      return 1
     fi
+  fi
 
-    if [[ -e ./$file ]]; then
-      mv "./$file" "$HOME/"
-      echo -en "$1 backup restored"
-      ok
-    fi
-    echo -en '\tdone'
-    ok
-  done
-
-  popd >/dev/null 2>&1 || exit
-  pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
-
-  stow --delete -t "$HOME" runcom
-  stow --delete -t "$XDG_CONFIG_HOME" config
-
-  popd >/dev/null 2>&1 || exit
+  bot "Restore complete. Anything real that was in the way was renamed to *.replaced.<timestamp>."
 }
 
 sub_update() {
@@ -599,10 +748,19 @@ sub_update() {
   echo
 
   running "Updating submodules"
-  git submodule sync --recursive --quiet >/dev/null 2>&1
-  git submodule init --recursive --quiet >/dev/null 2>&1
-  git submodule update --remote --recursive --checkout --quiet >/dev/null 2>&1
-  ok
+  # `submodule init` takes no --recursive: git printed a usage error that the
+  # blanket redirect hid, so the init step was always a silent no-op. And the
+  # update had no --init (so it skipped uninitialised submodules) but did have
+  # --remote, which checks out each upstream branch tip instead of the SHA the
+  # superproject records -- a bootstrap pulled whatever those repos contained
+  # that day. --depth 1 is what makes the `shallow = true` in .gitmodules
+  # actually take effect.
+  git submodule sync --recursive --quiet
+  if git submodule update --init --recursive --depth 1 --checkout --quiet; then
+    ok
+  else
+    error "submodule update failed"
+  fi
 
   running "Checking for changes"
   local changes
@@ -613,8 +771,7 @@ sub_update() {
     echo -e "\nChanged files:"
     echo "$changes"
     echo
-    read -r -p "Commit and push these changes? [y|N] " confirm
-    if [[ $confirm =~ (yes|y|Y) ]]; then
+    if confirm "Commit and push these changes?"; then
       git add -A
       git commit -m "$message"
       git push origin main --quiet
@@ -625,7 +782,10 @@ sub_update() {
   fi
 
   running "Saving date of update"
-  git config --global dotfiles.lastupdate "$(date "+%F %T")" >/dev/null 2>&1
+  # Not --global: this is a fact about this checkout, not about the user. And
+  # not the tracked config either -- config/git/config.local is gitignored, so
+  # a timestamp cannot dirty a public repo.
+  git config --file "$ROOT_DIR/config/git/config.local" dotfiles.lastupdate "$(date "+%F %T")" >/dev/null 2>&1
   ok
 
   popd >/dev/null 2>&1 || exit
@@ -648,23 +808,42 @@ sub_update_system() {
   action "Upgrading app store apps"
   mas upgrade
 
-  action "Updating npm"
-  source_fnm
-  npm install npm -g
-  npm update -g
+  action "Updating the mise toolchain"
+  if command -v mise > /dev/null 2>&1; then
+    # Upgrades each tool inside the range config.toml declares and rewrites
+    # mise.lock. The lockfile is tracked, so review `git diff` afterwards.
+    mise upgrade
+  else
+    warn "mise not installed; run: dotfiles install --node"
+  fi
 
   bot "Woot! All done. You should clean your system from any leftovers files by running:\n\n"
   echo -e "$BIN_NAME clean\n\n"
 
-  read -r -p "Should i clean them for you? [y|N] " response
-  if [[ $response =~ (yes|y|Y) ]]; then
+  if confirm "Should i clean them for you?"; then
     $0 clean
   fi
 }
 
 sub_clean() {
+  # brew, mise and the leftover Node multishell dirs. The help line used to
+  # promise nvm and gem, neither of which this repo uses or this function
+  # touches.
   bot "Polishing this old rusty piece of machinery!\n"
   brew cleanup
+
+  if command -v mise > /dev/null 2>&1; then
+    running "pruning tool versions nothing declares"
+    mise prune --yes > /dev/null 2>&1
+    ok
+  fi
+
+  # Still needed while the old Node manager is installed: it leaves a
+  # directory under ~/.local/runtime for every login shell ever opened.
+  running "pruning stale node multishell dirs"
+  dotfiles_prune_fnm_multishells
+  ok
+
   bot "Woot! All done."
 }
 
@@ -673,33 +852,24 @@ sub_open() {
 }
 
 sub_edit() {
+  if ! command -v "$DOTFILES_IDE" >/dev/null 2>&1; then
+    error "\$DOTFILES_IDE ($DOTFILES_IDE) is not on PATH; set it to your editor"
+    return 1
+  fi
   "$DOTFILES_IDE" "$DOTFILES_DIR"
 }
 
+# Every delegate below is passed its arguments verbatim and documents its own
+# options, so this file carries no second copy of their help text to drift.
 sub_test() {
   "$DOTFILES_DIR/bin/dotfiles-test" "$@"
 }
 
-sub_test_help() {
-  echo -e "\nUsage: $BIN_NAME test [options]"
-  echo
-  echo "Options:"
-  echo "   --verbose, -v    Show detailed output for each test"
-  echo "   --quick, -q      Skip slow tests (shell startup timing)"
-  echo "   --help, -h       Show this help message"
-}
 
 sub_doctor() {
   "$DOTFILES_DIR/bin/dotfiles-doctor" "$@"
 }
 
-sub_doctor_help() {
-  echo -e "\nUsage: $BIN_NAME doctor [options]"
-  echo
-  echo "Options:"
-  echo "   --fix            Attempt to automatically fix issues"
-  echo "   --help, -h       Show this help message"
-}
 
 sub_hooks() {
   bot "Git Hooks Setup\n"
@@ -715,57 +885,67 @@ sub_profiler() {
   "$DOTFILES_DIR/bin/dotfiles-profiler" "$@"
 }
 
-sub_profiler_help() {
-  echo -e "\nUsage: $BIN_NAME profiler [options]"
-  echo
-  echo "Options:"
-  echo "   --detailed, -d    Show detailed breakdown of sourced files"
-  echo "   --compare, -c     Compare startup with/without caches"
-  echo "   --help, -h        Show this help message"
-}
 
 sub_cheatsheet() {
   "$DOTFILES_DIR/bin/dotfiles-cheatsheet" "$@"
 }
 
-sub_cheatsheet_help() {
-  echo -e "\nUsage: $BIN_NAME cheatsheet [options]"
-  echo
-  echo "Options:"
-  echo "   --aliases, -a     Show only aliases"
-  echo "   --functions, -f   Show only functions"
-  echo "   --search, -s      Search for specific command"
-  echo "   --markdown, -m    Output in markdown format"
-  echo "   --help, -h        Show this help message"
-}
 
 sub_secrets() {
   "$DOTFILES_DIR/bin/dotfiles-secrets" "$@"
 }
 
-sub_secrets_help() {
-  echo -e "\nUsage: $BIN_NAME secrets <command> [options]"
+
+sub_baseline() {
+  "$DOTFILES_DIR/bin/dotfiles-baseline" "$@"
+}
+
+sub_claude() {
+  if [[ ! -x "$DOTFILES_DIR/bin/dotfiles-claude" ]]; then
+    error "bin/dotfiles-claude is missing; run '$BIN_NAME install --claude' first"
+    return 1
+  fi
+  "$DOTFILES_DIR/bin/dotfiles-claude" "$@"
+}
+
+sub_baseline_help() {
+  echo -e "\nUsage: $BIN_NAME baseline <command>"
   echo
   echo "Commands:"
-  echo "   set <name>        Store a secret in Keychain"
-  echo "   get <name>        Retrieve a secret"
-  echo "   delete <name>     Delete a secret"
-  echo "   list              List all dotfiles secrets"
-  echo "   export <file>     Export secrets to encrypted file"
-  echo "   import <file>     Import secrets from encrypted file"
-  echo "   --help, -h        Show detailed help message"
+  echo "   capture           Record the current value of every defaults key this repo writes"
+  echo "   diff              Compare the live system against the recorded baseline"
+}
+
+sub_link_help() {
+  echo -e "\nUsage: $BIN_NAME link"
+  echo
+  echo "Stow runcom/ into \$HOME and config/ into \$XDG_CONFIG_HOME."
+  echo "Anything already in the way is moved to ~/.dotfiles_backup/<timestamp>"
+  echo "and can be put back with: $BIN_NAME unlink <timestamp>"
+}
+
+sub_unlink_help() {
+  echo -e "\nUsage: $BIN_NAME unlink <timestamp>"
+  echo
+  echo "Restore a ~/.dotfiles_backup/<timestamp> directory over \$HOME and"
+  echo "\$XDG_CONFIG_HOME. Anything real in the way is renamed, never deleted."
 }
 
 sub_setup() {
   "$DOTFILES_DIR/bin/dotfiles-setup" "$@"
 }
 
-sub_setup_help() {
-  echo -e "\nUsage: $BIN_NAME setup"
-  echo
-  echo "Run the interactive setup wizard to install and configure dotfiles."
-  echo "This is recommended for first-time setup on a new machine."
-}
+
+# Routing.
+#
+# This used to call the sub_* name and then test `[ $? = 127 ]` to decide
+# whether it existed. 127 is also what a *defined* function returns when its
+# last command is missing, so `dotfiles edit` (which ran an unset
+# $DOTFILES_IDE) was reported as an unknown command, and `dotfiles link
+# --help` printed "command not found" twice -- once for the missing
+# sub_link_help, once for the 127 that sent it to cmd_error. `declare -F` asks
+# the question directly and works in bash 3.2.
+has_sub() { declare -F "$1" >/dev/null 2>&1; }
 
 cmd_error() {
   error "'${COMMAND_NAME}' is not a known command or has errors." >&2
@@ -775,9 +955,10 @@ cmd_error() {
 
 subcmd_error() {
   error "${COMMAND_NAME}: '${SUB_COMMAND_NAME}' is not a known command or has errors." >&2
-  sub_"${COMMAND_NAME}"_help
-  if [ $? = 127 ]; then
-    cmd_error
+  if has_sub "sub_${COMMAND_NAME}_help"; then
+    "sub_${COMMAND_NAME}_help"
+  else
+    sub_help
   fi
   exit 1
 }
@@ -786,7 +967,7 @@ case $COMMAND_NAME in
 "" | "help")
   sub_help
   ;;
-"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets")
+"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude")
   shift
   sub_"$COMMAND_NAME" "$@"
   ;;
@@ -794,8 +975,9 @@ case $COMMAND_NAME in
   if [[ -n $SUB_COMMAND_NAME ]]; then
     case $SUB_COMMAND_NAME in
     --"${STRIPPED_SUB_COMMAND_NAME}")
-      "sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}"
-      if [ $? = 127 ]; then
+      if has_sub "sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}"; then
+        "sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}"
+      else
         subcmd_error
       fi
       ;;
@@ -804,8 +986,9 @@ case $COMMAND_NAME in
       ;;
     esac
   else
-    "sub_${COMMAND_NAME}"
-    if [ $? = 127 ]; then
+    if has_sub "sub_${COMMAND_NAME}"; then
+      "sub_${COMMAND_NAME}"
+    else
       cmd_error
     fi
   fi

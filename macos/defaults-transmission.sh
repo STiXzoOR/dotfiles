@@ -1,3 +1,9 @@
+#!/usr/bin/env bash
+#
+# Sourced by `dotfiles configure --defaults`, never executed: no `set -e`.
+
+DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
+
 source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
 
@@ -14,9 +20,11 @@ running "Use ~/Downloads to store completed downloads"
 defaults write org.m0k.transmission DownloadLocationConstant -bool true
 ok
 
-running "Don’t prompt for confirmation before downloading"
-defaults write org.m0k.transmission DownloadAsk -bool false
-defaults write org.m0k.transmission MagnetOpenAsk -bool false
+# A magnet: link on any web page starts a download the moment it is clicked
+# when these are false. Confirming first is the whole point of the dialog.
+running "Prompt for confirmation before downloading"
+defaults write org.m0k.transmission DownloadAsk -bool true
+defaults write org.m0k.transmission MagnetOpenAsk -bool true
 ok
 
 running "Don’t prompt for confirmation before removing non-downloading active transfers"
@@ -43,11 +51,11 @@ running "Hide the legal disclaimer"
 defaults write org.m0k.transmission WarningLegal -bool false
 ok
 
-running "Setting IP block list"
-defaults write org.m0k.transmission BlocklistNew -bool true
-defaults write org.m0k.transmission BlocklistURL -string "https://github.com/Naunter/BT_BlockLists/raw/master/bt_blocklists.gz"
-defaults write org.m0k.transmission BlocklistAutoUpdate -bool true
-ok
+# IP blocklist removed. It pointed BlocklistURL at a third-party GitHub raw
+# .gz and turned BlocklistAutoUpdate on, which is a standing trust relationship
+# with a repository nobody here controls: whoever can push to it can hand this
+# machine a new blocklist on a timer. Set a blocklist by hand in Transmission,
+# Preferences, Peers if you want one.
 
 running "Randomize port on launch"
 defaults write org.m0k.transmission RandomPort -bool true

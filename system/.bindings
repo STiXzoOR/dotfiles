@@ -1,6 +1,20 @@
+# Vi key bindings (.zpreztorc) make every ESC press ambiguous, and the
+# ESC-prefixed word bindings below extend that ambiguity to the whole
+# KEYTIMEOUT. At prezto's default of 40 (400 ms) leaving insert mode feels
+# stuck; terminals emit escape sequences in one write, so 1 (10 ms) is enough
+# to keep multi-byte keys working (2026-09-21 audit, shell improvement 7).
+KEYTIMEOUT=1
+
+# $terminfo returns an empty string for a capability the current TERM does not
+# describe, and `bindkey "" widget` is a silent no-op rather than an error, so
+# a binding can disappear without any sign of it.
+bindkey-cap() {
+  [[ -n "$1" ]] && bindkey "$1" "$2"
+}
+
 # Fuzzy find: start to type
-bindkey "$terminfo[kcuu1]" history-substring-search-up
-bindkey "$terminfo[kcud1]" history-substring-search-down
+bindkey-cap "$terminfo[kcuu1]" history-substring-search-up
+bindkey-cap "$terminfo[kcud1]" history-substring-search-down
 
 # Backward and forward word with option+left/right
 bindkey '^[^[[D' backward-word
@@ -9,9 +23,9 @@ bindkey '^[^[[C' forward-word
 bindkey '^[f' forward-word
 
 # To the beggining/end of line with fn+left/right or home/end
-bindkey "${terminfo[khome]}" beginning-of-line
+bindkey-cap "$terminfo[khome]" beginning-of-line
 bindkey '^[[H' beginning-of-line
-bindkey "${terminfo[kend]}" end-of-line
+bindkey-cap "$terminfo[kend]" end-of-line
 bindkey '^[[F' end-of-line
 
 # Delete char with backspaces and delete
@@ -21,8 +35,8 @@ bindkey '^?' backward-delete-char
 # Delete word with ctrl+backspace
 bindkey '^[[3;5~' backward-delete-word
 
-# fzf key-bindings are loaded via .fzf (fzf --zsh includes them)
-# Fallback for systems without fzf
-if ! (( $+commands[fzf] )); then
+# ctrl-R belongs to atuin, and failing that to fzf; both are sourced from
+# .zshrc just above this file. This is the fallback for a machine with neither.
+if ! (( $+commands[atuin] )) && ! (( $+commands[fzf] )); then
   bindkey '^R' history-incremental-search-backward
 fi

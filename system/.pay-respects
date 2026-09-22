@@ -1,0 +1,9 @@
+# pay-respects - command correction (replaces thefuck, whose upstream has been
+# dormant since 2024-07 with 460 open issues; pay-respects is Rust and active).
+#
+# No cache here: thefuck needed one because `thefuck --alias fix` cost 76 ms
+# per shell. pay-respects prints its shell integration in a couple of
+# milliseconds, and a cache would be one more thing to invalidate.
+if (( $+commands[pay-respects] )); then
+  eval "$(pay-respects zsh --alias fix 2>/dev/null)"
+fi

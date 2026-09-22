@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
+#
+# Sourced by `dotfiles configure --defaults`, never executed: no `set -e`.
+
 DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
 
 source "$DOTFILES_DIR/scripts/echos.sh"
@@ -34,14 +38,20 @@ bot "Warp"
 ###############################################################################
 
 running "Create warp custom theme folder"
-CUSTOM_THEME_DIR="$HOME/.warp/themes"
-mkdir -p "$CUSTOM_THEME_DIR/" 2>/dev/null
-ok
+WARP_THEME_DIR="$HOME/.warp/themes"
+if mkdir -p "$WARP_THEME_DIR/"; then
+  ok
+else
+  error "could not create $WARP_THEME_DIR"
+fi
 
 running "Install themes for Warp"
-rm -rf "$CUSTOM_THEME_DIR"/*.yaml 2>/dev/null
-cp "$DOTFILES_DIR/apps/warp/themes/standard"/*.yaml "$CUSTOM_THEME_DIR/" 2>/dev/null
-cp "$DOTFILES_DIR/apps/warp/themes/base16"/*.yaml "$CUSTOM_THEME_DIR/" 2>/dev/null
-ok
+rm -rf "$WARP_THEME_DIR"/*.yaml 2>/dev/null
+if cp "$DOTFILES_DIR/apps/warp/themes/standard"/*.yaml "$WARP_THEME_DIR/" &&
+  cp "$DOTFILES_DIR/apps/warp/themes/base16"/*.yaml "$WARP_THEME_DIR/"; then
+  ok
+else
+  error "could not install the Warp themes"
+fi
 
 killall "Warp" >/dev/null 2>&1

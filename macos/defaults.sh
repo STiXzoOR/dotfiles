@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
+#
+# Sourced by `dotfiles configure --defaults`, never executed: no `set -e`.
+
 DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
 COMPUTER_NAME="STiXzoOR-MB"
 LANGUAGES=("en-CY" "el-CY")
@@ -8,6 +12,16 @@ SCREENSHOTS_FOLDER="${HOME}/Desktop/Screenshots"
 
 source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
+
+# `ok` is an unconditional echo, so every step used to report success whether
+# or not it did anything. print_result takes the command's exit status instead.
+# It lives in scripts/echos.sh; this fallback keeps the file honest when it is
+# sourced against an older copy.
+if ! type print_result >/dev/null 2>&1; then
+  print_result() {
+    if [ "$1" -eq 0 ]; then ok "${2:-}"; else error "${2:-}"; fi
+  }
+fi
 
 # Ask for the administrator password upfront
 sudo -v
@@ -26,40 +40,75 @@ bot "Configuring System"
 # settings we’re about to change
 running "closing any system preferences to prevent issues with automated changes"
 # Use "System Settings" for macOS Ventura+ or fall back to "System Preferences"
-osascript -e 'tell application "System Settings" to quit' 2>/dev/null || osascript -e 'tell application "System Preferences" to quit' 2>/dev/null
-ok
+osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1 ||
+  osascript -e 'tell application "System Preferences" to quit' >/dev/null 2>&1
+print_result $?
 
 ###############################################################################
 bot "Security"
 ###############################################################################
 # Gatekeeper: kept enabled for security
 # To allow individual unsigned apps, use: sudo xattr -r -d com.apple.quarantine /path/to/app
+#
+# Every `systemsetup` call below needs Full Disk Access for the terminal that
+# runs it. Without it they fail, and until this block reported real exit
+# statuses that failure was invisible. Grant it in System Settings, Privacy &
+# Security, Full Disk Access, and revoke it afterwards: a standing grant lets
+# every script run from that terminal bypass TCC.
 
 running "Disable remote apple events"
-sudo systemsetup -setremoteappleevents off 2>/dev/null || true
-ok
+sudo systemsetup -setremoteappleevents off >/dev/null 2>&1
+print_result $?
 
 running "Disable remote login"
-sudo systemsetup -setremotelogin off 2>/dev/null || true
-ok
+# -f suppresses the confirmation prompt. Without it this blocks forever: the
+# prompt is written to a stream that goes to /dev/null while stdin is still
+# the terminal. See `man systemsetup`, -setremotelogin [-f] on | off.
+sudo systemsetup -setremotelogin -f off >/dev/null 2>&1
+print_result $?
 
 running "Disable wake-on LAN"
 sudo pmset -a womp 0
-ok
+print_result $?
 
 running "Disable guest account login"
 sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false
-ok
+print_result $?
+
+# The application firewall. /Library/Preferences/com.apple.alf.plist was
+# removed in macOS 15, so `defaults write com.apple.alf ...` is dead code and
+# socketfilterfw is the only supported control. It needs the same Full Disk
+# Access grant as systemsetup above.
+#
+# Adding and removing individual applications through socketfilterfw has been
+# unreliable since macOS 15 and --listapps no longer prints paths, so do not
+# build per-app firewall rules on top of this.
+
+running "Turn the application firewall on"
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on >/dev/null 2>&1
+print_result $?
+
+running "Turn stealth mode on (no reply to unsolicited probes)"
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on >/dev/null 2>&1
+print_result $?
+
+running "Let built-in signed software receive incoming connections"
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsigned on >/dev/null 2>&1
+print_result $?
+
+running "Do not auto-allow downloaded signed software"
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsignedapp off >/dev/null 2>&1
+print_result $?
 
 ################################################
 bot "General UI/UX"
 ################################################
 running "Set computer name (as done via System Preferences → Sharing)"
-sudo scutil --set ComputerName "$COMPUTER_NAME"
-sudo scutil --set HostName "$COMPUTER_NAME"
-sudo scutil --set LocalHostName "$COMPUTER_NAME"
-sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "$COMPUTER_NAME"
-ok
+sudo scutil --set ComputerName "$COMPUTER_NAME" &&
+  sudo scutil --set HostName "$COMPUTER_NAME" &&
+  sudo scutil --set LocalHostName "$COMPUTER_NAME" &&
+  sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "$COMPUTER_NAME"
+print_result $?
 
 running "Set language and text formats (english/CY)"
 defaults write NSGlobalDomain AppleLanguages -array "${LANGUAGES[@]}"
@@ -69,25 +118,25 @@ defaults write NSGlobalDomain AppleMetricUnits -bool true
 ok
 
 running "Set timezone to $TIMEZONE;" #see `sudo systemsetup -listtimezones` for other values
-sudo systemsetup -settimezone "$TIMEZONE" >/dev/null
-ok
+sudo systemsetup -settimezone "$TIMEZONE" >/dev/null 2>&1
+print_result $?
 
 # Boot sound: On macOS 11+ (Big Sur), control via System Settings > Sound > "Play sound on startup"
 # The nvram commands only worked on Intel Macs running macOS 10.15 or earlier
 
 running "Restart automatically if the computer freezes"
-sudo systemsetup -setrestartfreeze on 2>/dev/null || true
-ok
+sudo systemsetup -setrestartfreeze on >/dev/null 2>&1
+print_result $?
 
 running "Set standby delay to 24 hours (default is 1 hour)"
 sudo pmset -a standbydelay 86400
-ok
+print_result $?
 
 # Note: Sudden Motion Sensor (sms) setting removed - only relevant for HDDs, not SSDs
 # All modern Macs use SSDs, so this setting is obsolete
 
 running "Disable audio feedback when volume is changed"
-defaults write com.apple.sound.beep.feedback -bool false
+defaults write NSGlobalDomain com.apple.sound.beep.feedback -bool false
 ok
 
 # Note: Battery percentage setting removed - deprecated in macOS Big Sur+
@@ -101,7 +150,7 @@ running "Set sidebar icon size to medium"
 defaults write NSGlobalDomain NSTableViewDefaultSizeMode -int 2
 ok
 
-running "Always show scrollbars"
+running "Show scrollbars only while scrolling"
 defaults write NSGlobalDomain AppleShowScrollBars -string "WhenScrolling"
 ok
 # Possible values: `WhenScrolling`, `Automatic` and `Always`
@@ -141,7 +190,7 @@ ok
 
 running "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
-ok
+print_result $?
 
 running "Show control characters"
 defaults write NSGlobalDomain NSTextShowsControlCharacters -bool true
@@ -159,8 +208,12 @@ defaults write com.apple.helpviewer DevMode -bool true
 ok
 
 running "Reveal IP, hostname, OS, etc. when clicking clock in login window"
+# Deliberate information disclosure: this puts the hostname, IP address and OS
+# version on the login window, where anyone with physical access to the locked
+# machine can read them. Kept because this machine is not left unattended in
+# public. Remove this step if that is not true of yours.
 sudo defaults write /Library/Preferences/com.apple.loginwindow AdminHostInfo HostName
-ok
+print_result $?
 
 running "Disable the crash reporter"
 defaults write com.apple.CrashReporter DialogType -string "none"
@@ -225,6 +278,17 @@ bot "Trackpad, mouse, Bluetooth accessories"
 #defaults write com.apple.BluetoothAudioAgent "Apple Bitpool Min (editable)" -int 40
 #ok
 
+# macOS 26 Tahoe's Liquid Glass redesign makes translucent chrome hard to read
+# over busy backgrounds. reduceTransparency is unset by default rather than
+# removed, so writing it is still the supported way to tone it down.
+running "Reduce transparency"
+defaults write com.apple.universalaccess reduceTransparency -bool true
+ok
+
+# These three closeView keys read back ABSENT on both macOS 15.6.1 and 26.6.1
+# on the audited machine: the accessibility daemon rewrites the plist and the
+# writes do not survive. They are kept so the baseline keeps tracking them, but
+# set zoom from System Settings, Accessibility, Zoom if it does not take.
 running "Use scroll gesture with the Ctrl (^) modifier key to zoom"
 defaults write com.apple.universalaccess closeViewScrollWheelToggle -bool true
 defaults write com.apple.universalaccess HIDScrollZoomModifierMask -int 262144
@@ -242,15 +306,10 @@ ok
 bot "Screen"
 ###############################################################################
 
-# Screen lock password: Broken since macOS 10.13 (High Sierra).
-# Use System Settings > Lock Screen to configure, or:
-#   sysadminctl -screenLock immediate -password -
-# (requires interactive password entry)
-
 running "Save screenshots to the desktop"
-mkdir -p "${SCREENSHOTS_FOLDER}"
-defaults write com.apple.screencapture location -string "$SCREENSHOTS_FOLDER"
-ok
+mkdir -p "${SCREENSHOTS_FOLDER}" &&
+  defaults write com.apple.screencapture location -string "$SCREENSHOTS_FOLDER"
+print_result $?
 
 running "Save screenshots in PNG format (other options: BMP, GIF, JPG, PDF, TIFF)"
 defaults write com.apple.screencapture type -string "png"
@@ -363,12 +422,17 @@ ok
 # SSDs don't benefit from secure erase due to wear leveling
 
 running "Show the ~/Library folder"
-chflags nohidden ~/Library && xattr -d com.apple.FinderInfo ~/Library
-ok
+# The FinderInfo attribute is usually absent, and `xattr -d` exits non-zero
+# when it is, so deleting unconditionally made this step red on every run after
+# the first. Only delete what is there.
+chflags nohidden ~/Library &&
+  { xattr -p com.apple.FinderInfo ~/Library >/dev/null 2>&1 &&
+    xattr -d com.apple.FinderInfo ~/Library >/dev/null 2>&1 || true; }
+print_result $?
 
 running "Show the /Volumes folder"
 sudo chflags nohidden /Volumes
-ok
+print_result $?
 
 running "Expand the following File Info panes: General, Open with, and Sharing & Permissions"
 defaults write com.apple.finder FXInfoPanesExpanded -dict \
@@ -415,15 +479,40 @@ running "Make Dock icons of hidden applications translucent"
 defaults write com.apple.dock showhidden -bool true
 ok
 
-running "Reset Launchpad, but keep the desktop wallpaper intact"
-find "${HOME}/Library/Application Support/Dock" -name "*-*.db" -maxdepth 1 -delete
+###############################################################################
+bot "Window tiling (macOS 26)"
+###############################################################################
+# Window tiling is the UI area Tahoe changed most. All four keys were verified
+# present in com.apple.WindowManager on macOS 26.6.1.
+
+running "Remove the margins between tiled windows"
+defaults write com.apple.WindowManager EnableTiledWindowMargins -bool false
 ok
 
-running "Add iOS Simulator to Launchpad"
+# Declared at the value the audited machine already had (both off), so that a
+# rebuilt machine reproduces this one. The audit named a value for the margins
+# and widget keys but only described these two, so no value is invented here.
+# Flip either to true if you want drag-to-edge or drag-to-top tiling.
+running "Declare drag-to-edge and drag-to-top tiling"
+defaults write com.apple.WindowManager EnableTilingByEdgeDrag -bool false
+defaults write com.apple.WindowManager EnableTopTilingByEdgeDrag -bool false
+ok
+
+running "Hide desktop widgets"
+defaults write com.apple.WindowManager StandardHideWidgets -bool true
+ok
+
+# Launchpad reset removed: macOS 26 Tahoe replaced Launchpad with Apps.app and
+# ~/Library/Application Support/Dock no longer exists, so the old `find -delete`
+# had nothing to act on.
+
+running "Symlink the iOS Simulator into /Applications"
 if [[ -d "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" ]]; then
   sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" "/Applications/Simulator.app"
+  print_result $?
+else
+  skip "Xcode is not installed"
 fi
-ok
 
 bot "Hot corners"
 # Possible values:
@@ -434,7 +523,7 @@ bot "Hot corners"
 #  5: Start screen saver
 #  6: Disable screen saver
 # 10: Put display to sleep
-# 11: Launchpad
+# 11: Apps (Launchpad on macOS 25 and earlier)
 # 12: Notification Center
 # 13: Lock Screen
 # 14: Quick Note (added in Monterey)
@@ -456,12 +545,14 @@ bot "Spotlight"
 ###############################################################################
 
 running "Load new settings before rebuilding the index"
-killall mds >/dev/null 2>&1
-ok
+# mds is root-owned, so an unprivileged killall never matches it and always
+# exits non-zero. launchd restarts the daemon immediately.
+sudo killall mds >/dev/null 2>&1
+print_result $?
 
 running "Make sure indexing is enabled for the main volume"
-sudo mdutil -i on / >/dev/null
-ok
+sudo mdutil -i on / >/dev/null 2>&1
+print_result $?
 
 ###############################################################################
 bot "Time Machine"

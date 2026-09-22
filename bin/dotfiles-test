@@ -23,6 +23,7 @@ TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_SKIPPED=0
+TESTS_WARNED=0
 
 # Options
 VERBOSE=false
@@ -72,6 +73,15 @@ skip() {
   echo -e "${YELLOW}○${NC} $1 (skipped)"
 }
 
+# A warning is its own outcome. Counting one as a pass, which both the
+# shellcheck step and the startup-timing step used to do, means a machine that
+# has drifted reports a clean run.
+warn() {
+  ((TESTS_WARNED++))
+  ((TESTS_RUN++))
+  echo -e "${YELLOW}⚠${NC} $1"
+}
+
 section() {
   echo ""
   echo -e "${BLUE}━━━ $1 ━━━${NC}"
@@ -84,41 +94,33 @@ section() {
 test_zsh_syntax() {
   section "Zsh Syntax Validation"
 
-  local files=(
-    "$DOTFILES_DIR/runcom/.zshrc"
-    "$DOTFILES_DIR/runcom/.zprofile"
-    "$DOTFILES_DIR/runcom/.zlogin"
-    "$DOTFILES_DIR/runcom/.profile"
-    "$DOTFILES_DIR/system/.alias"
-    "$DOTFILES_DIR/system/.bindings"
-    "$DOTFILES_DIR/system/.completion"
-    "$DOTFILES_DIR/system/.env"
-    "$DOTFILES_DIR/system/.fix"
-    "$DOTFILES_DIR/system/.fnm"
-    "$DOTFILES_DIR/system/.function"
-    "$DOTFILES_DIR/system/.function_fs"
-    "$DOTFILES_DIR/system/.function_fun"
-    "$DOTFILES_DIR/system/.function_network"
-    "$DOTFILES_DIR/system/.function_text"
-    "$DOTFILES_DIR/system/.fzf"
-    "$DOTFILES_DIR/system/.grep"
-    "$DOTFILES_DIR/system/.path"
-    "$DOTFILES_DIR/system/.pnpm"
-    "$DOTFILES_DIR/system/.starship"
-    "$DOTFILES_DIR/system/.zoxide"
-  )
+  # One discovery rule, shared with CI. The hand-written list this replaces
+  # named system/.fix, which has not existed for a long time, and was guarded
+  # by [[ -f ]] so it skipped in silence -- while system/.editor, .atuin and
+  # .pay-respects, every one of them added since, got no coverage here at all.
+  local discover="$DOTFILES_DIR/.github/scripts/zsh-syntax.sh"
+  if [[ ! -f "$discover" ]]; then
+    fail "zsh file discovery is missing" "$discover"
+    return
+  fi
 
-  for file in "${files[@]}"; do
-    if [[ -f "$file" ]]; then
-      local basename="${file##*/}"
-      if zsh -n "$file" 2>/dev/null; then
-        pass "Syntax OK: $basename"
-      else
-        local error=$(zsh -n "$file" 2>&1)
-        fail "Syntax error: $basename" "$error"
-      fi
+  local file basename error checked=0
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    [[ -f "$DOTFILES_DIR/$file" ]] || continue
+    basename="${file##*/}"
+    if zsh -n "$DOTFILES_DIR/$file" 2>/dev/null; then
+      pass "Syntax OK: $basename"
+    else
+      error=$(zsh -n "$DOTFILES_DIR/$file" 2>&1)
+      fail "Syntax error: $basename" "$error"
     fi
-  done
+    checked=$((checked + 1))
+  done < <(cd "$DOTFILES_DIR" && bash "$discover" --list)
+
+  if [[ $checked -eq 0 ]]; then
+    fail "zsh file discovery returned nothing" "$discover --list"
+  fi
 }
 
 test_bash_syntax() {
@@ -179,7 +181,10 @@ test_shellcheck() {
     fi
   done
 
-  # Check shell config files (these are sourced, so use sh/bash compatible checks)
+  # Sourced startup fragments. They declare themselves bash + zsh compatible
+  # and are sourced by bash and zsh, never by a POSIX sh -- linting them as sh
+  # flagged every [[ ]] and brace expansion, so the warn branch below was on
+  # permanently, and until this workstream permanently counted as a pass.
   local config_files=(
     "$DOTFILES_DIR/runcom/.profile"
   )
@@ -188,14 +193,14 @@ test_shellcheck() {
     if [[ -f "$file" ]]; then
       local basename="${file##*/}"
       local output
-      output=$(shellcheck -e SC1090,SC1091,SC2034,SC2154,SC2148 -s sh "$file" 2>&1)
+      output=$(shellcheck -e SC1090,SC1091,SC2034,SC2154,SC2148 -s bash "$file" 2>&1)
       if [[ $? -eq 0 ]]; then
         pass "Shellcheck OK: $basename"
       else
-        # Warn instead of fail for config files (they have zsh-specific syntax)
-        echo -e "${YELLOW}⚠${NC} Shellcheck warnings: $basename (may contain zsh syntax)"
-        ((TESTS_RUN++))
-        ((TESTS_PASSED++))
+        # Still a warning rather than a failure: these files carry zsh-only
+        # constructs that shellcheck has no dialect for. It is now reported as
+        # a warning in the summary instead of being folded into the pass count.
+        warn "Shellcheck warnings: $basename ($(echo "$output" | grep -cE '^In ') finding(s); may contain zsh syntax)"
       fi
     fi
   done
@@ -209,23 +214,11 @@ test_cache_generation() {
   section "Cache Generation Tests"
 
   local test_cache_dir=$(mktemp -d)
-  local old_cache="${XDG_CACHE_HOME:-$HOME/.cache}"
+  # Sentinel, not ${XDG_CACHE_HOME:-$HOME/.cache}: that default left the
+  # variable *set* to $HOME/.cache when it had been unset on entry, so a test
+  # run changed the caller's environment.
+  local _saved_xdg="${XDG_CACHE_HOME-__dotfiles_unset__}"
   export XDG_CACHE_HOME="$test_cache_dir"
-
-  # Test fnm cache generation
-  if command -v fnm &>/dev/null; then
-    if fnm env --use-on-cd --corepack-enabled --shell zsh > "$test_cache_dir/fnm-env.zsh" 2>/dev/null; then
-      if [[ -s "$test_cache_dir/fnm-env.zsh" ]]; then
-        pass "fnm cache generation"
-      else
-        fail "fnm cache generation" "Empty output"
-      fi
-    else
-      fail "fnm cache generation" "Command failed"
-    fi
-  else
-    skip "fnm cache generation (fnm not installed)"
-  fi
 
   # Test zoxide cache generation
   if command -v zoxide &>/dev/null; then
@@ -240,21 +233,6 @@ test_cache_generation() {
     fi
   else
     skip "zoxide cache generation (zoxide not installed)"
-  fi
-
-  # Test thefuck cache generation
-  if command -v thefuck &>/dev/null; then
-    if thefuck --alias fix > "$test_cache_dir/thefuck-alias.zsh" 2>/dev/null; then
-      if [[ -s "$test_cache_dir/thefuck-alias.zsh" ]]; then
-        pass "thefuck cache generation"
-      else
-        fail "thefuck cache generation" "Empty output"
-      fi
-    else
-      fail "thefuck cache generation" "Command failed"
-    fi
-  else
-    skip "thefuck cache generation (thefuck not installed)"
   fi
 
   # Test fzf cache generation
@@ -289,10 +267,14 @@ test_cache_generation() {
     skip "brew shellenv cache generation (brew not installed)"
   fi
 
-  # Test dircolors cache generation
+  # Test dircolors cache generation, under the name runcom/.profile writes:
+  # `dircolors -b` emits an empty LS_COLORS when $TERM matches nothing in
+  # .dir_colors, so the cache is keyed on TERM and a test that wrote
+  # dircolors.zsh was generating a file no shell ever reads.
+  local dircolors_cache="dircolors-${TERM:-dumb}.zsh"
   if command -v dircolors &>/dev/null && [[ -f "$DOTFILES_DIR/system/.dir_colors" ]]; then
-    if dircolors -b "$DOTFILES_DIR/system/.dir_colors" > "$test_cache_dir/dircolors.zsh" 2>/dev/null; then
-      if [[ -s "$test_cache_dir/dircolors.zsh" ]]; then
+    if dircolors -b "$DOTFILES_DIR/system/.dir_colors" > "$test_cache_dir/$dircolors_cache" 2>/dev/null; then
+      if [[ -s "$test_cache_dir/$dircolors_cache" ]]; then
         pass "dircolors cache generation"
       else
         fail "dircolors cache generation" "Empty output"
@@ -321,7 +303,11 @@ test_cache_generation() {
 
   # Cleanup
   rm -rf "$test_cache_dir"
-  export XDG_CACHE_HOME="$old_cache"
+  if [[ "$_saved_xdg" == "__dotfiles_unset__" ]]; then
+    unset XDG_CACHE_HOME
+  else
+    export XDG_CACHE_HOME="$_saved_xdg"
+  fi
 }
 
 #############################################################################
@@ -523,11 +509,12 @@ test_claude_bootstrap() {
     fail "install_claude.sh: QMD MCP registration missing"
   fi
 
-  # Test npm.list no longer has claude-code
-  if grep -q '@anthropic-ai/claude-code' "$DOTFILES_DIR/packages/npm.list" 2>/dev/null; then
-    fail "npm.list still contains @anthropic-ai/claude-code (should use native binary)"
+  # Claude Code is a native binary, never an npm global. packages/npm.list is
+  # gone, so the check moved to the file that now declares the npm-backed CLIs.
+  if grep -q 'anthropic-ai/claude-code' "$DOTFILES_DIR/config/mise/config.toml" 2>/dev/null; then
+    fail "config.toml declares claude-code as an npm tool (should use the native binary)"
   else
-    pass "npm.list: claude-code removed (using native binary)"
+    pass "mise config: claude-code not an npm tool (using native binary)"
   fi
 
   # Test dotfiles CLI has --claude subcommand
@@ -574,23 +561,58 @@ test_shell_startup() {
     fail "Shell startup failed" "$startup_output"
   fi
 
-  # Measure startup time
-  local start_time end_time duration
-  start_time=$(date +%s%N)
-  ZDOTDIR="$DOTFILES_DIR/runcom" zsh -i -c 'exit' 2>/dev/null
-  end_time=$(date +%s%N)
-  duration=$(( (end_time - start_time) / 1000000 )) # Convert to ms
+  # Measure startup time. Best of three: one cold run under load is noise,
+  # and the previous single measurement made the result flaky at the
+  # threshold. The documented target is <1000ms, so that is the threshold --
+  # the old code failed only at twice that and counted everything in between
+  # as a pass, so a machine drifted to nearly two seconds reported a clean
+  # run.
+  local start_time end_time duration best=0 i
+  for i in 1 2 3; do
+    start_time=$(date +%s%N)
+    ZDOTDIR="$DOTFILES_DIR/runcom" zsh -i -c 'exit' 2>/dev/null
+    end_time=$(date +%s%N)
+    duration=$(( (end_time - start_time) / 1000000 )) # ns -> ms
+    if [[ $best -eq 0 || $duration -lt $best ]]; then
+      best=$duration
+    fi
+  done
 
-  if [[ $duration -lt 500 ]]; then
-    pass "Shell startup time: ${duration}ms (excellent)"
-  elif [[ $duration -lt 1000 ]]; then
-    pass "Shell startup time: ${duration}ms (good)"
-  elif [[ $duration -lt 2000 ]]; then
-    echo -e "${YELLOW}⚠${NC} Shell startup time: ${duration}ms (could be faster)"
-    ((TESTS_RUN++))
-    ((TESTS_PASSED++))
+  if [[ $best -lt 500 ]]; then
+    pass "Shell startup time: ${best}ms (excellent, best of 3)"
+  elif [[ $best -lt 1000 ]]; then
+    pass "Shell startup time: ${best}ms (good, best of 3)"
   else
-    fail "Shell startup time: ${duration}ms (too slow, target <1000ms)"
+    fail "Shell startup time: ${best}ms (best of 3, target <1000ms)"
+  fi
+}
+
+#############################################################################
+# BASH TEST SUITES
+#############################################################################
+
+# tests/run.sh drives every tests/*.sh suite. Running it from here makes
+# `dotfiles test` a single entry point rather than something that silently
+# covers less than CI does. Skipped under --quick, where CI runs it as its
+# own step.
+test_bash_suites() {
+  section "Bash Test Suites"
+
+  if $QUICK; then
+    skip "tests/run.sh (use a full run to include it)"
+    return
+  fi
+
+  if [[ ! -f "$DOTFILES_DIR/tests/run.sh" ]]; then
+    fail "tests/run.sh is missing" ""
+    return
+  fi
+
+  local output
+  if output=$(cd "$DOTFILES_DIR" && bash tests/run.sh 2>&1); then
+    pass "tests/run.sh: $(echo "$output" | grep -E '^suites=' | tail -1)"
+  else
+    fail "tests/run.sh reported failures" "$(echo "$output" | tail -20)"
   fi
 }
 
@@ -601,30 +623,44 @@ test_shell_startup() {
 test_environment() {
   section "Environment Variable Tests"
 
-  source "$DOTFILES_DIR/system/.env"
+  # Load through runcom/.profile in a sandbox HOME, not by sourcing
+  # system/.env here. EDITOR is set by system/.editor, which .profile loads
+  # after system/.path because the answer depends on PATH; sourcing .env alone
+  # asserted nothing about EDITOR beyond what the calling shell happened to
+  # export, so this passed on a developer machine and failed on a runner with
+  # EDITOR unset. The sandbox HOME also keeps the caches the loader writes,
+  # out of the real one -- and stops this
+  # step from mutating the environment of every test that runs after it.
+  # (The loader no longer creates a Node multishell; the sandbox HOME is kept
+  # because the caches it writes still belong outside the real one.)
+  local vars=(XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME XDG_STATE_HOME EDITOR LANG)
+  local sandbox_home dump
+  sandbox_home=$(mktemp -d)
+  ln -s "$DOTFILES_DIR" "$sandbox_home/.dotfiles"
+  dump=$(env -u EDITOR -u LANG -u XDG_CONFIG_HOME -u XDG_CACHE_HOME \
+             -u XDG_DATA_HOME -u XDG_STATE_HOME -u XDG_RUNTIME_DIR \
+             HOME="$sandbox_home" zsh -f -c '
+               . "$HOME/.dotfiles/runcom/.profile" >/dev/null 2>&1
+               for v in '"${vars[*]}"'; do print -r -- "$v=${(P)v}"; done' 2>/dev/null)
+  rm -rf "$sandbox_home"
 
-  # Test XDG directories
-  local xdg_vars=("XDG_CONFIG_HOME" "XDG_CACHE_HOME" "XDG_DATA_HOME" "XDG_STATE_HOME")
-  for var in "${xdg_vars[@]}"; do
-    if [[ -n "${(P)var}" ]]; then
-      pass "Environment: $var is set"
+  local var value
+  for var in "${vars[@]}"; do
+    value=$(printf '%s\n' "$dump" | sed -n "s/^$var=//p")
+    if [[ -n "$value" ]]; then
+      pass "Environment: $var is set ($value)"
     else
-      fail "Environment: $var is not set"
+      fail "Environment: $var is not set after runcom/.profile" "$dump"
     fi
   done
 
-  # Test essential variables
-  if [[ -n "$EDITOR" ]]; then
-    pass "Environment: EDITOR is set ($EDITOR)"
-  else
-    fail "Environment: EDITOR is not set"
-  fi
-
-  if [[ -n "$LANG" ]]; then
-    pass "Environment: LANG is set ($LANG)"
-  else
-    fail "Environment: LANG is not set"
-  fi
+  # EDITOR must resolve to a real editor, not to the empty string that
+  # system/.editor's fallback would hide.
+  local editor=$(printf '%s\n' "$dump" | sed -n 's/^EDITOR=//p')
+  case "$editor" in
+    nvim | vim) pass "Environment: EDITOR resolves to $editor" ;;
+    *) fail "Environment: EDITOR is '$editor', expected nvim or vim" "$dump" ;;
+  esac
 }
 
 #############################################################################
@@ -792,15 +828,18 @@ test_performance_optimizations() {
     fi
   fi
 
-  # Test cache files use $commands[] instead of $(command -v)
-  local cache_files=("$DOTFILES_DIR/system/.fzf" "$DOTFILES_DIR/system/.zoxide" "$DOTFILES_DIR/system/.fix")
-  local all_good=true
-  for f in "${cache_files[@]}"; do
-    if [[ -f "$f" ]] && grep -q '$(command -v' "$f"; then
+  # Every zsh fragment the startup chain sources, from the shared discovery,
+  # uses $commands[] rather than a $(command -v) subprocess. The three names
+  # this replaces included system/.fix, which has not existed for years, so
+  # the check quietly covered two files.
+  local all_good=true f
+  while IFS= read -r f; do
+    case "$f" in system/.*) ;; *) continue ;; esac
+    if [[ -f "$DOTFILES_DIR/$f" ]] && grep -q '$(command -v' "$DOTFILES_DIR/$f"; then
       all_good=false
       break
     fi
-  done
+  done < <(cd "$DOTFILES_DIR" && bash "$DOTFILES_DIR/.github/scripts/zsh-syntax.sh" --list)
   if $all_good; then
     pass "Cache files use \$commands[] (no subprocess for lookups)"
   else
@@ -983,10 +1022,15 @@ test_defaults_baseline() {
 
   # Every "defaults write <domain> <key>" in macos/*.sh must appear in a
   # captured snapshot, so an OS upgrade can be diffed key-by-key.
+  # The declared count comes from the tool's own `list`, not from a second
+  # extractor here. The grep this replaces matched only bare, unindented
+  # `defaults write <domain> <key>`; dotfiles-baseline also parses quoted keys,
+  # -currentHost and sudo-prefixed domains, so the two drifted apart and this
+  # step failed with "captured 156 of 132" -- a red test reporting a bug in
+  # the test.
   local declared captured tmpdir
   tmpdir=$(mktemp -d)
-  declared=$(grep -hoE '^defaults write [A-Za-z0-9.-]+ +"?[A-Za-z0-9_.-]+"?' \
-    "$DOTFILES_DIR"/macos/defaults*.sh 2>/dev/null | sort -u | wc -l | tr -d ' ')
+  declared=$("$tool" list | wc -l | tr -d ' ')
 
   if DOTFILES_BASELINE_DIR="$tmpdir" "$tool" capture testsnap >/dev/null 2>&1; then
     captured=$(wc -l <"$tmpdir/testsnap.tsv" 2>/dev/null | tr -d ' ')
@@ -1101,6 +1145,7 @@ main() {
   test_defaults_baseline
   test_claude_list_merge
   test_shell_startup
+  test_bash_suites
 
   # Summary
   echo ""
@@ -1109,11 +1154,17 @@ main() {
   echo -e "  ${GREEN}Passed:${NC}  $TESTS_PASSED"
   echo -e "  ${RED}Failed:${NC}  $TESTS_FAILED"
   echo -e "  ${YELLOW}Skipped:${NC} $TESTS_SKIPPED"
+  echo -e "  ${YELLOW}Warned:${NC}  $TESTS_WARNED"
   echo -e "  Total:   $TESTS_RUN"
   echo ""
 
-  if [[ $TESTS_FAILED -eq 0 ]]; then
+  # A warning is not a failure, but it is not a pass either: saying "all tests
+  # passed" over a run that warned is how drift stays invisible.
+  if [[ $TESTS_FAILED -eq 0 && $TESTS_WARNED -eq 0 ]]; then
     echo -e "${GREEN}All tests passed!${NC}"
+    exit 0
+  elif [[ $TESTS_FAILED -eq 0 ]]; then
+    echo -e "${YELLOW}No failures, but $TESTS_WARNED warning(s) — see above.${NC}"
     exit 0
   else
     echo -e "${RED}Some tests failed.${NC}"

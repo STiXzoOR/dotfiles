@@ -1,11 +1,17 @@
 ---
+# The previous source here was plaintext HTTP pointing at a host that has
+# been dead since 2014, so any `gem install` honouring it was an
+# unauthenticated fetch over a cleartext channel.
+:sources:
+- https://rubygems.org/
+:update_sources: true
 :backtrace: false
 :bulk_threshold: 1000
-:sources:
-- http://gems.rubyforge.org/
-:update_sources: true
 :verbose: true
-update: "--env-shebang"
 benchmark: false
+# --env-shebang writes `#!/usr/bin/env ruby` into binstubs instead of the
+# absolute path of the ruby that installed them, so they survive a version
+# bump. Binstub location is left to the active ruby: hardcoding a prefix
+# here pointed at the Intel Homebrew path.
 install: "--env-shebang"
-gem: -n/usr/local/bin
+update: "--env-shebang"

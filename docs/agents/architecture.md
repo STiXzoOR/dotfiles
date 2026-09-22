@@ -2,23 +2,28 @@
 
 ## Directory Layout
 
-| Directory       | Purpose                                                                                                  |
-| --------------- | -------------------------------------------------------------------------------------------------------- |
-| `bin/`          | Main `dotfiles` CLI and utility scripts (`is-apple-silicon`, `command-exists`, etc.)                     |
-| `scripts/`      | Install helpers — `echos.sh` (colored output), `requirers.sh` (package installers), `install_prezto.zsh` |
-| `packages/`     | Package lists: `brew.list`, `cask.list`, `npm.list`, `mas.list`, `code.list`, `tap.list`                 |
-| `macos/`        | System defaults scripts — `defaults.sh`, `defaults-*.sh` (per-app), `dock.sh`                            |
-| `runcom/`       | Dotfiles stowed to `~/` — `.zshrc`, `.zprofile`, `.vimrc`, `.zpreztorc`, etc.                            |
-| `config/`       | XDG config stowed to `~/.config/` — `git/`, `nvim/`, `karabiner/`, `starship/`, `thefuck/`, etc.         |
-| `modules/`      | Git submodules — `prezto/`, `prezto-contrib/`, `zsh/` plugins, `stevenblack-hosts/`                      |
-| `system/`       | Shell config sourced by `.zshrc` — `.alias`, `.env`, `.path`, `.function*`, `.fzf`, `.prompt`, etc.      |
-| `claude/`       | Claude Code config — `marketplaces.list`, `plugins.list`, `settings.template.json`, `rules/`, `hooks/`   |
-| `apps/`         | App themes — Terminal, Xcode, Warp, GitKraken, VLC, VS Code                                              |
-| `fonts/`        | Powerline fonts with `install.sh`                                                                        |
-| `profiles/`     | Machine-specific config — `default.zsh`, `personal.zsh`, `work.zsh`, `local.zsh` (gitignored)            |
-| `launchagents/` | macOS LaunchAgents — mackup auto-backup every hour                                                       |
-| `completions/`  | Zsh completions (e.g., `_fnm`)                                                                           |
-| `Brewfile`      | Homebrew bundle manifest (taps, formulae, casks, MAS apps)                                               |
+| Directory       | Purpose                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| `bin/`          | The `dotfiles` CLI and its subcommand scripts (`dotfiles-doctor`, `dotfiles-claude`, `dotfiles-test`, …)     |
+| `scripts/`      | Install helpers — `echos.sh` (coloured output), `requirers.sh` (idempotent installers), `install_claude.sh`, `install_prezto.zsh`, and `lib/` (`fs.sh`, `lib/lists.sh`, `ssh.sh`) |
+| `packages/`     | Lists for what Homebrew does not cover: `code.list` (Node CLIs live in `config/mise/config.toml`)            |
+| `macos/`        | System defaults scripts — `defaults.sh`, `defaults-*.sh` (per app), `dock.sh`                               |
+| `runcom/`       | Dotfiles stowed to `~/` — `.zshrc`, `.zprofile`, `.zpreztorc`, `.profile`                                    |
+| `config/`       | XDG config stowed to `~/.config/` — `git/`, `nvim/`, `karabiner/`, `prettier/`, `husky/`, `starship/`        |
+| `modules/`      | Git submodules — `prezto/` (the zsh framework). App themes are submodules under `apps/`                      |
+| `system/`       | Shell config sourced by `.zshrc` — `.alias`, `.env`, `.path`, `.function*`, `.fzf`, `.prompt`, …             |
+| `claude/`       | Claude Code bootstrap manifests — `marketplaces.list`, `plugins.list`, `settings.template.json`, `rules/`, `hooks/`, `statusline.sh`, `vault-templates/` |
+| `apps/`         | App themes — Terminal, Xcode, Warp, GitKraken, VLC, VS Code                                                  |
+| `fonts/`        | Powerline fonts with `install.sh`                                                                            |
+| `profiles/`     | Machine-specific config — `default.zsh`, `personal.zsh`, `work.zsh`, `local.zsh` (gitignored)                |
+| `launchagents/` | macOS LaunchAgents, including a `disabled/` set installed only on request                                     |
+| `completions/`  | Zsh completions (for example `_fnm`)                                                                          |
+| `tests/`        | The bash test suites and their shared harness — see [testing-and-ci.md](testing-and-ci.md)                   |
+| `docs/`         | `agents/` (these docs), `plans/` (current plans; `plans/archive/` is historical), `solutions/` (point-in-time write-ups) |
+| `resources/`    | Images used by the README                                                                                     |
+| `Brewfile`      | Homebrew bundle manifest — taps, formulae, casks, Mac App Store apps                                          |
+
+`AGENTS.md` is the entry point; `CLAUDE.md` is a symlink to it.
 
 ## GNU Stow Linking
 
@@ -30,21 +35,23 @@
 
 To restore: `./bin/dotfiles unlink <timestamp>`
 
+Note that `install --claude` does **not** stow. It copies `claude/hooks/`,
+`claude/rules/` and `claude/statusline.sh` into `~/.claude/`, backing up any
+file that differs to `<name>.bak.<epoch>` first. Use `dotfiles claude diff` to
+see what has drifted before re-running it.
+
 ## Submodules
 
-External dependencies are git submodules in `modules/`:
+External dependencies are git submodules, all shallow:
 
-- **Prezto** + contrib modules (shell framework)
-- **zsh plugins** (zsh-thefuck, zsh-lazy-load)
-- **StevenBlack hosts** (ad-blocking `/etc/hosts`)
-- **Vundle** (Vim plugin manager, in `runcom/.vim/bundle/Vundle.vim`)
+- **Prezto** in `modules/prezto` (shell framework)
+- **App themes** under `apps/` — Nord for Terminal and Xcode, Warp themes,
+  GitKraken themes
 
-Update: `./bin/dotfiles update` or `git submodule update --remote --recursive --merge`
+Always `git submodule update --init --recursive` after a clone. Update with
+`./bin/dotfiles update`.
 
-## System Detection
+## Platform
 
-Both Intel and Apple Silicon supported:
-
-- `bin/is-apple-silicon` — returns 0 on AS
-- Homebrew: `/opt/homebrew` (AS) or `/usr/local` (Intel)
-- Detected automatically in shell config via `$HOMEBREW_PREFIX`
+Apple silicon only. `HOMEBREW_PREFIX` is `/opt/homebrew`. Scripts that depend
+on it exit early on any other architecture.

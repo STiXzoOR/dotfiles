@@ -2,20 +2,26 @@
 # Note: compinit is handled by Prezto's completion module
 # HOMEBREW_PREFIX is set by system/.path
 
-# Dotfiles completion
+# Dotfiles completion. Keep in sync with sub_help in bin/dotfiles.
 _dotfiles_completions() {
-  compadd 'clean' 'configure' 'dock' 'edit' 'help' 'install' 'link' 'macos' 'open' 'unlink' 'update'
+  compadd 'baseline' 'cheatsheet' 'clean' 'configure' 'doctor' 'edit' 'help' \
+    'hooks' 'install' 'link' 'open' 'profiler' 'secrets' 'setup' 'test' \
+    'unlink' 'update'
 }
 compdef _dotfiles_completions dotfiles
 
-# npm completion - cached for performance
-# Regenerate with: npm completion > ~/.cache/npm-completion.zsh
+# npm completion - cached, because `npm completion` costs about 90 ms.
+# Both the source and the regeneration live inside the guard: without it an
+# uninstalled npm still offered completions and an upgraded one never
+# refreshed them (audit shell#19).
 _npm_completion_file="${XDG_CACHE_HOME:-$HOME/.cache}/npm-completion.zsh"
-if [[ ! -f "$_npm_completion_file" ]] && (( $+commands[npm] )); then
-  mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
-  npm completion > "$_npm_completion_file" 2>/dev/null
+if (( $+commands[npm] )); then
+  if [[ ! -s "$_npm_completion_file" ]] || [[ "$commands[npm]" -nt "$_npm_completion_file" ]]; then
+    mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+    npm completion >| "$_npm_completion_file" 2>/dev/null
+  fi
+  [[ -s "$_npm_completion_file" ]] && source "$_npm_completion_file"
 fi
-[[ -f "$_npm_completion_file" ]] && source "$_npm_completion_file"
 unset _npm_completion_file
 
 # fzf completion trigger (completions loaded via .fzf using fzf --zsh)

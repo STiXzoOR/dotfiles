@@ -17,7 +17,7 @@ function gen-git-ignore() {
 # Get weather information for a given country/city
 # usage: weather Cyprus
 function weather() {
-  curl "wttr.in/${1:-}"
+  curl "https://wttr.in/${1:-}"
 }
 
 # Use Mac OS Preview to open a man page in a more handsome format

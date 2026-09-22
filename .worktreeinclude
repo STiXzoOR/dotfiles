@@ -1,0 +1,10 @@
+# .worktreeinclude — untracked paths to copy into a new git worktree.
+#
+# One path per line, relative to the repo root; blank lines and # comments are
+# ignored. A fresh worktree starts without anything git does not track, which
+# silently changes behaviour for the gitignored files this repo depends on:
+# profiles/local.zsh, claude/*.local.list, and any .env a tool expects.
+#
+# Deliberately empty. Add a path here only when a worktree genuinely needs it,
+# and never add a file that carries a secret -- a worktree is as public as the
+# directory it is created in.

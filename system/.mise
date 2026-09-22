@@ -1,0 +1,19 @@
+# mise shims on PATH.
+#
+# Sourced from .profile right after .path, so the shims land in front of
+# everything .path prepended. This is the whole of mise's presence in the
+# login path: no `mise activate`, no eval, no subprocess. A shim is a small
+# script that asks mise, at exec time, which version this directory wants, so
+# `.nvmrc` and `mise.toml` are honoured without a per-prompt hook.
+#
+# Costing one PATH entry instead of a precmd hook is not only about startup
+# time. Activation lives in .zshrc, which git hooks, Claude Code's SessionEnd
+# hooks, launchd jobs and GUI applications never read; the shims directory is
+# a fixed path that all of them inherit. Opt into activation with
+# DOTFILES_MISE_ACTIVATE=1 (see .zshrc) if you need mise's [env] blocks.
+#
+# prepend-path (system/.function) is a no-op when the directory is absent, so
+# a machine where `mise install` has never run is unaffected and system/.fnm
+# keeps resolving node.
+
+prepend-path "$HOME/.local/share/mise/shims"

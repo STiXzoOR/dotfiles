@@ -1,3 +1,8 @@
+# VS Code extensions, installed by `dotfiles install --packages`.
+#
+# github.copilot is a hard dependency of github.copilot-chat: keep the pair
+# together. Lines starting with # and blank lines are ignored.
+
 aaron-bond.better-comments
 alefragnani.project-manager
 anthropic.claude-code
@@ -24,15 +29,14 @@ editorconfig.editorconfig
 esbenp.prettier-vscode
 figma.figma-vscode-extension
 foxundermoon.shell-format
+github.copilot
 github.copilot-chat
 github.vscode-github-actions
-heybourn.headwind
 iulian-radu-at.find-unused-exports
 ivhernandez.vscode-plist
 jock.svg
 kevinrose.vsc-python-indent
 l-igh-t.vscode-theme-seti-folder
-lightyen.tailwindcss-intellisense-twin
 llvm-vs-code-extensions.lldb-dap
 marlinfirmware.auto-build
 mgmcdermott.vscode-language-babel

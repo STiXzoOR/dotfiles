@@ -1,155 +1,191 @@
 [user]
-	name = Neoptolemos Kyriakou
-	email = neostixz@gmail.com
-
-[github]
-	user = STiXzoOR
+    # Identity lives in config.local (gitignored): this repo is public, and a
+    # hardcoded name/email makes every fresh clone commit as someone else.
+    # git config --file ~/.config/git/config.local user.name "Your Name"
+    # git config --file ~/.config/git/config.local user.email "you@example.com"
+    # The GitHub handle belongs there too:
+    # git config --file ~/.config/git/config.local github.user "your-handle"
 
 [color]
-	ui = auto
+    ui = auto
 
 [color "status"]
-	added = 036
-	changed = 003
-	untracked = 105
+    added = 036
+    changed = 003
+    untracked = 105
 
 [core]
-	excludesfile = ~/.config/git/ignore
-	editor = code --wait
-	filemode = false
-	trustctime = false
-	autocrlf = input
-  safecrlf = warn
-	untrackedCache = true
-	pager = delta
-	ignorecase = false
-	hooksPath = .githooks
+    excludesfile = ~/.config/git/ignore
+    editor = code --wait
+    filemode = false
+    trustctime = false
+    autocrlf = input
+    safecrlf = warn
+    untrackedCache = true
+    pager = delta
+    ignorecase = false
+    hooksPath = .githooks
 
 [credential]
-	helper = osxkeychain
+    helper = osxkeychain
 
 [grep]
-	lineNumber = true
+    lineNumber = true
 
 [help]
-	autocorrect = 20
+    # prompt, not a number: a numeric autocorrect runs a *guessed* command
+    # after the timeout, which is a real hazard on a mistyped destructive one.
+    autocorrect = prompt
 
 [init]
-	defaultBranch = main
+    defaultBranch = main
 
 [push]
-	default = simple
-	followTags = true
-	autoSetupRemote = true
+    default = simple
+    followTags = true
+    autoSetupRemote = true
 
 [fetch]
-	prune = true
+    prune = true
+    fsckObjects = true
+
+[transfer]
+    # Validate object integrity on the wire: the defence against crafted
+    # objects from a hostile remote.
+    fsckObjects = true
+
+[receive]
+    fsckObjects = true
+
+[protocol "file"]
+    # git's post-CVE-2022-39253 default: blocks file:// submodules during an
+    # automated clone --recurse while still allowing explicit local use.
+    allow = user
+
+[gpg]
+    # SSH commit signing. The scaffold lives here; the key reference stays in
+    # config.local because it is machine-local and this repo is public:
+    #   git config --file ~/.config/git/config.local \
+    #     user.signingKey "key::$(cat ~/.ssh/id_ed25519.pub)"
+    #   git config --file ~/.config/git/config.local commit.gpgsign true
+    #   git config --file ~/.config/git/config.local tag.gpgsign true
+    # Then upload the same public key to GitHub a *second* time with type
+    # "Signing key" -- an authentication key does not verify signatures --
+    # and turn on vigilant mode. Signing stays off until you do all three,
+    # otherwise every commit on a fresh clone fails.
+    format = ssh
+
+[gpg "ssh"]
+    allowedSignersFile = ~/.ssh/allowed_signers
 
 [pull]
-	rebase = true
+    rebase = true
 
 [rebase]
-	autoStash = true
+    autoStash = true
 
 [rerere]
-  enabled = 1
+    enabled = 1
 
 [interactive]
-  diffFilter = delta --color-only
+    diffFilter = delta --color-only
 
 [delta]
-  side-by-side = true
-  line-numbers-left-format = ""
-  line-numbers-right-format = "│ "
-	syntax-theme = Nord
+    side-by-side = true
+    line-numbers-left-format = ""
+    line-numbers-right-format = "│ "
+    syntax-theme = Nord
 
 [diff]
-	renames = copies
-	indentHeuristic = true
-	tool = Kaleidoscope
-	algorithm = histogram
+    renames = copies
+    indentHeuristic = true
+    tool = Kaleidoscope
+    algorithm = histogram
 
 [difftool]
-	prompt = false
+    prompt = false
 
 [difftool "Kaleidoscope"]
-	cmd = ksdiff --partial-changeset --relative-path \"$MERGED\" -- \"$LOCAL\" \"$REMOTE\"
+    cmd = ksdiff --partial-changeset --relative-path \"$MERGED\" -- \"$LOCAL\" \"$REMOTE\"
 
 [difftool "sourcetree"]
-	cmd = ksdiff -w \"$LOCAL\" \"$REMOTE\"
-	path =
+    cmd = ksdiff -w \"$LOCAL\" \"$REMOTE\"
+    path =
 
 [difftool "vscode"]
-	cmd = code --wait --diff $LOCAL $REMOTE
-	path =
+    cmd = code --wait --diff $LOCAL $REMOTE
+    path =
 
 [merge]
-	tool = Kaleidoscope
-	conflictstyle = zdiff3
-	defaultToUpstream = true
+    tool = Kaleidoscope
+    conflictstyle = zdiff3
+    defaultToUpstream = true
 
 [mergetool]
-	prompt = false
+    prompt = false
 
 [mergetool "Kaleidoscope"]
-	cmd = ksdiff --merge --output \"$MERGED\" --base \"$BASE\" -- \"$LOCAL\" --snapshot \"$REMOTE\" --snapshot
-	trustExitCode = true
+    cmd = ksdiff --merge --output \"$MERGED\" --base \"$BASE\" -- \"$LOCAL\" --snapshot \"$REMOTE\" --snapshot
+    trustExitCode = true
 
 [mergetool "sourcetree"]
-	cmd = ksdiff --merge --output \"$MERGED\" --base \"$BASE\" -- \"$LOCAL\" --snapshot \"$REMOTE\" --snapshot
-	trustExitCode = true
+    cmd = ksdiff --merge --output \"$MERGED\" --base \"$BASE\" -- \"$LOCAL\" --snapshot \"$REMOTE\" --snapshot
+    trustExitCode = true
 
 [mergetool "vscode"]
-	cmd = code --wait $MERGED
-	trustExitCode = true
+    cmd = code --wait $MERGED
+    trustExitCode = true
 
 [versionsort]
-	suffix = -alpha
-	suffix = -beta
-	suffix = -canary
-	suffix = -rc
-	suffix = -next
+    suffix = -alpha
+    suffix = -beta
+    suffix = -canary
+    suffix = -rc
+    suffix = -next
 
 [advice]
-	detachedHead = false
+    detachedHead = false
 
 [alias]
-	amend = commit --amend --reuse-message=HEAD
-	br = branch
-	ci = commit
-	co = checkout
-	contrib = shortlog --summary --numbered
-	cr = clone --recursive
-	df = diff --word-diff
-	g = grep --break --heading --line-number
-	l = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
-	ld = "!sh -c \"git log --since '${1:-1} days ago' --oneline --author $(git config user.email)\" -"
-	lg = log -p
-	ll = log --pretty=oneline --graph --abbrev-commit
-	lm = log --pretty=format:'* %s (%h)'
-	patch = !git --no-pager diff --no-color
-	p = push
-	pf = push --force
-	pr = "!f() { git fetch -fu ${2:-origin} refs/pull/$1/head:pr/$1 && git checkout pr/$1; }; f"
-	show-ignored = "! git clean -ndX | perl -pe 's/Would remove/Ignored:/'"
-	st = status
-	stl = ls-files -m -o --exclude-standard
-	sts = status -sb
-	unstage = reset HEAD
-  upm = !git fetch upstream && git merge upstream/main
-  up = pull --rebase --autostash
+    amend = commit --amend --reuse-message=HEAD
+    br = branch
+    ci = commit
+    co = checkout
+    contrib = shortlog --summary --numbered
+    cr = clone --recursive
+    df = diff --word-diff
+    g = grep --break --heading --line-number
+    l = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+    ld = "!sh -c 'git log --since \"${1:-1} days ago\" --oneline --author \"$(git config user.email)\"' -"
+    lg = log -p
+    ll = log --pretty=oneline --graph --abbrev-commit
+    lm = log --pretty=format:'* %s (%h)'
+    patch = !git --no-pager diff --no-color
+    p = push
+    pf = push --force
+    pr = "!f() { git fetch -fu ${2:-origin} refs/pull/$1/head:pr/$1 && git checkout pr/$1; }; f"
+    show-ignored = "! git clean -ndX | perl -pe 's/Would remove/Ignored:/'"
+    st = status
+    stl = ls-files -m -o --exclude-standard
+    sts = status -sb
+    unstage = reset HEAD
+    upm = !git fetch upstream && git merge upstream/main
+    up = pull --rebase --autostash
 
 [branch]
-	sort = -committerdate
+    sort = -committerdate
 
 [column]
-	ui = auto
+    ui = auto
 
-[dotfiles]
-	lastupdate = 2026-07-22 14:25:03
 [credential "https://github.com"]
-	helper = 
-	helper = !/opt/homebrew/bin/gh auth git-credential
+    helper =
+    helper = !gh auth git-credential
+
 [credential "https://gist.github.com"]
-	helper = 
-	helper = !/opt/homebrew/bin/gh auth git-credential
+    helper =
+    helper = !gh auth git-credential
+
+[include]
+    # Machine-local identity and overrides; never tracked.
+    path = config.local

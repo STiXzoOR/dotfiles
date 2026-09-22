@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
+#
+# Sourced by `dotfiles configure --defaults`, never executed: no `set -e`.
+
 DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
 
 source "$DOTFILES_DIR/scripts/echos.sh"
@@ -8,14 +12,20 @@ bot "Xcode"
 ###############################################################################
 
 running "Create xcode custom theme folder"
-CUSTOM_THEME_DIR="$HOME/Library/Developer/Xcode/UserData/FontAndColorThemes"
-mkdir -p "$CUSTOM_THEME_DIR/"
-ok
+XCODE_THEME_DIR="$HOME/Library/Developer/Xcode/UserData/FontAndColorThemes"
+if mkdir -p "$XCODE_THEME_DIR/"; then
+  ok
+else
+  error "could not create $XCODE_THEME_DIR"
+fi
 
 running "Install nord theme"
-rm -f "$CUSTOM_THEME_DIR/Nord.xccolortheme" 2>/dev/null
-ln -s "$DOTFILES_DIR/apps/xcode/nord_theme/src/Nord.xccolortheme" "$CUSTOM_THEME_DIR/Nord.xccolortheme"
-ok
+rm -f "$XCODE_THEME_DIR/Nord.xccolortheme" 2>/dev/null
+if ln -sf "$DOTFILES_DIR/apps/xcode/nord_theme/src/Nord.xccolortheme" "$XCODE_THEME_DIR/Nord.xccolortheme"; then
+  ok
+else
+  error "could not link the Nord theme into $XCODE_THEME_DIR"
+fi
 
 running "Change theme to nord"
 defaults write com.apple.dt.Xcode XCFontAndColorCurrentTheme -string Nord.xccolortheme

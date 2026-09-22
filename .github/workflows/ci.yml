@@ -6,123 +6,205 @@ on:
   pull_request:
     branches: [main, master]
 
+# A lint-and-test workflow reads the repository and nothing else. With no
+# permissions block GITHUB_TOKEN inherits the repository default, which on a
+# public repo is commonly write.
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pin the linters so a commit that passes .githooks/pre-commit locally
+  # cannot fail here on a version difference alone. Ubuntu 24.04 ships
+  # shellcheck 0.9; the machine this repo targets runs 0.11.
+  SHELLCHECK_VERSION: "0.11.0"
+  SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+  SHELLCHECK_EXCLUDES: "SC1090,SC1091,SC2034,SC2119,SC2154"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
 jobs:
   lint:
     name: Lint Shell Scripts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
-          submodules: recursive
+          # No submodule is linted here, and a persisted token in
+          # .git/config would hand repo write to every later step.
+          persist-credentials: false
 
       - name: Install shellcheck
-        run: sudo apt-get install -y shellcheck
-
-      - name: Run shellcheck on bash scripts
         run: |
-          shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 -s bash \
-            bin/dotfiles \
-            bin/dotfiles-secrets \
-            bin/dotfiles-setup \
-            scripts/*.sh \
-            macos/*.sh
+          set -euo pipefail
+          base="https://github.com/koalaman/shellcheck/releases/download"
+          curl -fsSL -o /tmp/shellcheck.tar.xz \
+            "$base/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          echo "${SHELLCHECK_SHA256}  /tmp/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          sudo install -m 0755 \
+            "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
+      # Discover by shebang rather than a hardcoded list: the old glob
+      # `scripts/*.sh` never matched scripts/lib/, and new bin/ tools were
+      # invisible until someone remembered to add them here.
+      - name: Run shellcheck on every bash script
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(
+            git ls-files | while IFS= read -r f; do
+              [ -f "$f" ] || continue
+              head -1 "$f" | grep -qE '^#!.*bash' && echo "$f"
+            done
+          )
+          printf 'linting %d bash files\n' "${#files[@]}"
+          printf '  %s\n' "${files[@]}"
+          shellcheck -e "$SHELLCHECK_EXCLUDES" -s bash "${files[@]}"
 
       - name: Check bash syntax
         run: |
-          for file in bin/dotfiles scripts/*.sh macos/*.sh; do
-            if [[ -f "$file" ]]; then
-              bash -n "$file" || exit 1
-            fi
+          set -euo pipefail
+          git ls-files | while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            head -1 "$f" | grep -qE '^#!.*bash' || continue
+            bash -n "$f"
           done
 
   syntax:
     name: Validate Zsh Syntax
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
-          submodules: recursive
+          persist-credentials: false
 
       - name: Install zsh
-        run: sudo apt-get install -y zsh
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zsh
 
       - name: Check zsh syntax
-        run: |
-          files=(
-            runcom/.zshrc
-            runcom/.zprofile
-            runcom/.zlogin
-            runcom/.profile
-            runcom/.zpreztorc
-            system/.alias
-            system/.bindings
-            system/.completion
-            system/.env
-            system/.fix
-            system/.fnm
-            system/.function
-            system/.function_fs
-            system/.function_fun
-            system/.function_network
-            system/.function_text
-            system/.fzf
-            system/.grep
-            system/.path
-            system/.pnpm
-            system/.starship
-            system/.zoxide
-            bin/dotfiles-test
-            bin/dotfiles-doctor
-            bin/dotfiles-cheatsheet
-            bin/dotfiles-profiler
-          )
+        run: bash .github/scripts/zsh-syntax.sh
 
-          for file in "${files[@]}"; do
-            if [[ -f "$file" ]]; then
-              echo "Checking $file..."
-              zsh -n "$file" || exit 1
-            fi
-          done
+  secrets:
+    name: Scan for Credentials
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          base="https://github.com/gitleaks/gitleaks/releases/download"
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            "$base/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # The working tree, not the history: the 2026-09 audit swept the
+      # history by hand and found no credential, and rewriting it is a
+      # separate decision. What this job must stop is a new one landing.
+      - name: Scan the working tree
+        run: |
+          set -euo pipefail
+          gitleaks dir . --no-banner --redact --exit-code 1
 
   test:
     name: Run Tests
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
+          # The suite reads modules/prezto. No other job needs a submodule.
           submodules: recursive
+          persist-credentials: false
 
       - name: Setup Homebrew
+        # Third-party action, pinned by commit SHA. A tag is a mutable
+        # pointer: in March 2025 every tag of tj-actions/changed-files was
+        # repointed at a commit that dumped runner credentials into the logs.
         uses: Homebrew/actions/setup-homebrew@cced187498280712e078aaba62dc13a3e9cd80bf
 
       - name: Install dependencies
         run: |
-          brew install shellcheck coreutils
+          set -euo pipefail
+          brew install shellcheck coreutils gitleaks
 
-      - name: Run test suite
+      - name: Run the zsh test suite
         run: |
+          set -euo pipefail
           chmod +x bin/dotfiles-test
           ./bin/dotfiles-test --quick
-        env:
-          DOTFILES_DIR: ${{ github.workspace }}
+
+      # tests/run.sh is the single entry point for the bash suites, so a new
+      # tests/*.sh file is picked up without touching this workflow.
+      - name: Run the bash test suites
+        run: |
+          set -euo pipefail
+          bash tests/run.sh
+
+      # The same discovery as the Ubuntu job, run against the zsh macOS
+      # actually ships. Ubuntu's build has diverged from 5.9 before.
+      - name: Check zsh syntax with the macOS zsh
+        run: bash .github/scripts/zsh-syntax.sh
+
+      # The hook ships in this repo and nothing ran it, so every finding it
+      # guards against shipped untested. A clean tree must pass; a staged
+      # credential must be rejected.
+      - name: Exercise the pre-commit hook
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          git init -q "$work"
+          cd "$work"
+          git config user.email ci@example.invalid
+          git config user.name CI
+          mkdir -p .githooks tests/fixtures
+          cp "$GITHUB_WORKSPACE/.githooks/pre-commit" .githooks/pre-commit
+          cp "$GITHUB_WORKSPACE/tests/fixtures/make-secrets.sh" tests/fixtures/
+          printf '#!/usr/bin/env bash\necho ok\n' > good.sh
+          git add good.sh tests/fixtures/make-secrets.sh
+          bash .githooks/pre-commit
+          bash tests/fixtures/make-secrets.sh > leak.env
+          git add leak.env
+          if bash .githooks/pre-commit; then
+            echo "the hook accepted a staged credential" >&2
+            exit 1
+          fi
+          echo "the hook rejected the staged credential, as it should"
 
   brewfile:
     name: Validate Brewfile
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Setup Homebrew
         uses: Homebrew/actions/setup-homebrew@cced187498280712e078aaba62dc13a3e9cd80bf
 
       - name: Validate Brewfile syntax
         run: |
-          # Just check that the Brewfile is valid syntax
-          brew bundle check --file=Brewfile 2>&1 || true
-          # The check will "fail" because packages aren't installed
-          # but syntax errors would cause a different error
+          set -euo pipefail
+          # The old step ran `brew bundle check` with its failure masked,
+          # so it could not fail and validated nothing. `brew bundle list`
+          # parses the file and exits non-zero on a syntax error, which is
+          # the check that was actually wanted.
           brew bundle list --file=Brewfile > /dev/null
+          echo "Brewfile parses"

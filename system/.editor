@@ -1,0 +1,18 @@
+# Default editor.
+#
+# This lives in its own file, loaded immediately after system/.path, because
+# the answer depends on PATH. In system/.env -- which .profile sources first,
+# so that XDG_CACHE_HOME exists before .path needs it -- Homebrew is not on
+# PATH yet, so nvim is invisible and every clean Apple-silicon bootstrap would
+# settle on the unconfigured system vim (WS-C review 1, finding 1).
+#
+# ${+commands[nvim]} is a hash lookup with no subprocess. The command -v branch
+# is there because .profile sources this file for bash too, and bash reports
+# the zsh form as a bad substitution.
+if [[ -n "$ZSH_VERSION" ]]; then
+  if (( ${+commands[nvim]} )); then export EDITOR="nvim"; else export EDITOR="vim"; fi
+elif command -v nvim >/dev/null 2>&1; then
+  export EDITOR="nvim"
+else
+  export EDITOR="vim"
+fi

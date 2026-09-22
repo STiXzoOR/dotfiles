@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+#
+# tests/fixtures/security-stub -- stands in for /usr/bin/security.
+#
+# tests/secrets.sh copies this into a sandbox as `security` and puts that
+# directory first on PATH, so bin/dotfiles-secrets exercises its real code
+# paths without any keychain existing. Nothing here calls the OS: no
+# create-keychain, no unlock-keychain, no login keychain, no authorisation
+# prompt on the user's terminals. An earlier version of the suite created a
+# real keychain and made every open terminal ask "security wants to access
+# keychain t".
+#
+# Items live in $DOTFILES_SECURITY_STUB_DIR/<keychain>, one `account<TAB>value`
+# line each. The keychain is the trailing positional argument that the real
+# security takes, or `login` when none is given, so DOTFILES_KEYCHAIN picks
+# the store the way it picks a keychain. Only one service is ever used by the
+# caller, so items are keyed on the account alone.
+#
+# Exit codes are the ones the real tool returns, because bin/dotfiles-secrets
+# distinguishes them:
+#   0   ok
+#   36  the keychain is locked (simulated by a <store>.locked marker file)
+#   44  no such item
+#   45  the item already exists and -U was not given
+#   78  this stub was asked for something it does not implement
+#
+# shellcheck shell=bash
+set -uo pipefail
+
+: "${DOTFILES_SECURITY_STUB_DIR:?security-stub: DOTFILES_SECURITY_STUB_DIR is not set}"
+mkdir -p "$DOTFILES_SECURITY_STUB_DIR" || exit 78
+
+cmd="${1:-}"
+shift || true
+
+account=""
+service=""
+value=""
+have_value=0
+prompted=0
+update=0
+want_password=0
+keychain=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -a)
+      account="${2:-}"
+      shift 2 || exit 78
+      ;;
+    -s)
+      service="${2:-}"
+      shift 2 || exit 78
+      ;;
+    -U)
+      update=1
+      shift
+      ;;
+    -g)
+      want_password=1
+      shift
+      ;;
+    -w)
+      # `-w` takes a value on add/delete but never on find, and on add it
+      # means "prompt on the terminal" when it is the final argument. That is
+      # the whole reason the real tool puts it last.
+      case "$cmd" in
+        find-generic-password)
+          want_password=1
+          shift
+          ;;
+        *)
+          if [ "$#" -eq 1 ]; then
+            prompted=1
+            shift
+          else
+            value="${2:-}"
+            have_value=1
+            shift 2
+          fi
+          ;;
+      esac
+      ;;
+    -*)
+      printf 'security-stub: unimplemented option %s\n' "$1" >&2
+      exit 78
+      ;;
+    *)
+      keychain="$1"
+      shift
+      ;;
+  esac
+done
+
+[ -n "$keychain" ] || keychain="login"
+store="$DOTFILES_SECURITY_STUB_DIR/$(printf '%s' "$keychain" | tr '/ ' '__')"
+
+# A redacted call log: the command, the account, how the password was supplied
+# and which keychain was named. tests/secrets.sh asserts on this to prove that
+# `set` never puts a value on an argv and that DOTFILES_KEYCHAIN reaches every
+# call. The value itself is never logged.
+_how=NONE
+[ "$have_value" -eq 1 ] && _how=ARGV
+[ "$prompted" -eq 1 ] && _how=PROMPT
+printf '%s -s %s -a %s -w %s kc=%s\n' \
+  "$cmd" "${service:-NONE}" "${account:-NONE}" "$_how" "$keychain" \
+  >> "$DOTFILES_SECURITY_STUB_DIR/calls.log"
+
+if [ -e "$store.locked" ] && [ "$want_password" -eq 1 ]; then
+  printf 'security: SecKeychainSearchCopyNext: User interaction is not allowed.\n' >&2
+  exit 36
+fi
+
+_lookup() {
+  [ -f "$store" ] || return 1
+  awk -F'\t' -v a="$account" '$1 == a { print substr($0, length(a) + 2); hit = 1 }
+                              END { exit !hit }' "$store"
+}
+
+_drop() {
+  [ -f "$store" ] || return 0
+  awk -F'\t' -v a="$account" '$1 != a' "$store" > "$store.tmp" && mv "$store.tmp" "$store"
+}
+
+case "$cmd" in
+  add-generic-password)
+    [ -n "$account" ] && [ -n "$service" ] || exit 78
+    if [ -e "$store.locked" ]; then
+      printf 'security: The user name or passphrase you entered is not correct.\n' >&2
+      exit 36
+    fi
+    if _lookup > /dev/null 2>&1 && [ "$update" -eq 0 ]; then
+      printf 'security: The specified item already exists in the keychain.\n' >&2
+      exit 45
+    fi
+    if [ "$prompted" -eq 1 ]; then
+      # The real security reads both lines straight off the terminal, which is
+      # the point: the value never passes through the calling process.
+      local_v1=""
+      local_v2=""
+      printf 'password data for new item: ' >&2
+      IFS= read -rs local_v1 < /dev/tty || exit 78
+      printf '\n' >&2
+      printf 'retype password for new item: ' >&2
+      IFS= read -rs local_v2 < /dev/tty || exit 78
+      printf '\n' >&2
+      if [ "$local_v1" != "$local_v2" ]; then
+        printf 'security: The passwords do not match.\n' >&2
+        exit 1
+      fi
+      value="$local_v1"
+    elif [ "$have_value" -eq 0 ]; then
+      exit 78
+    fi
+    _drop
+    printf '%s\t%s\n' "$account" "$value" >> "$store"
+    exit 0
+    ;;
+
+  find-generic-password)
+    [ -n "$account" ] || exit 78
+    if ! out=$(_lookup); then
+      printf 'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.\n' >&2
+      exit 44
+    fi
+    if [ "$want_password" -eq 1 ]; then
+      printf '%s\n' "$out"
+    else
+      # Attributes are readable while the data is not; bin/dotfiles-secrets
+      # relies on exactly that to tell "missing" from "locked".
+      printf 'keychain: "%s"\n' "$keychain"
+      printf 'class: "genp"\n'
+      printf 'attributes:\n    "acct"<blob>="%s"\n    "svce"<blob>="%s"\n' "$account" "$service"
+    fi
+    exit 0
+    ;;
+
+  delete-generic-password)
+    [ -n "$account" ] || exit 78
+    if [ -e "$store.locked" ]; then
+      exit 36
+    fi
+    if ! _lookup > /dev/null 2>&1; then
+      printf 'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.\n' >&2
+      exit 44
+    fi
+    _drop
+    exit 0
+    ;;
+
+  *)
+    printf 'security-stub: unimplemented command %s\n' "$cmd" >&2
+    exit 78
+    ;;
+esac

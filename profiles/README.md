@@ -22,6 +22,35 @@ This directory contains machine-specific configurations that are loaded based on
 2. `profiles/$DOTFILES_PROFILE.zsh` OR `profiles/$(hostname -s).zsh`
 3. `profiles/local.zsh` (always loaded if exists, for machine-specific overrides)
 
+## Post-Prezto Profiles (`*.post.zsh`)
+
+`profiles/*.zsh` are sourced from `.zprofile`, which runs **before** Prezto and
+therefore before `compinit`. Anything that needs `compdef` has to go in a
+`.post.zsh` file instead; `runcom/.zshrc` sources those at the very end, after
+Prezto:
+
+1. `profiles/$DOTFILES_LOADED_PROFILE.post.zsh`
+2. `profiles/local.post.zsh`
+
+Put here anything that registers completions or key bindings:
+
+```zsh
+# profiles/local.post.zsh
+
+# gcloud completion. Sourced from .zprofile this runs a second full compinit,
+# because the guard inside completion.zsh.inc only short-circuits once compdef
+# exists.
+source "$HOME/google-cloud-sdk/completion.zsh.inc"
+
+# Any other `<tool> init zsh` or `<tool> completion zsh` output.
+```
+
+**PATH additions do not belong here.** `.zprofile` normalises and deduplicates
+PATH right after `.profile` returns, so an entry added from a `.post.zsh` file
+escapes both the `/../` cleanup and `typeset -U`. Keep those in the plain
+`*.zsh` profile, which runs before that step — gcloud's `path.zsh.inc` stays in
+`local.zsh`, and only `completion.zsh.inc` moves.
+
 ## Example Profile
 
 ```zsh

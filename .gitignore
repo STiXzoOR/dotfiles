@@ -12,26 +12,47 @@ apps/gitkraken/profiles/*/**
 # NOTE: the live profile holds userEmail/userName and every local repo path.
 # It is seeded from apps/gitkraken/profile.template by macos/defaults-gitkraken.sh.
 config/karabiner/automatic_backups
-config/spicetify/*
-!config/spicetify/Themes
-!config/spicetify/*.ini
-runcom/.vim/backup/*
-!runcom/.vim/backup/.gitignore
-runcom/.vim/temp/*
-!runcom/.vim/temp/.gitignore
-runcom/.vim/.netrwhist
-runcom/.vim/bundle/*
-!runcom/.vim/bundle/.gitignore
-!runcom/.vim/bundle/Vundle.vim
 
 # Claude Code project config
 config/.claude/
 
 # Machine-specific profile (contains secrets/local config)
 profiles/local.zsh
+profiles/local.post.zsh
 
 # Brewfile lock (optional - can be committed for reproducibility)
 Brewfile.lock.json
 
 # Private/work Claude marketplaces + plugins (repo is public)
 claude/*.local.list
+
+# Machine-local git identity (this repo is public)
+config/git/config.local
+
+# Local logs -- do not rely on the user's global gitignore for these
+*.log
+.claude/
+
+# Shell state that must never be committed (runcom/ is stowed into ~)
+runcom/.zsh_history
+runcom/.zcompdump*
+
+# direnv / dotenv at the repo root (system/.env is a tracked shell file, so
+# these are anchored)
+/.envrc
+/.env
+/.env.*
+/.direnv/
+
+# Local hosts additions merged by `dotfiles install --hosts`
+system/hosts.local
+
+# Private defaults captures (the committed baselines are reviewed by hand)
+macos/baselines/*.local.tsv
+
+# mise's per-package dependency locks. `mise lock` regenerates this whole tree
+# on every install, and ~/.config/mise is a symlink to config/mise, so leaving
+# it untracked would otherwise keep the working tree permanently dirty. The
+# tracked pin is config/mise/mise.lock, which carries the tool versions,
+# per-platform URLs and checksums.
+config/mise/locks/

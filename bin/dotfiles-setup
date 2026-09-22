@@ -15,7 +15,9 @@ set -euo pipefail
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-LOG_FILE="/tmp/dotfiles-setup.log"
+# Not /tmp: that directory is world-writable, so another local user could
+# create the name as a symlink first and the truncating > would follow it.
+LOG_FILE="${TMPDIR:-/tmp}/dotfiles-setup.log"
 
 # Every install step is delegated to this; see run_cli().
 DOTFILES_CLI="$ROOT_DIR/bin/dotfiles"
@@ -26,8 +28,11 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 1
 fi
 
-IS_APPLE_SILICON=false
-[[ "$(uname -m)" == "arm64" ]] && IS_APPLE_SILICON=true
+# Apple silicon only; see the same guard in bin/dotfiles.
+if [[ "$(uname -m)" != "arm64" ]]; then
+  echo "This repo supports Apple silicon only (Homebrew drops Intel in Sept 2027)."
+  exit 1
+fi
 
 #############################################################################
 # Colors & Styling
@@ -56,7 +61,6 @@ CHECKMARK="${GREEN}✓${RESET}"
 CROSSMARK="${RED}✗${RESET}"
 ARROW="${CYAN}→${RESET}"
 BULLET="${BLUE}•${RESET}"
-SPINNER_CHARS='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 
 #############################################################################
 # Logging & Output
@@ -111,59 +115,12 @@ print_info() {
 }
 
 #############################################################################
-# Spinner & Progress
-#############################################################################
-
-spinner_pid=""
-
-start_spinner() {
-  local msg="$1"
-  printf "  ${CYAN}⠋${RESET} %s" "$msg"
-  (
-    local i=0
-    while true; do
-      printf "\r  ${CYAN}${SPINNER_CHARS:$i:1}${RESET} %s" "$msg"
-      i=$(( (i + 1) % ${#SPINNER_CHARS} ))
-      sleep 0.1
-    done
-  ) &
-  spinner_pid=$!
-}
-
-stop_spinner() {
-  local success=${1:-true}
-  local msg="${2:-}"
-
-  if [[ -n "$spinner_pid" ]]; then
-    kill "$spinner_pid" 2>/dev/null || true
-    wait "$spinner_pid" 2>/dev/null || true
-    spinner_pid=""
-  fi
-
-  if $success; then
-    printf "\r  ${CHECKMARK} %s\n" "$msg"
-  else
-    printf "\r  ${CROSSMARK} %s\n" "$msg"
-  fi
-}
-
-progress_bar() {
-  local current=$1
-  local total=$2
-  local width=40
-  local percent=$((current * 100 / total))
-  local filled=$((current * width / total))
-  local empty=$((width - filled))
-
-  printf "\r  ["
-  printf "%${filled}s" | tr ' ' '█'
-  printf "%${empty}s" | tr ' ' '░'
-  printf "] %3d%%" "$percent"
-}
-
-#############################################################################
 # User Input
 #############################################################################
+
+# ask_menu, ask_checklist, ask_input, start_spinner/stop_spinner and
+# progress_bar used to live here. None had a caller; ask_checklist would also
+# have tripped this file's `set -u` on an empty selection.
 
 ask_yes_no() {
   local prompt="$1"
@@ -187,124 +144,6 @@ ask_yes_no() {
       *) print_warning "Please answer yes or no" ;;
     esac
   done
-}
-
-ask_input() {
-  local prompt="$1"
-  local default="${2:-}"
-  local value
-
-  if [[ -n "$default" ]]; then
-    printf "  ${ARROW} %s [${DIM}%s${RESET}]: " "$prompt" "$default"
-  else
-    printf "  ${ARROW} %s: " "$prompt"
-  fi
-
-  read -r value
-  echo "${value:-$default}"
-}
-
-ask_menu() {
-  local prompt="$1"
-  shift
-  local options=("$@")
-  local selected=0
-  local key
-
-  echo ""
-  echo "  ${CYAN}${prompt}${RESET}"
-  echo ""
-
-  # Print options
-  for i in "${!options[@]}"; do
-    if [[ $i -eq $selected ]]; then
-      echo "  ${GREEN}▸${RESET} ${options[$i]}"
-    else
-      echo "    ${options[$i]}"
-    fi
-  done
-
-  echo ""
-  echo "  ${DIM}Use arrow keys to select, Enter to confirm${RESET}"
-
-  # Read selection (simplified - just use numbers for compatibility)
-  while true; do
-    printf "\r  Selection (1-%d): " "${#options[@]}"
-    read -r key
-    if [[ "$key" =~ ^[0-9]+$ ]] && [[ "$key" -ge 1 ]] && [[ "$key" -le "${#options[@]}" ]]; then
-      selected=$((key - 1))
-      break
-    fi
-  done
-
-  echo "$selected"
-}
-
-ask_checklist() {
-  local prompt="$1"
-  shift
-  local options=("$@")
-  local selected=()
-
-  # Initialize all as selected
-  for i in "${!options[@]}"; do
-    selected[i]=1
-  done
-
-  echo ""
-  echo "  ${CYAN}${prompt}${RESET}"
-  echo "  ${DIM}Enter numbers to toggle, 'a' for all, 'n' for none, Enter when done${RESET}"
-  echo ""
-
-  while true; do
-    # Print options
-    for i in "${!options[@]}"; do
-      local num=$((i + 1))
-      if [[ ${selected[$i]} -eq 1 ]]; then
-        echo "  ${GREEN}[✓]${RESET} ${num}. ${options[$i]}"
-      else
-        echo "  ${DIM}[ ]${RESET} ${num}. ${options[$i]}"
-      fi
-    done
-
-    echo ""
-    printf "  Toggle: "
-    read -r input
-
-    case "$input" in
-      "")
-        # Done selecting
-        break
-        ;;
-      a|A)
-        for i in "${!options[@]}"; do selected[i]=1; done
-        ;;
-      n|N)
-        for i in "${!options[@]}"; do selected[i]=0; done
-        ;;
-      *)
-        if [[ "$input" =~ ^[0-9]+$ ]] && [[ "$input" -ge 1 ]] && [[ "$input" -le "${#options[@]}" ]]; then
-          local idx=$((input - 1))
-          selected[idx]=$((1 - selected[idx]))
-        fi
-        ;;
-    esac
-
-    # Clear and reprint
-    for _ in "${options[@]}"; do
-      printf "\033[A\033[2K"
-    done
-    printf "\033[A\033[2K\033[A\033[2K"
-  done
-
-  # Return selected indices
-  local result=()
-  for i in "${!options[@]}"; do
-    if [[ ${selected[$i]} -eq 1 ]]; then
-      result+=("$i")
-    fi
-  done
-  echo "${result[*]}"
 }
 
 #############################################################################
@@ -344,11 +183,7 @@ detect_system() {
   print_info "Detecting your system..."
 
   print_success "macOS detected ($(sw_vers -productVersion))"
-  if $IS_APPLE_SILICON; then
-    print_success "Apple Silicon (M-series) detected"
-  else
-    print_success "Intel processor detected"
-  fi
+  print_success "Apple silicon detected"
 
   echo ""
 }
@@ -413,7 +248,7 @@ install_packages() {
     return
   fi
 
-  if ! ask_yes_no "Install packages (Brewfile, npm, VS Code extensions)?" "y"; then
+  if ! ask_yes_no "Install packages (Brewfile, VS Code extensions)?" "y"; then
     print_info "Skipping package installation"
     return
   fi
@@ -478,20 +313,10 @@ configure_macos() {
 setup_node() {
   print_section "Node.js Setup"
 
-  if ask_yes_no "Install fnm and the latest LTS Node?" "y"; then
+  if ask_yes_no "Install mise, Node and the declared CLIs?" "y"; then
     run_cli "Node.js" install --node
   else
     print_info "Skipping Node.js setup"
-  fi
-}
-
-setup_vim() {
-  print_section "Editor Setup"
-
-  if ask_yes_no "Install Vim/Neovim plugins?"; then
-    run_cli "Editor plugins" install --vim
-  else
-    print_info "Skipping editor setup"
   fi
 }
 
@@ -557,7 +382,6 @@ main() {
   link_dotfiles
   configure_macos
   setup_node
-  setup_vim
   generate_ssh_key
   print_summary
 }

@@ -1,20 +1,17 @@
 # PATH configuration - optimized for performance
-
-# Detect Homebrew prefix without subprocess
-if [[ -x /opt/homebrew/bin/brew ]]; then
-  export HOMEBREW_PREFIX="/opt/homebrew"
-elif [[ -x /usr/local/bin/brew ]]; then
-  export HOMEBREW_PREFIX="/usr/local"
-fi
+#
+# Apple silicon only: Homebrew drops Intel support in September 2027, so the
+# prefix is a constant and no /usr/local branch is kept.
+export HOMEBREW_PREFIX="/opt/homebrew"
 
 # Cache brew shellenv output (rarely changes, expensive to compute)
-if [[ -n "$HOMEBREW_PREFIX" ]]; then
+if [[ -x "$HOMEBREW_PREFIX/bin/brew" ]]; then
   _brew_cache="${XDG_CACHE_HOME:-$HOME/.cache}/brew-shellenv.zsh"
-  if [[ ! -f "$_brew_cache" ]] || [[ "$HOMEBREW_PREFIX/bin/brew" -nt "$_brew_cache" ]]; then
+  if [[ ! -s "$_brew_cache" ]] || [[ "$HOMEBREW_PREFIX/bin/brew" -nt "$_brew_cache" ]]; then
     mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
-    "$HOMEBREW_PREFIX/bin/brew" shellenv 2>/dev/null | grep -v 'path_helper' > "$_brew_cache"
+    "$HOMEBREW_PREFIX/bin/brew" shellenv 2>/dev/null | grep -v 'path_helper' >| "$_brew_cache"
   fi
-  [[ -f "$_brew_cache" ]] && source "$_brew_cache"
+  [[ -s "$_brew_cache" ]] && source "$_brew_cache"
   unset _brew_cache
 fi
 
@@ -40,7 +37,9 @@ prepend-path "$HOME/.local/share/pnpm"
 prepend-path "$HOME/.cache/.bun/bin"
 prepend-path "/Applications/Postgres.app/Contents/Versions/16/bin"
 
-# Remove duplicate PATH entries (typeset -U is zsh-only)
+# Remove duplicate PATH entries (typeset -U is zsh-only). Normalisation runs
+# later, from .zprofile, because ~/.local/bin/env is sourced after this file
+# and adds an entry that only normalisation can deduplicate (audit shell#10).
 if [[ -n "$ZSH_VERSION" ]]; then
   typeset -U PATH path
 fi

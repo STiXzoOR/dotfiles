@@ -1,0 +1,14 @@
+#!/usr/bin/env expect
+#
+# Runs its arguments with a pseudo-terminal attached and exits with the
+# spawned command's own status.
+#
+# Some behaviour is only reachable through a terminal: `dotfiles-secrets
+# export` refuses to run when stdin is not one, which is the point of that
+# guard, and script(1) cannot help because macOS script calls tcgetattr on
+# its own stdin and fails outright when that is a pipe or a socket.
+set timeout 120
+eval spawn -noecho $argv
+expect eof
+catch wait result
+exit [lindex $result 3]

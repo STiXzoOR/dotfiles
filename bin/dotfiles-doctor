@@ -19,13 +19,37 @@ NC='\033[0m'
 
 # Options
 FIX_MODE=false
-[[ "$1" == "--fix" ]] && FIX_MODE=true
+case "${1:-}" in
+  --help | -h)
+    echo "Usage: dotfiles-doctor [--fix]"
+    echo ""
+    echo "Diagnose common dotfiles issues."
+    echo ""
+    echo "Options:"
+    echo "  --fix         Attempt to automatically fix issues"
+    echo "  --help, -h    Show this help message"
+    exit 0
+    ;;
+  --fix)
+    FIX_MODE=true
+    ;;
+esac
 
-# Get dotfiles directory
+# Get dotfiles directory. Repair it BEFORE sourcing anything out of it: the
+# source used to sit above this fallback, so exactly when the fallback was
+# needed the source had already failed, and every dotfiles_age_days call in
+# check_cache then reported "command not found".
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 if [[ ! -d "$DOTFILES_DIR" ]]; then
   DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 fi
+
+# Shared stat(1) portability helpers (GNU vs BSD).
+source "$DOTFILES_DIR/scripts/lib/fs.sh"
+
+# The Homebrew major version this repo's install path assumes. 7 introduced
+# tap trust, which `dotfiles install --packages` relies on.
+BREW_MIN_MAJOR=7
 
 # Counters
 ISSUES=0
@@ -124,7 +148,18 @@ check_homebrew() {
   section "Homebrew"
 
   if command -v brew &>/dev/null; then
-    ok "Homebrew installed: $(brew --version | head -1)"
+    local brew_version brew_major
+    brew_version=$(brew --version | head -1 | sed -E 's/^Homebrew ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+    ok "Homebrew installed: $brew_version"
+
+    # Homebrew 7 will not load a third-party tap's formulae, casks or commands
+    # until the tap is trusted (`brew trust --tap`), which `install --packages`
+    # now does. On an older Homebrew that command does not exist and a fresh
+    # bootstrap silently skips the trust step.
+    brew_major="${brew_version%%.*}"
+    if [[ "$brew_major" =~ ^[0-9]+$ ]] && ((brew_major < BREW_MIN_MAJOR)); then
+      warn "Homebrew $brew_version is older than $BREW_MIN_MAJOR (run: brew update)"
+    fi
 
     # Check for issues
     local brew_issues=$(brew doctor 2>&1 | grep -c "Warning")
@@ -188,14 +223,21 @@ check_cache() {
   section "Cache Status"
 
   local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
+  # Only caches the shell config actually writes. One the doctor watches but
+  # nothing produces is reported "missing (will be created on next shell
+  # start)" on every run, forever.
+  #
+  # Dropped: the old command-correction alias cache (pay-respects replaced it
+  # and prints its integration in a couple of milliseconds, so system/
+  # deliberately caches nothing for it) and the old Node manager's env cache
+  # (system/.mise only prepends a directory, so there is nothing to cache).
+  # dircolors is cached per TERM.
   local caches=(
-    "fnm-env.zsh:fnm"
     "zoxide-init.zsh:zoxide"
-    "thefuck-alias.zsh:thefuck"
     "fzf-init.zsh:fzf"
     "brew-shellenv.zsh:brew"
     "npm-completion.zsh:npm"
-    "dircolors.zsh:dircolors"
+    "dircolors-${TERM:-dumb}.zsh:dircolors"
   )
 
   for cache_info in "${caches[@]}"; do
@@ -203,7 +245,8 @@ check_cache() {
     local tool="${cache_info##*:}"
 
     if [[ -f "$cache_dir/$cache_file" ]]; then
-      local age=$(( ($(date +%s) - $(stat -f %m "$cache_dir/$cache_file" 2>/dev/null || stat -c %Y "$cache_dir/$cache_file" 2>/dev/null)) / 86400 ))
+      local age="$(dotfiles_age_days "$cache_dir/$cache_file")"
+      [[ -n "$age" ]] || age=0
       if [[ $age -gt 7 ]]; then
         warn "$cache_file is $age days old (consider refreshing)"
       else
@@ -217,8 +260,12 @@ check_cache() {
   done
 
   if $FIX_MODE; then
-    read -r -p "Regenerate all caches? [y/N] " response
-    if [[ $response =~ (y|yes|Y) ]]; then
+    # zsh's `read -p` reads from a coprocess, not from a prompt: print it
+    # ourselves. The old gate was an unanchored (y|yes|Y), so "Nay" cleared
+    # the caches.
+    printf "Regenerate all caches? [y|N] "
+    read -r response || response=""
+    if [[ "$response" =~ ^([Yy]|[Yy][Ee][Ss])$ ]]; then
       fix "Clearing caches..."
       rm -f "$cache_dir"/*.zsh
       echo "Caches cleared. Restart your shell to regenerate."
@@ -239,7 +286,7 @@ check_tools() {
     "fd:Better find"
     "rg:Ripgrep"
     "jq:JSON processor"
-    "fnm:Node version manager"
+    "mise:Toolchain manager"
   )
 
   for tool_info in "${tools[@]}"; do
@@ -257,23 +304,48 @@ check_tools() {
 check_node() {
   section "Node.js Environment"
 
-  if command -v fnm &>/dev/null; then
-    ok "fnm installed"
+  if ! command -v mise &>/dev/null; then
+    warn "mise not installed (run: dotfiles install --node)"
+    return
+  fi
+  ok "mise installed"
 
-    if command -v node &>/dev/null; then
-      ok "Node.js: $(node --version)"
-      ok "npm: $(npm --version)"
-    else
-      warn "No Node.js version active (run: fnm install --lts)"
-    fi
-
-    if command -v pnpm &>/dev/null; then
-      ok "pnpm: $(pnpm --version)"
-    else
-      warn "pnpm not installed"
-    fi
+  # Not the raw exit status. `mise doctor` is non-zero on this setup for two
+  # things the repo chooses on purpose: it reports "not activated" because the
+  # login path uses shims instead of activation, and it recommends the vfox
+  # yarn backend, which config.toml disables along with every other plugin
+  # backend. Reporting the exit status would warn on every run, forever --
+  # exactly the defect this doctor already removed for caches nothing writes.
+  # So drop those two and report whatever is left.
+  local doctor_left
+  doctor_left=$(mise doctor 2>&1 |
+    grep -E '^[0-9]+\. ' |
+    grep -vE 'not activated|vfox:mise-plugins/vfox-yarn')
+  if [[ -z "$doctor_left" ]]; then
+    ok "mise doctor reports nothing this repo does not choose"
   else
-    warn "fnm not installed"
+    warn "mise doctor: $(echo "$doctor_left" | head -3) (run: mise doctor)"
+  fi
+
+  local shims="$HOME/.local/share/mise/shims"
+  if [[ -d "$shims" ]]; then
+    ok "shims present at ~/.local/share/mise/shims"
+  else
+    warn "no shims yet; hooks and GUI apps will not find node (run: dotfiles install --node)"
+  fi
+
+  # `mise which node` answers for the tool mise would run, which is the
+  # question worth asking; `node --version` answers for whatever is on PATH.
+  if mise which node &>/dev/null; then
+    ok "node: $(mise exec -- node --version 2>/dev/null || echo unknown)"
+  else
+    warn "no node version installed (run: dotfiles install --node)"
+  fi
+
+  if command -v pnpm &>/dev/null; then
+    ok "pnpm: $(pnpm --version)"
+  else
+    warn "pnpm not installed"
   fi
 }
 
@@ -320,12 +392,33 @@ check_macos() {
     fi
   fi
 
-  # Check TouchID for sudo
-  if grep -q "pam_tid.so" /etc/pam.d/sudo 2>/dev/null; then
-    ok "TouchID for sudo enabled"
-  else
-    warn "TouchID for sudo not enabled"
+}
+
+check_touchid_sudo() {
+  section "Touch ID for sudo"
+
+  # This repo no longer ships a NOPASSWD sudoers writer (that rule granted
+  # passwordless root over a user-writable brew binary), so Touch ID is the
+  # supported way to stop retyping the password.
+  #
+  # sudo_local, not sudo: macOS replaces /etc/pam.d/sudo on every OS update,
+  # which silently undoes an edit made there. Reported, never fixed -- a bad
+  # PAM edit locks you out of sudo entirely, and recovery means a recovery boot.
+  if grep -q "pam_tid.so" /etc/pam.d/sudo_local 2>/dev/null; then
+    ok "Touch ID for sudo enabled (/etc/pam.d/sudo_local)"
+    return
   fi
+
+  if grep -q "pam_tid.so" /etc/pam.d/sudo 2>/dev/null; then
+    warn "Touch ID is enabled in /etc/pam.d/sudo, which OS updates overwrite"
+    echo "    Move it to the drop-in that survives updates:"
+  else
+    warn "Touch ID for sudo not enabled"
+    echo "    Enable it with:"
+  fi
+
+  echo "      sudo cp /etc/pam.d/sudo_local.template /etc/pam.d/sudo_local"
+  echo "      sudo sed -i '' 's/^#auth/auth/' /etc/pam.d/sudo_local"
 }
 
 #############################################################################
@@ -350,6 +443,7 @@ main() {
   check_node
   check_git_config
   check_macos
+  check_touchid_sudo
 
   # Summary
   echo ""

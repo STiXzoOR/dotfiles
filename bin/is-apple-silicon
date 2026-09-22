@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-
-[ "$(uname -p)" = 'arm' ] || [ "$(uname -m)" = 'arm64' ]

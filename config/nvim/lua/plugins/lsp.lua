@@ -2,7 +2,7 @@
 return {
   -- Mason for managing LSP servers
   {
-    "williamboman/mason.nvim",
+    "mason-org/mason.nvim",
     cmd = "Mason",
     keys = { { "<leader>cm", "<cmd>Mason<cr>", desc = "Mason" } },
     build = ":MasonUpdate",
@@ -39,7 +39,7 @@ return {
     event = { "BufReadPre", "BufNewFile" },
     dependencies = {
       "mason.nvim",
-      "williamboman/mason-lspconfig.nvim",
+      "mason-org/mason-lspconfig.nvim",
       { "j-hui/fidget.nvim", opts = {} },
     },
     opts = {
@@ -130,25 +130,24 @@ return {
         end,
       })
 
-      -- Setup mason-lspconfig
-      require("mason-lspconfig").setup({
-        ensure_installed = vim.tbl_keys(opts.servers),
-        automatic_installation = true,
-      })
-
-      -- Setup each server
+      -- Shared client capabilities, applied to every server through the
+      -- wildcard config below (Neovim 0.11+ vim.lsp.config API).
       local capabilities = vim.lsp.protocol.make_client_capabilities()
       local has_cmp, cmp_nvim_lsp = pcall(require, "cmp_nvim_lsp")
       if has_cmp then
         capabilities = vim.tbl_deep_extend("force", capabilities, cmp_nvim_lsp.default_capabilities())
       end
+      vim.lsp.config("*", { capabilities = capabilities })
 
-      require("mason-lspconfig").setup_handlers({
-        function(server_name)
-          local server_opts = opts.servers[server_name] or {}
-          server_opts.capabilities = vim.tbl_deep_extend("force", {}, capabilities, server_opts.capabilities or {})
-          require("lspconfig")[server_name].setup(server_opts)
-        end,
+      for server, server_opts in pairs(opts.servers) do
+        vim.lsp.config(server, server_opts)
+      end
+
+      -- mason-lspconfig v2 dropped the per-server handler callback; it now
+      -- calls vim.lsp.enable() itself for every server it manages.
+      require("mason-lspconfig").setup({
+        ensure_installed = vim.tbl_keys(opts.servers),
+        automatic_enable = true,
       })
     end,
   },

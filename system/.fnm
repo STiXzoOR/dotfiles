@@ -1,8 +1,26 @@
-# fnm (Fast Node Manager) initialization
-# No caching — fnm is Rust-based (~2-5ms) and outputs session-specific paths
+# fnm (Fast Node Manager) initialization -- the fallback, not the default.
+#
+# mise owns Node now (system/.mise). This file only runs on a machine where
+# the mise shims directory does not exist yet: a fresh clone before
+# `dotfiles install --node`, or a rollback. Running both would put two
+# managers' node on PATH and leave which one wins to prepend order.
+#
+# No caching — fnm is Rust-based (~2-5ms) and outputs session-specific paths.
 
-if (( $+commands[fnm] )); then
+if [[ ! -d "$HOME/.local/share/mise/shims" ]] && (( $+commands[fnm] )); then
   eval "$(fnm env --use-on-cd --corepack-enabled --shell zsh)"
+
+  # Self-heal: fnm points PATH at a per-shell symlink under
+  # $XDG_RUNTIME_DIR/fnm_multishells. If that link goes missing -- an
+  # over-eager cleanup, a cleared runtime dir -- every node/npm/npx lookup in
+  # this shell and anything it spawns fails with "command not found", and
+  # there is no recovery short of restarting the process. Recreating it is
+  # one stat and, rarely, one symlink.
+  if [[ -n "$FNM_MULTISHELL_PATH" && ! -e "$FNM_MULTISHELL_PATH" ]]; then
+    mkdir -p "${FNM_MULTISHELL_PATH:h}" 2>/dev/null
+    ln -sfn "${FNM_DIR:-$HOME/.local/share/fnm}/aliases/default" \
+      "$FNM_MULTISHELL_PATH" 2>/dev/null
+  fi
 fi
 
 # Helper function to upgrade global npm packages

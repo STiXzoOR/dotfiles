@@ -1,27 +1,24 @@
 [submodule "apps/terminal/nord_theme"]
 	path = apps/terminal/nord_theme
 	url = https://github.com/nordtheme/terminal-app
+	shallow = true
 [submodule "apps/xcode/nord_theme"]
 	path = apps/xcode/nord_theme
 	url = https://github.com/nordtheme/xcode
+	shallow = true
 [submodule "modules/prezto"]
 	path = modules/prezto
 	url = https://github.com/sorin-ionescu/prezto.git
-[submodule "runcom/.vim/bundle/Vundle.vim"]
-	path = runcom/.vim/bundle/Vundle.vim
-	url = https://github.com/VundleVim/Vundle.vim.git
-[submodule "config/spicetify/Themes"]
-	path = config/spicetify/Themes
-	url = https://github.com/morpheusthewhite/spicetify-themes
+	shallow = true
 [submodule "apps/warp/themes"]
 	path = apps/warp/themes
 	url = https://github.com/warpdotdev/themes.git
+	shallow = true
 [submodule "apps/gitkraken/themes"]
 	path = apps/gitkraken/themes
 	url = https://github.com/JonBunator/gitkraken-custom-themes.git
-[submodule "modules/stevenblack-hosts"]
-	path = modules/stevenblack-hosts
-	url = https://github.com/StevenBlack/hosts.git
-[submodule "modules/prezto-contrib"]
-	path = modules/prezto-contrib
-	url = https://github.com/belak/prezto-contrib.git
+	shallow = true
+[submodule "modules/fzf-tab"]
+	path = modules/fzf-tab
+	url = https://github.com/Aloxaf/fzf-tab
+	shallow = true

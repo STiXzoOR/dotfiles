@@ -13,3 +13,27 @@ alias projects="cd ~/Projects"
 
 # Load personal Brewfile additions
 # export HOMEBREW_BUNDLE_FILE_PERSONAL="$DOTFILES_DIR/profiles/Brewfile.personal"
+
+#############################################################
+# Secrets: fetch them lazily, do not export them
+#############################################################
+#
+# `export OPENAI_API_KEY="$(dotfiles-secrets get openai_api_key)"` costs one
+# Keychain round trip per key on every shell -- six of them measured at 200 ms
+# of the 443 ms a login shell took -- and puts the key in the environment of
+# every process any shell spawns, including npm lifecycle scripts, editor
+# extensions and MCP servers.
+#
+# An accessor function costs nothing at startup and hands the value only to
+# the command that asked for it:
+#
+#   openai_key() { dotfiles-secrets get openai_api_key; }
+#
+# Call it where the value is needed:
+#
+#   curl -H "Authorization: Bearer $(openai_key)" ...
+#
+# For a tool that insists on reading an environment variable, scope it to that
+# one command rather than to the whole session:
+#
+#   OPENAI_API_KEY="$(openai_key)" some-tool

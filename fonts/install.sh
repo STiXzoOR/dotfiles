@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
+#
+# Install the bundled fonts into the user font directory.
 
-# Set source and target directories
-POWERLINE_FONTS_DIR=$(cd "$(dirname "$0")" && pwd)
+set -euo pipefail
+
+FONTS_SRC_DIR=$(cd "$(dirname "$0")" && pwd)
 FONT_DIR="$HOME/Library/Fonts"
-FIND_COMMAND="find \"$POWERLINE_FONTS_DIR\" \( -name '*.[o,t]tf' -or -name '*.pcf.gz' \) -type f -print0"
+
+mkdir -p "$FONT_DIR"
 
 echo "Copying fonts..."
-eval $FIND_COMMAND | xargs -0 -I % cp "%" "$FONT_DIR/"
 
-echo "All Powerline fonts installed to $FONT_DIR"
+# Was built as a string and run through `eval`, which needed an unquoted
+# expansion to work at all. The glob also read '*.[o,t]tf' -- a character class
+# that matches a literal comma as well as o and t.
+find "$FONTS_SRC_DIR" \
+  \( -name '*.[ot]tf' -o -name '*.pcf.gz' \) \
+  -type f -print0 |
+  xargs -0 -I {} cp "{}" "$FONT_DIR/"
+
+echo "All fonts installed to $FONT_DIR"

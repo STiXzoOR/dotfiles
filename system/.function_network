@@ -1,7 +1,9 @@
-# Webserver
+# Webserver. Driven by local-web-server, which config/mise/config.toml installs;
+# the previous implementation required superstatic, which is not installed
+# anywhere in this repo, so srv() was a permanent no-op (audit shell#17).
 srv() {
-  if ! command -v superstatic &>/dev/null; then
-    echo "superstatic not found. Install with: npm i -g superstatic" >&2
+  if ! command -v ws >/dev/null 2>&1; then
+    echo "ws not found. Install with: npm i -g local-web-server" >&2
     return 1
   fi
   local DIR=${1:-.}
@@ -11,13 +13,13 @@ srv() {
     sudo -v
   fi
   open "http://localhost:$PORT"
-  superstatic "$DIR" -p "$PORT"
+  ws --directory "$DIR" --port "$PORT"
 }
 
 # Get information for a given ip address
 # usage: ip-info 123.456.789.0
 function ipinfo() {
-  curl "ipinfo.io/${1:-}"
+  curl "https://ipinfo.io/${1:-}"
 }
 
 # Get IP from hostname

@@ -1,0 +1,4 @@
+* text=auto eol=lf
+fonts/MesloHackNerd/*.ttf -diff
+fonts/MesloHackNerd/*.otf -diff
+*.png -diff

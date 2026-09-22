@@ -1,15 +1,49 @@
 {
+  "$comment": [
+    "Merged into ~/.claude/settings.json by scripts/install_claude.sh.",
+    "hooks is merged per event: an event named here replaces the machine's",
+    "version of that event, and an event the machine has that this file does",
+    "not mention is left alone. statusLine is replaced outright; env is merged",
+    "per key with this file winning; autoUpdatesChannel and minimumVersion are",
+    "an update floor, not a preference, so they come from here too. Every",
+    "other key keeps whatever the machine already had, so model, effortLevel,",
+    "enabledPlugins and friends survive a re-bootstrap.",
+    "Every key below is one the installed CLI actually reads -- verified",
+    "against a live settings.json, not guessed from documentation.",
+    "Hook commands point only at files the installer itself writes: plugin",
+    "cache paths carry a version number and go stale on the next update, so",
+    "the hooks in claude/hooks/ resolve plugins at run time instead."
+  ],
+
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "VAULT_DIR": "$HOME/Vault"
   },
+
+  "permissions": {
+    "allow": [],
+    "deny": [],
+    "defaultMode": "auto"
+  },
+
+  "autoUpdatesChannel": "stable",
+  "minimumVersion": "2.1.277",
+
+  "alwaysThinkingEnabled": true,
+  "tui": "fullscreen",
+
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"$HOME/.claude/statusline.sh\""
+  },
+
   "hooks": {
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/skills/recall/.venv/bin/python3 $HOME/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync",
+            "command": "bash \"$HOME/.claude/hooks/sync-sessions.sh\"",
             "timeout": 10
           }
         ]
@@ -17,21 +51,36 @@
     ],
     "Stop": [
       {
-        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/skills/recall/.venv/bin/python3 $HOME/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync",
+            "command": "bash \"$HOME/.claude/hooks/sync-sessions.sh\"",
             "timeout": 10
-          },
+          }
+        ]
+      }
+    ],
+
+    "SessionEnd": [
+      {
+        "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/hooks/index-sessions.sh",
-            "timeout": 30
+            "command": "bash \"$HOME/.claude/hooks/index-sessions.sh\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/session-start.sh",
+            "timeout": 10
           }
         ]
       }
     ]
-  },
-  "alwaysThinkingEnabled": true
+  }
 }

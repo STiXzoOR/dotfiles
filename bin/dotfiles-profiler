@@ -40,6 +40,9 @@ done
 
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 
+# Shared stat(1) portability helpers (GNU vs BSD).
+source "$DOTFILES_DIR/scripts/lib/fs.sh"
+
 #############################################################################
 # Profiling Functions
 #############################################################################
@@ -71,25 +74,6 @@ measure_startup() {
   echo "$avg $min $max"
 }
 
-# Profile with zprof
-profile_detailed() {
-  echo -e "${BLUE}━━━ Detailed Profiling (zprof) ━━━${NC}"
-  echo ""
-
-  # Create a temporary zshrc that enables profiling
-  local tmp_zshrc=$(mktemp)
-  cat > "$tmp_zshrc" << 'EOF'
-zmodload zsh/zprof
-EOF
-  cat "$HOME/.zshrc" >> "$tmp_zshrc"
-  echo "zprof" >> "$tmp_zshrc"
-
-  # Run with profiling
-  ZDOTDIR=$(dirname "$tmp_zshrc") HOME=$(dirname "$tmp_zshrc") zsh -i -c 'exit' 2>/dev/null | head -40
-
-  rm -f "$tmp_zshrc"
-}
-
 # Profile individual files
 profile_files() {
   echo -e "${BLUE}━━━ File Load Times ━━━${NC}"
@@ -101,10 +85,9 @@ profile_files() {
     "$DOTFILES_DIR/system/.path"
     "$DOTFILES_DIR/system/.env"
     "$DOTFILES_DIR/system/.alias"
-    "$DOTFILES_DIR/system/.fnm"
+    "$DOTFILES_DIR/system/.mise"
     "$DOTFILES_DIR/system/.fzf"
     "$DOTFILES_DIR/system/.zoxide"
-    "$DOTFILES_DIR/system/.fix"
     "$DOTFILES_DIR/system/.completion"
     "$DOTFILES_DIR/modules/prezto/init.zsh"
   )
@@ -151,21 +134,27 @@ check_caches() {
   echo ""
 
   local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
+  # Only caches something actually writes. The old Node manager's env cache
+  # and the thefuck alias cache are both gone: nothing produces either, so the
+  # profiler reported them missing on every run, forever.
   local caches=(
-    "fnm-env.zsh"
     "zoxide-init.zsh"
-    "thefuck-alias.zsh"
     "fzf-init.zsh"
     "brew-shellenv.zsh"
     "npm-completion.zsh"
-    "dircolors.zsh"
+    "dircolors-${TERM:-dumb}.zsh"
   )
 
   for cache in "${caches[@]}"; do
-    local path="$cache_dir/$cache"
-    if [[ -f "$path" ]]; then
-      local size=$(wc -c < "$path" | tr -d ' ')
-      local age_days=$(( ($(date +%s) - $(stat -f %m "$path" 2>/dev/null || stat -c %Y "$path" 2>/dev/null)) / 86400 ))
+    # NOT `path`: in zsh that name is tied to the PATH array, so `local path`
+    # inside a function wipes PATH and every external command vanishes.
+    local cache_path="$cache_dir/$cache"
+    if [[ -f "$cache_path" ]]; then
+      # Declare and assign on one line: zsh's `local name` with no value
+      # PRINTS name=value when the parameter already exists.
+      local size="$(wc -c < "$cache_path" | tr -d ' ')"
+      local age_days="$(dotfiles_age_days "$cache_path")"
+      [[ -n "$age_days" ]] || age_days=0
       printf "${GREEN}✓${NC} %-25s %6d bytes  %3dd old\n" "$cache" "$size" "$age_days"
     else
       printf "${RED}✗${NC} %-25s ${DIM}(missing)${NC}\n" "$cache"
@@ -276,8 +265,10 @@ main() {
 
   local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
   local missing_caches=0
-  for cache in fnm-env.zsh zoxide-init.zsh fzf-init.zsh brew-shellenv.zsh; do
-    [[ ! -f "$cache_dir/$cache" ]] && ((missing_caches++))
+  for cache in zoxide-init.zsh fzf-init.zsh brew-shellenv.zsh; do
+    # Never `((x++))`: it evaluates to the pre-increment value, so the first
+    # one returns 0 and takes the whole command down under `set -e`.
+    [[ ! -f "$cache_dir/$cache" ]] && missing_caches=$((missing_caches + 1))
   done
 
   if [[ $missing_caches -gt 0 ]]; then

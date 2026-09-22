@@ -1,18 +1,28 @@
 # Brewfile - Homebrew Bundle
 # Install: brew bundle install
-# Dump current: brew bundle dump --force
+# Dump current: brew bundle dump --describe --force
 # Cleanup unlisted: brew bundle cleanup --force
 # Check status: brew bundle check
+#
+# Apple silicon only: HOMEBREW_PREFIX is /opt/homebrew.
+#
+# Homebrew 7 refuses to load a cask from an untrusted tap, which hard-fails
+# the whole `brew bundle install` run. `dotfiles install --packages` now runs
+# `brew trust --tap` over every tap declared below before bundling, so a
+# third-party cask must be written fully qualified and its tap declared here.
+# Anything installed from a tap NOT declared below is installed by hand on
+# purpose, so that bootstrapping this repo never grants trust to a tap the
+# manifest does not name.
 
 # ============================================================================
 # Taps
 # ============================================================================
 
-tap "goreleaser/tap"
-tap "khanakia/vercelgate"
-tap "khanhas/tap"
-tap "lotyp/formulae"
-tap "artginzburg/tap"
+tap "datadog-labs/pack"             # pup (Datadog CLI)
+tap "goreleaser/tap"                # goreleaser
+tap "lotyp/formulae"                # dockutil
+tap "timescam/tap"                  # pay-respects
+tap "artginzburg/tap"               # sudo-touchid
 
 # ============================================================================
 # CLI Utilities
@@ -41,25 +51,29 @@ brew "yq"                           # YAML processor
 # System utilities
 brew "coreutils"                    # GNU core utilities
 brew "findutils"                    # GNU find, xargs, etc.
-brew "readline"                     # GNU readline
 brew "stow"                         # Symlink farm manager
-brew "mackup"                       # App settings backup
 brew "mas"                          # Mac App Store CLI
 brew "topgrade"                     # System upgrade tool
-brew "thefuck"                      # Command correction
 brew "zoxide"                       # Smarter cd command
-brew "starship"                     # Cross-shell prompt
+brew "atuin"                        # Searchable shell history
 brew "psgrep"                       # Process grep
+brew "rtk"                          # Token-optimising command proxy
+brew "timescam/tap/pay-respects"    # Command correction (replaces thefuck)
 
 # Network utilities
 brew "wget"                         # HTTP client
 brew "httpie"                       # Modern HTTP client
-brew "ssh-copy-id"                  # SSH key installer
 brew "mosh"                         # Roaming-tolerant SSH
 brew "tailscale"                    # Tailnet CLI (GUI app installed separately)
 
+# Security
+brew "age"                          # Modern file encryption
+brew "gitleaks"                     # Secret scanner for git history
+
 # Development tools
 brew "git-delta"                    # Better git diff
+brew "difftastic"                   # Structural (syntax-aware) diff
+brew "lazygit"                      # Terminal UI for git
 brew "gh"                           # GitHub CLI
 brew "shfmt"                        # Shell formatter
 brew "shellcheck"                   # Shell script linter
@@ -67,10 +81,18 @@ brew "bats-core"                    # Bash testing framework
 brew "ast-grep"                     # Structural code search
 brew "circleci"                     # CircleCI CLI
 brew "awscli"                       # AWS CLI
-brew "swiftlint"                    # Swift linter
+brew "datadog-labs/pack/pup"        # Datadog CLI
 brew "tmux"                         # Terminal multiplexer
+brew "neovim"                       # Editor (config in config/nvim)
 
-# Programming languages
+# Apple platform tools
+brew "swiftlint"                    # Swift linter
+brew "xcodegen"                     # Xcode project generator
+brew "asc"                          # App Store Connect CLI
+
+# Programming languages and runtimes
+brew "mise"                         # Runtime/tool version manager
+brew "bun"                          # JS runtime/package manager (not the npm shim)
 brew "python"                       # Python 3
 brew "go"                           # Go language
 brew "cmake"                        # Build system
@@ -97,10 +119,8 @@ brew "grip"                         # GitHub markdown preview
 brew "pandoc"                       # Document converter
 brew "cliclick"                     # CLI mouse/keyboard control
 brew "libimobiledevice"             # iOS device communication
-
-# Tap-specific
 brew "lotyp/formulae/dockutil"      # Dock management
-brew "artginzburg/tap/sudo-touchid" # TouchID for sudo
+brew "artginzburg/tap/sudo-touchid" # TouchID for sudo (writes /etc/pam.d/sudo_local once)
 
 # ============================================================================
 # Desktop Applications (Casks)
@@ -116,20 +136,17 @@ cask "visual-studio-code"
 cask "webstorm"
 cask "gitkraken"
 cask "sourcetree"
-cask "arduino"
 cask "arduino-ide"
 cask "ngrok"
-cask "goreleaser"
 cask "kaleidoscope"
+cask "goreleaser/tap/goreleaser"     # fully qualified: needs its tap trusted
 cask "codexbar"                     # Codex menubar client
-cask "claude-usage-tracker"         # Claude Code usage monitor
 
 # Design
 cask "adobe-creative-cloud"
 cask "figma"
 cask "autodesk-fusion"
 cask "prusaslicer"
-cask "superslicer"
 
 # Communication
 cask "discord"
@@ -160,7 +177,6 @@ cask "iina"                         # Modern video player
 cask "anydesk"
 cask "protonvpn"
 cask "tunnelblick"
-cask "tailscale"
 
 # Cloud & Sync
 cask "google-drive"
@@ -171,10 +187,7 @@ cask "altserver"
 
 # QuickLook plugins
 cask "qlmarkdown"
-cask "qlstephen"
-cask "qlvideo"
-cask "quicklook-json"
-cask "quicklookase"
+cask "quicklook-video"
 cask "syntax-highlight"
 cask "suspicious-package"
 cask "apparency"
@@ -203,6 +216,9 @@ cask "font-roboto-mono-nerd-font"
 # ============================================================================
 # Mac App Store
 # ============================================================================
+#
+# `mas` cannot sign in to the App Store on modern macOS and `mas install`
+# only works for apps already in the purchase history: sign in by hand first.
 
 mas "Emby", id: 992180193
 mas "LastPass", id: 926036361
@@ -216,13 +232,17 @@ mas "Windows App", id: 1295203466
 # VS Code Extensions (managed separately via code.list)
 # ============================================================================
 # Note: VS Code extensions are managed via packages/code.list
-# Install with: cat packages/code.list | xargs -L 1 code --install-extension
+# Install with: ./bin/dotfiles install --packages
+# By hand -- the list carries a comment header and xargs does not strip it:
+#   grep -v '^#' packages/code.list | xargs -L 1 code --install-extension
 
 # ============================================================================
-# NPM Global Packages (managed separately via npm.list)
+# Node CLIs (managed by mise, not Homebrew)
 # ============================================================================
-# Note: NPM packages are managed via packages/npm.list
-# Install with: cat packages/npm.list | xargs npm install -g
+# Declared in config/mise/config.toml under [tools] as "npm:<package>", pinned
+# in config/mise/mise.lock. Install with: ./bin/dotfiles install --node
 #
-# These cannot be in Brewfile because they require Node.js/npm to be installed
-# and configured via fnm first.
+# These cannot be in the Brewfile because they require a Node.js toolchain
+# first. They are not installed with `npm i -g` either: mise's npm backend
+# runs with --ignore-scripts, so a package's lifecycle scripts do not execute
+# as you unless it declares allow_builds for itself.

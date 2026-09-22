@@ -24,9 +24,12 @@ require("lazy").setup({
   install = {
     colorscheme = { "catppuccin", "habamax" },
   },
+  -- Plugin versions are pinned by lazy-lock.json, which lives next to this
+  -- config and is committed. Update deliberately with :Lazy update, which
+  -- rewrites the lockfile; a background checker would only add a startup
+  -- network call it never acts on.
   checker = {
-    enabled = true,
-    notify = false,
+    enabled = false,
   },
   change_detection = {
     notify = false,

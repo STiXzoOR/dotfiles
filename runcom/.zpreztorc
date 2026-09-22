@@ -15,9 +15,6 @@
 # Color output (auto set to 'no' on dumb terminals).
 zstyle ':prezto:*:*' color 'yes'
 
-# Add additional directories to load prezto modules from
-zstyle ':prezto:load' pmodule-dirs $DOTFILES_DIR/modules/prezto-contrib $DOTFILES_DIR/modules/zsh
-
 # Set the Zsh modules to load (man zshmodules).
 # zstyle ':prezto:load' zmodule 'attr' 'stat'
 
@@ -52,7 +49,16 @@ zstyle ':prezto:load' pmodule \
 # Set the prompt theme to load.
 # Setting it to 'random' loads a random theme.
 # Auto set to 'off' on dumb terminals.
-zstyle ':prezto:module:prompt' theme 'powerlevel10k'
+#
+# A shell with no controlling terminal -- `zsh -l -i -c ...` from a script, a
+# hook or an agent -- has no line editor and no job control, so powerlevel10k's
+# gitstatus daemon cannot start and prints a multi-line failure banner on every
+# such shell. There is nothing to draw a prompt on either, so load none.
+if [[ -t 0 ]]; then
+  zstyle ':prezto:module:prompt' theme 'powerlevel10k'
+else
+  zstyle ':prezto:module:prompt' theme 'off'
+fi
 
 #
 # Autosuggestions
@@ -61,8 +67,10 @@ zstyle ':prezto:module:prompt' theme 'powerlevel10k'
 # Enable Autosuggestions
 zstyle ':prezto:module:autosuggestions' color 'yes'
 
-# Set the query found color.
-zstyle ':prezto:module:autosuggestions:color' found ''
+# Set the query found color. An empty value is not the same as an unset one:
+# `zstyle -s` succeeds on it, so prezto's fg=8 default never applies and
+# suggestions render identically to typed text (audit shell#7).
+zstyle ':prezto:module:autosuggestions:color' found 'fg=8'
 
 #
 # Completions
@@ -98,6 +106,15 @@ zstyle ':prezto:module:editor' key-bindings 'vi'
 
 # Set the command prefix on non-GNU systems.
 # zstyle ':prezto:module:gnu-utility' prefix 'g'
+
+#
+# History
+#
+
+# /etc/zshrc resets HISTSIZE and SAVEHIST after .zprofile has run, and the
+# history module then falls back to 10000 unless these are set (audit shell#4).
+zstyle ':prezto:module:history' histsize 32768
+zstyle ':prezto:module:history' savehist 32768
 
 #
 # History Substring Search
@@ -137,13 +154,6 @@ zstyle ':prezto:module:python:virtualenv' auto-switch 'yes'
 # zstyle ':prezto:module:python:virtualenv' initialize 'yes'
 
 #
-# Ruby
-#
-
-# Auto switch the Ruby version on directory change.
-zstyle ':prezto:module:ruby:chruby' auto-switch 'yes'
-
-#
 # Screen
 #
 
@@ -158,7 +168,7 @@ zstyle ':prezto:module:ruby:chruby' auto-switch 'yes'
 #
 
 # Set the SSH identities to load into the agent.
-zstyle ':prezto:module:ssh:load' identities 'id_ed25519' 'id_github'
+zstyle ':prezto:module:ssh:load' identities 'id_ed25519'
 
 #
 # Syntax Highlighting

@@ -1,0 +1,160 @@
+# mise global config. Stowed to ~/.config/mise/config.toml.
+#
+# This file is the single source of truth for Node, Python-for-dev, the JS
+# package managers and every CLI that used to be an `npm i -g`. It replaces
+# packages/npm.list, where entries floated to whatever npm resolved on the day
+# you ran the installer; here each entry is pinned in mise.lock beside this
+# file, so two machines built a month apart get the same versions.
+#
+# Nothing in here is picked up by a running shell. `~/.local/share/mise/shims`
+# goes on PATH at login (system/.mise), and each shim asks mise, at exec time,
+# which version this directory wants. That is why there is no `mise activate`
+# in the login path: activation costs a hook on every prompt, shims cost
+# nothing and, unlike activation, they are also found by git hooks, by Claude
+# Code's SessionEnd hooks and by GUI apps, none of which read .zshrc.
+#
+# Add a CLI: put it in [tools] as `"npm:<package>" = "latest"`, run
+# `mise install`, and commit the config and the regenerated mise.lock.
+
+[tools]
+
+# Node stays on the major fnm defaulted to, so the migration changes the
+# manager without also changing the runtime under every project on this
+# machine. Moving to "lts" is a separate, revertible commit.
+node = "24"
+
+# Python for tooling only -- uv owns project virtualenvs. Homebrew's python is
+# still what Homebrew formulae link against; this one is for scripts and for
+# anything `uv run` does not cover.
+python = "3.14"
+
+pnpm = "latest"
+yarn = "latest"
+uv = "latest"
+
+#############################################################################
+# npm-backed CLIs
+#
+# mise's npm backend installs with --ignore-scripts. That is the whole reason
+# this migration is worth doing: `npm i -g` ran every package's lifecycle
+# scripts as you, with the Keychain unlocked and the SSH agent live. The four
+# entries below genuinely cannot install without running a build, so they say
+# so per-tool. Everything else installs with scripts off, and if one of them
+# ever starts needing a build it will fail loudly rather than quietly running
+# code.
+#############################################################################
+
+"npm:@biomejs/biome" = "latest"
+"npm:@google/gemini-cli" = "latest"
+"npm:@googleworkspace/cli" = "latest"
+"npm:@llamaindex/liteparse" = "latest"
+"npm:@mermaid-js/mermaid-cli" = { version = "latest", allow_builds = true } # puppeteer fetches a browser
+"npm:@openai/codex" = "latest"
+"npm:@posthog/cli" = "latest"
+"npm:@railway/cli" = "latest"
+"npm:@stripe/cli" = "latest"
+"npm:@tobilu/qmd" = { version = "latest", allow_builds = true }            # better-sqlite3, a node-gyp build
+"npm:@yao-pkg/pkg" = { version = "latest", allow_builds = true }           # fetches prebuilt node binaries
+"npm:agent-browser" = "latest"
+"npm:ctx7" = "latest"
+"npm:eas-cli" = "latest"
+"npm:eslint" = "latest"
+"npm:fast-cli" = { version = "latest", allow_low_downloads = true }         # 633 weekly downloads
+"npm:fkill-cli" = "latest"
+"npm:happy" = "latest"
+"npm:heroui-cli" = "latest"
+"npm:hyperframes" = "latest"
+"npm:local-web-server" = "latest"
+"npm:md-to-pdf" = "latest"
+"npm:nodemon" = "latest"
+"npm:npm-check-updates" = "latest"
+"npm:pptxgenjs" = "latest"
+"npm:prettier" = "latest"
+"npm:release-it" = "latest"
+"npm:resend-cli" = { version = "latest", trust_policy_excludes = ["resend@6.28.0"] }
+"npm:shadcn" = "latest"
+"npm:sharp" = { version = "latest", allow_builds = true }                  # libvips bindings
+"npm:svgo" = "latest"
+"npm:tldr" = "latest"
+"npm:tsx" = "latest"
+"npm:typescript" = "latest"
+"npm:typescript-language-server" = "latest"
+"npm:xc-mcp" = { version = "latest", allow_low_downloads = true, trust_policy_excludes = ["xc-mcp@4.2.0"] }
+
+#############################################################################
+# Supply-chain gates deliberately relaxed, and why
+#
+# mise refused three packages on the first full install. The repo owner
+# reviewed them on 2026-09-22 and approved all three; this block records that
+# decision so it is visible to the next reader rather than buried in a diff.
+#
+#   npm:fast-cli (633 weekly downloads) and npm:xc-mcp (240) fell under the
+#   1000-download threshold. That gate is a popularity heuristic -- it catches
+#   packages too small for tampering to have been noticed -- and is not
+#   evidence about these two. Relaxed per-tool with allow_low_downloads, which
+#   changes nothing else about how they are installed: npm lifecycle scripts
+#   stay off, because neither declares allow_builds.
+#
+#   npm:xc-mcp then failed a second and stronger gate: xc-mcp@4.2.0 has no
+#   trust evidence, while the earlier 1.3.2 carried a provenance attestation.
+#   Losing provenance between releases is a sharper signal than a low download
+#   count, so it is worth re-reading if this is ever revisited. Exempted at the
+#   exact version, the same way resend is.
+#
+#   npm:resend-cli was refused for a real trust signal: its dependency
+#   resend@6.28.0 carries no trust evidence where the earlier 6.17.1 had a
+#   trusted publisher. The owner confirmed the package is trusted. The
+#   exemption is written as the exact version, not a bare package name, so it
+#   covers that one release and expires the moment resend moves on -- a bare
+#   name would exempt every future version of resend silently.
+#
+# Nothing here uses `mise settings npm.shell_out=true`, which would bypass the
+# trust policy entirely rather than for one named version.
+#############################################################################
+
+#############################################################################
+# Settings
+#############################################################################
+
+[settings]
+
+# Without this, .nvmrc and .node-version are ignored outright and every
+# project that pins Node the portable way silently gets the global version.
+idiomatic_version_file_enable_tools = ["node"]
+
+# The important one. mise's default is to install a missing tool the moment
+# something asks for it -- which, in a shell an agent is driving, means an
+# unattended network fetch and build triggered by a stray command. Missing
+# tools fail loudly instead; `mise install` is always explicit.
+not_found_auto_install = false
+
+# Pin resolved versions in mise.lock next to this file.
+lockfile = true
+
+# Refuse tools whose provenance mise cannot verify.
+paranoid = true
+
+# Never take a release less than three days old. Malicious releases of popular
+# npm packages are typically pulled within hours; this window costs nothing and
+# removes the "installed it the morning it was compromised" case.
+minimum_release_age = "3d"
+
+# Shims are on PATH for every shell, including ones with no terminal. Progress
+# bars and hints there are noise at best and corrupt output at worst.
+quiet = true
+
+# Structural enforcement of "no third-party plugin backends". asdf and vfox
+# plugins are arbitrary shell scripts fetched from a git repo and run on
+# install; ubi pulls straight from GitHub releases with no registry in front
+# of it. Disabling them here also settles which backend an ambiguous name
+# resolves to: `yarn` would otherwise pick the vfox plugin over aqua.
+disable_backends = ["asdf", "vfox", "ubi"]
+
+[settings.node]
+
+# corepack ships its own pnpm/yarn shims and would fight the [tools] entries
+# above for the same binary names.
+corepack = false
+
+# Verify the release signatures Node publishes, not just the checksum.
+gpg_verify = true

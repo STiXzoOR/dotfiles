@@ -7,34 +7,120 @@
 # actually reads back BEFORE an upgrade lets you diff afterwards, so version
 # gating is based on measured breakage instead of guesswork.
 #
+# Read-only: the only command this script ever runs against the OS is
+# `defaults read`. It never writes a preference.
+#
 # Usage:
+#   dotfiles-baseline list              Print domain<TAB>key[<TAB>flags] pairs
 #   dotfiles-baseline capture [label]   Write a snapshot (default label: OS version)
+#   dotfiles-baseline diff <a> <b>      Report keys that stopped working
 #
 set -uo pipefail
 
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 BASELINE_DIR="${DOTFILES_BASELINE_DIR:-$DOTFILES_DIR/macos/baselines}"
 
-# Emit "domain key" for every `defaults write` in the macos scripts.
+# Emit "domain<TAB>key" (plus "<TAB>-currentHost" where relevant) for every
+# `defaults write` in the macos scripts.
+#
+# The shapes that occur in this repo, all of which must be captured:
+#   defaults write <domain> <key> ...
+#     defaults write <domain> "Key With Spaces" ...   (indented, inside an if)
+#   sudo defaults write /Library/Preferences/<domain> <key> ...
+#   defaults -currentHost write <domain> <key> ...
+#
+# A line whose first argument after the domain begins with "-" declared no key
+# at all (`defaults write com.apple.sound.beep.feedback -bool false`), which
+# `defaults` silently reinterprets as domain=<domain> key=-bool. That is a bug
+# in the script being scanned, so the line is dropped rather than recorded.
 extract_keys() {
-  grep -hoE '^defaults write [A-Za-z0-9.-]+ +"?[A-Za-z0-9_.-]+"?' \
-    "$DOTFILES_DIR"/macos/defaults*.sh 2>/dev/null |
-    sed 's/defaults write //; s/"//g' |
+  awk '
+    # Pull one token off the front of s: "quoted", '"'"'quoted'"'"' or bare.
+    # Leaves the remainder in the global REST.
+    function take(s,   i, tok) {
+      sub(/^[[:space:]]+/, "", s)
+      if (substr(s, 1, 1) == "\"") {
+        i = index(substr(s, 2), "\"")
+        if (i == 0) { REST = ""; return "" }
+        tok = substr(s, 2, i - 1); REST = substr(s, i + 2)
+      } else if (substr(s, 1, 1) == "'"'"'") {
+        i = index(substr(s, 2), "'"'"'")
+        if (i == 0) { REST = ""; return "" }
+        tok = substr(s, 2, i - 1); REST = substr(s, i + 2)
+      } else if (match(s, /^[^[:space:]]+/)) {
+        tok = substr(s, 1, RLENGTH); REST = substr(s, RLENGTH + 1)
+      } else { REST = ""; return "" }
+      return tok
+    }
+    {
+      line = $0
+      sub(/^[[:space:]]+/, "", line)
+      if (substr(line, 1, 1) == "#") next
+      sub(/^sudo[[:space:]]+/, "", line)
+      if (line !~ /^defaults[[:space:]]/) next
+      sub(/^defaults[[:space:]]+/, "", line)
+
+      flags = ""; domain = ""
+      while (match(line, /^-[A-Za-z]+[[:space:]]/)) {
+        flag = substr(line, 1, RLENGTH - 1)
+        if (flag == "-currentHost") flags = "-currentHost"
+        else if (flag == "-g" || flag == "-globalDomain") domain = "NSGlobalDomain"
+        line = substr(line, RLENGTH)
+        sub(/^[[:space:]]+/, "", line)
+      }
+      if (line !~ /^write[[:space:]]/) next
+      sub(/^write[[:space:]]+/, "", line)
+
+      if (domain == "") { domain = take(line); line = REST }
+      key = take(line)
+      if (domain == "" || key == "") next
+      if (substr(key, 1, 1) == "-") next   # no key was given; see comment above
+
+      if (flags != "") print domain "\t" key "\t" flags
+      else print domain "\t" key
+    }
+  ' "$DOTFILES_DIR"/macos/defaults*.sh 2>/dev/null |
     sort -u
+}
+
+# Read one key, honouring the -currentHost scope when the write used it.
+read_default() {
+  if [ -n "${3:-}" ]; then
+    defaults "$3" read "$1" "$2" 2>/dev/null
+  else
+    defaults read "$1" "$2" 2>/dev/null
+  fi
 }
 
 # Emit "domain<TAB>key<TAB>value", or ABSENT when the OS does not honour it.
 capture_values() {
-  local domain key value
-  while read -r domain key; do
-    [[ -z "$domain" || -z "$key" ]] && continue
-    if value=$(defaults read "$domain" "$key" 2>/dev/null); then
-      value=$(printf '%s' "$value" | tr '\n' ' ' | sed 's/  */ /g')
+  local domain key flags value
+  while IFS=$'\t' read -r domain key flags; do
+    [ -z "$domain" ] || [ -z "$key" ] && continue
+    if value=$(read_default "$domain" "$key" "${flags:-}"); then
+      # Rewrite the home directory as a literal $HOME: an absolute /Users path
+      # does not belong in a public repo, and two machines with different
+      # usernames would otherwise diff as changed on every path-valued key.
+      value=$(printf '%s' "$value" | tr '\n' ' ' | sed "s|$HOME|\$HOME|g; s/  */ /g")
+
+      # Same reasoning for the machine's own name. A baseline exists to track
+      # which KEYS the OS still honours, so the value of a host-identifying key
+      # carries no information worth committing to a public repo.
+      case "$key" in
+        NetBIOSName | ComputerName | HostName | LocalHostName)
+          # shellcheck disable=SC2016  # the literal string is the placeholder
+          value='$COMPUTER_NAME'
+          ;;
+      esac
       printf '%s\t%s\t%s\n' "$domain" "$key" "$value"
     else
       printf '%s\t%s\tABSENT\n' "$domain" "$key"
     fi
   done < <(extract_keys)
+}
+
+cmd_list() {
+  extract_keys
 }
 
 cmd_capture() {
@@ -65,8 +151,14 @@ keys_where() {
 
 cmd_diff() {
   local before="$BASELINE_DIR/${1:-}.tsv" after="$BASELINE_DIR/${2:-}.tsv"
-  [[ -f "$before" ]] || { echo "no such baseline: ${1:-}" >&2; return 1; }
-  [[ -f "$after" ]] || { echo "no such baseline: ${2:-}" >&2; return 1; }
+  [[ -f "$before" ]] || {
+    echo "no such baseline: ${1:-}" >&2
+    return 1
+  }
+  [[ -f "$after" ]] || {
+    echo "no such baseline: ${2:-}" >&2
+    return 1
+  }
 
   echo "=== keys that STOPPED working (${1} -> ${2}) ==="
   comm -12 <(keys_where "$before" live) <(keys_where "$after" absent) |
@@ -74,6 +166,10 @@ cmd_diff() {
 }
 
 case "${1:-}" in
+  list)
+    shift
+    cmd_list "$@"
+    ;;
   capture)
     shift
     cmd_capture "$@"
@@ -83,7 +179,7 @@ case "${1:-}" in
     cmd_diff "$@"
     ;;
   *)
-    echo "Usage: dotfiles-baseline {capture [label]|diff <before> <after>}" >&2
+    echo "Usage: dotfiles-baseline {list|capture [label]|diff <before> <after>}" >&2
     exit 1
     ;;
 esac

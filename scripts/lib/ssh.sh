@@ -2,11 +2,12 @@
 #
 # Shared SSH setup helpers.
 #
-# Sourced by both install paths -- bin/dotfiles (sub_install_ssh) and
-# bin/dotfiles-setup (generate_ssh_key) -- so the two cannot drift apart.
-# They did drift once: dotfiles-setup generated passphrase-less keys and never
-# wrote ~/.ssh/config, which meant no UseKeychain and a passphrase prompt in
-# every new shell.
+# Sourced by bin/dotfiles (sub_install_ssh). bin/dotfiles-setup no longer has
+# its own copy of this logic: it delegates the whole step through
+# `run_cli "SSH key" install --ssh`, so the two cannot drift apart. They did
+# drift once, when the wizard generated passphrase-less keys and never wrote
+# ~/.ssh/config, which meant no UseKeychain and a passphrase prompt in every
+# new shell.
 
 # Ensure ~/.ssh/config carries the Host * block that lets ssh take the key
 # passphrase from the macOS Keychain instead of asking for it every time.
@@ -21,7 +22,12 @@ dotfiles_ensure_ssh_config() {
   mkdir -p "$ssh_dir"
   chmod 700 "$ssh_dir"
 
-  if grep -q "IdentityFile ~/.ssh/id_ed25519" "$ssh_config" 2>/dev/null; then
+  # Look for the block this function actually writes, not for an IdentityFile
+  # line. Someone whose config already names that key inside a specific
+  # `Host github.com` stanza would otherwise never get the global `Host *`
+  # block with UseKeychain, which is the whole point of the function.
+  if grep -q "^Host \*" "$ssh_config" 2>/dev/null &&
+    grep -q "UseKeychain" "$ssh_config" 2>/dev/null; then
     return 0
   fi
 

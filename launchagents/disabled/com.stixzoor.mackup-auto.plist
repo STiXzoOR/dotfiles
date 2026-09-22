@@ -1,31 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
-  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-  <plist version="1.0">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.stixzoor.mackup-auto</string>
+
+    <key>EnvironmentVariables</key>
     <dict>
-      <key>Label</key>
-      <string>com.stixzoor.mackup-auto</string>
-
-      <key>EnvironmentVariables</key>
-      <dict>
-          <key>PATH</key>
-          <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-      </dict>
-
-      <key>ProgramArguments</key>
-      <array>
-        <string>/bin/bash</string>
-        <string>-c</string>
-        <string>/opt/homebrew/bin/mackup backup --force</string>
-      </array>
-
-      <key>StartInterval</key>
-      <integer>3600</integer>
-
-      <key>RunAtLoad</key>
-      <true/>
-      <key>StandardOutPath</key>
-      <string>/tmp/mackup.log</string>
-      <key>StandardErrorPath</key>
-      <string>/tmp/mackup.err</string>
+      <key>PATH</key>
+      <string>/opt/homebrew/bin:/usr/bin:/bin</string>
     </dict>
-  </plist>
+
+    <!--
+      Logging is redirected inside the shell command rather than through
+      StandardOutPath / StandardErrorPath. launchd expands neither ~ nor $HOME
+      in those keys, so they would need an absolute /Users path, which does not
+      belong in a public repo. The previous values pointed at /tmp, which is
+      world-writable: any local process can pre-create or symlink a file there
+      and have this agent append to it.
+    -->
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>-c</string>
+      <string>mkdir -p "$HOME/Library/Logs" &amp;&amp; exec /opt/homebrew/bin/mackup backup --force &gt;&gt;"$HOME/Library/Logs/mackup-auto.log" 2&gt;&amp;1</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+  </dict>
+</plist>
