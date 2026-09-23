@@ -93,7 +93,6 @@ brew "asc"                          # App Store Connect CLI
 
 # Programming languages and runtimes
 brew "mise"                         # Runtime/tool version manager
-brew "bun"                          # JS runtime/package manager (not the npm shim)
 brew "python"                       # Python 3
 brew "go"                           # Go language
 brew "cmake"                        # Build system

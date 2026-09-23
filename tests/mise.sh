@@ -69,6 +69,12 @@ t "M1.9" "pnpm, yarn and uv are tools, not corepack" \
    grep -qE "^yarn *=" config/mise/config.toml &&
    grep -qE "^uv *=" config/mise/config.toml'
 
+# bun sat in the Brewfile after the migration, was never bundled, and so was
+# simply missing. One owner: mise, pinned in mise.lock like the others.
+t "M1.10" "bun is a mise tool, not a Homebrew formula" \
+  'grep -qE "^bun *=" config/mise/config.toml &&
+   ! grep -qE "^brew \"bun\"" Brewfile'
+
 #############################################################################
 section "M2 -- shims at login, fnm fallback, opt-in activation"
 #############################################################################
