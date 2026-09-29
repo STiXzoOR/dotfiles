@@ -316,6 +316,10 @@ t "P6.13" "without gitleaks the private guard says that layer is skipped; with i
   out2=$(pcommit "with gitleaks" 2>&1); rc2=$?
   [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "gitleaks is not installed")" -eq 1 ] && [ "$rc2" -eq 0 ] && [ "$(printf "%s\n" "$out2" | grep -c "gitleaks")" -eq 0 ]'
 
+t "P6.14" "init still creates the repo when core.hooksPath disables the guard, but its status is non-zero and says so" '
+  W=$(penv); out=$(with_env "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/elsewhere" priv init 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "NOT active")" -ge 1 ] && [ -f "$W/priv/profiles/local.zsh" ] && [ -L "$W/pub/profiles/local.zsh" ]'
+
 #############################################################################
 section "P7 -- clone failures: only 'not set up yet' is a skip (Task 12.4)"
 #############################################################################

@@ -130,7 +130,10 @@ EOF
   fi
 
   # After the first commit: moving the existing files in is not a new leak.
-  install_hook || true
+  # The repo is made either way, but a guard that cannot be installed shows in
+  # the exit status (install_hook has already said why).
+  local hookrc=0
+  install_hook || hookrc=1
 
   local slug
   slug=$(remote_slug)
@@ -142,6 +145,7 @@ EOF
   say ""
   say "Private SSH hosts go in $PRIVATE_DIR/ssh/config; the encrypted secrets export is"
   say "written to $PRIVATE_DIR/secrets.age by: dotfiles secrets export"
+  return "$hookrc"
 }
 
 #############################################################################

@@ -640,6 +640,8 @@ cmd_replay() {
   n=$(grep -c . "$file")
   export JEV_NOLOG=1 JEV_MAX_REQUESTS=$((n + 5))
   jev_init || return 1
+  # jev_ask runs in $(...) below: load the own secrets here, once, not per case.
+  jev_load_secrets
   res=$(mktemp "${TMPDIR:-/tmp}/jev-replay.XXXXXX")
   sf=$(mktemp "${TMPDIR:-/tmp}/jev-replay-state.XXXXXX")
   say "replaying $n labelled case(s) for $point against the real API (model ${DOTFILES_JEV_MODEL:-$JEV_DEFAULT_MODEL})"

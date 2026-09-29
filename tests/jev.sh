@@ -878,4 +878,9 @@ t "J11" "every consult path loads the owners secrets once, in the main shell: tw
   JENV="TYPESAFE_API_KEY=k1" guard >/dev/null 2>&1
   [ "$(calls)" -eq 2 ] && [ "$(grep -c "dotfiles.openai_api_key" "$W/sec/calls.log")" -eq 1 ]'
 
+t "J12" "replay reads the owners secrets once for all cases, not once per question" '
+  W=$(sandbox); mkenv "$W"; mkreplay "$W"; redact_env "$W"
+  JENV="TYPESAFE_API_KEY=k1 DOTFILES_JEV_REPLAY_DIR=$W/replay" jtool replay privacy >/dev/null 2>&1
+  [ "$(calls)" -eq 4 ] && [ "$(grep -c "dotfiles.openai_api_key" "$W/sec/calls.log")" -eq 1 ]'
+
 finish
