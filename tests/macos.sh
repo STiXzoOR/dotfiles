@@ -623,6 +623,15 @@ t "G6.6" "DOTFILES_MACHINE_ROLE=desktop wins over the battery" \
    _logged "$DSK" "sudo pmset -a powernap 0" && _logged "$DSK" "sudo pmset -a disksleep 0"'
 t "G6.7" "wake-on-LAN off is a security setting and applies to both roles" \
   '_logged "$LAP" "sudo pmset -a womp 0" && _logged "$DSK" "sudo pmset -a womp 0"'
+t "G6.9" "desktop: never system-sleep on AC power, display sleeps after 10 minutes (the Mac stays reachable over SSH)" \
+  '_logged "$DSK" "sudo pmset -c sleep 0" && _logged "$DSK" "sudo pmset -c displaysleep 10" &&
+   _logged "$DEF" "sudo pmset -c sleep 0" && _logged "$DEF" "sudo pmset -c displaysleep 10"'
+t "G6.10" "laptop: sleep and displaysleep are left alone, by override and by battery" \
+  '[ "$(_logcount "$LAP" "pmset -c sleep")" -eq 0 ] && [ "$(_logcount "$LAP" "displaysleep")" -eq 0 ] &&
+   [ "$(_logcount "$BAT" "pmset -c sleep")" -eq 0 ] && [ "$(_logcount "$BAT" "displaysleep")" -eq 0 ]'
+t "G6.11" "the sleep settings are set for AC power only (-c), never for every power source" \
+  '[ "$(_logcount "$DSK" "pmset -a sleep")" -eq 0 ] && [ "$(_logcount "$DSK" "pmset -a displaysleep")" -eq 0 ] &&
+   [ "$(_logcount "$DSK" "pmset -b ")" -eq 0 ]'
 t "G6.8" "nothing in defaults.sh ever turns Remote Login off" \
   '[ "$(code_of macos/defaults.sh | grep -c -- "-setremotelogin.* off")" -eq 0 ]'
 

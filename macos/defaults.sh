@@ -98,6 +98,16 @@ if [ "$DOTFILES_ROLE" = desktop ]; then
   running "Never sleep the disks"
   sudo pmset -a disksleep 0
   print_result $?
+
+  # Reachable over SSH (and Tailscale) at all times: on AC power the machine
+  # never system-sleeps, and only the display goes to sleep, after 10 minutes.
+  running "Never sleep the system on AC power"
+  sudo pmset -c sleep 0
+  print_result $?
+
+  running "Sleep the display after 10 minutes on AC power"
+  sudo pmset -c displaysleep 10
+  print_result $?
 else
   skip "Remote Login and power settings: left as they are on a laptop (role: $DOTFILES_ROLE)"
 fi

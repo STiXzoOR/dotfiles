@@ -26,9 +26,10 @@ pmset cannot answer, so a failed probe never forces anything) and
 `DOTFILES_MACHINE_ROLE=desktop|laptop` to override.
 
 `dotfiles configure --defaults` uses the role: Remote Login and the power
-settings (`autorestart`, `powernap`, `disksleep`) are applied on the desktop only.
-On a laptop the script leaves them exactly as they are; it never turns Remote
-Login off. The firewall, stealth mode, wake-on-LAN off and the screen-lock
+settings (`autorestart`, `powernap`, `disksleep`, plus `sleep 0` and `displaysleep 10` on
+AC power, so the Mac mini stays reachable over SSH and Tailscale) are applied on the
+desktop only. On a laptop the script leaves them exactly as they are; it never turns
+Remote Login off. The firewall, stealth mode, wake-on-LAN off and the screen-lock
 password apply to both.
 
 The computer name is per Mac. `macos/local.sh` (shared through the private repo)

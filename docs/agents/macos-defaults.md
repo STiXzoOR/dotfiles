@@ -48,7 +48,9 @@ Access. Revoke the grant when the install is done.
 Declared here: firewall on with stealth mode, Remote Login on, restart after a
 power failure, no Power Nap, no disk sleep, no wake-on-LAN, password required
 immediately after sleep or the screen saver. Remote Login, `autorestart`,
-`powernap` and `disksleep` are desktop-only: `scripts/lib/machine.sh` reads the
+`powernap`, `disksleep` and the AC-power sleep settings (`pmset -c sleep 0`, so the
+system never sleeps and stays reachable over SSH, and `pmset -c displaysleep 10`)
+are desktop-only: `scripts/lib/machine.sh` reads the
 role (`desktop` when `pmset -g batt` shows no internal battery, else `laptop`;
 `DOTFILES_MACHINE_ROLE` overrides) and on a laptop the script leaves those
 settings untouched (it never turns Remote Login off). Firewall, stealth mode,

@@ -239,7 +239,7 @@ The following will only happen if you agree on the prompt
 
 - Enable install from Anywhere
 - Disable remote apple events
-- Enable remote login (SSH), Restart automatically after a power failure, disable Power Nap and disk sleep (desktop only; a MacBook keeps its own)
+- Enable remote login (SSH), Restart automatically after a power failure, disable Power Nap and disk sleep, never sleep the system on AC power and sleep the display after 10 minutes (desktop only; a MacBook keeps its own)
 - Disable wake-on modem
 - Disable wake-on LAN
 - Disable guest account login
