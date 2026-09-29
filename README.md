@@ -195,16 +195,15 @@ The following will only happen if you agree on the prompt
 
 - Enable install from Anywhere
 - Disable remote apple events
-- Disable remote login
+- Enable remote login (SSH), Restart automatically after a power failure, disable Power Nap and disk sleep
 - Disable wake-on modem
 - Disable wake-on LAN
 - Disable guest account login
 
 ### General UI/UX
 
-- Set computer name (as done via System Preferences → Sharing)
+- Set computer name, languages, locale, units and timezone from `macos/local.sh` (gitignored; copy `macos/local.sh.example`), when set
 - Disable the sound effects on boot
-- Set highlight color to steel blue
 - Set sidebar icon size to medium
 - Always show scrollbars
 - Disable the over-the-top focus ring animation
@@ -308,7 +307,6 @@ The following will only happen if you agree on the prompt
 - Remove the auto-hiding Dock delay
 - Make Dock icons of hidden applications translucent
 - Reset Launchpad, but keep the desktop wallpaper intact
-- Add iOS & Watch Simulator to Launchpad
 
 ### Hot corners
 
@@ -473,9 +471,7 @@ The following is the software installed by default:
 - Homebrew/Bundle
 - Homebrew/Services
 - goreleaser/tap
-- khanakia/vercelgate
-- Khanhas/Tap
-- lotyp/formulae
+- runpod/runpodctl
 - artginzburg/tap
 
 ### Utilities
@@ -579,8 +575,12 @@ The following is the software installed by default:
 - Kaleidoscope (diff tool)
 - Karabiner Elements (keyboard customizer)
 - Ngrok
+- Paragon NTFS
 - Notion
+- Proton Mail, Proton Mail Bridge
 - ProtonVPN
+- Bambu Studio
+- ChatGPT, Claude
 - PrusaSlicer/SuperSlicer
 - Raycast (Spotlight replacement)
 - Setapp
@@ -590,6 +590,7 @@ The following is the software installed by default:
 - Telegram
 - TopNotch
 - Transmission
+- Termius
 - Tunnelblick
 - Zoom
 
@@ -627,10 +628,16 @@ The following is the software installed by default:
 
 ### App Store
 
+- Amphetamine
+- Apple Configurator
+- Canva
+- DaisyDisk
 - Emby
-- LastPass
+- Infuse
 - Magnet
-- Messenger
+- Tailscale
+- UTM
+- Xcode
 - Microsoft Remote Desktop
 - Paste
 - Spark

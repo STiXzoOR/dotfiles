@@ -11,8 +11,11 @@ t "D1.1" "no nonexistent arduino cask" \
   '! grep -q "^cask \"arduino\"" Brewfile'
 t "D1.2" "no disabled/deprecated quicklook casks" \
   '! grep -qE "^cask \"(superslicer|quicklook-json|qlstephen|quicklookase)\"" Brewfile'
-t "D1.3" "tailscale declared once, as the formula" \
-  '[ "$(grep -cE "tailscale" Brewfile)" -eq 1 ] && grep -q "^brew \"tailscale\"" Brewfile'
+# Owner decision 2026-09-29: the App Store app is what is used. The formula's
+# CLI talks to a daemon that never runs, so it is not declared; system/.alias
+# points `tailscale` at the app's own binary instead (D6.9).
+t "D1.3" "tailscale is the App Store app, not the formula" \
+  '[ "$(code_of Brewfile | grep -cE "^brew \"tailscale\"")" -eq 0 ] && grep -q "^mas \"Tailscale\", id: 1475387142" Brewfile'
 t "D1.4" "sudo-touchid and its tap stay declared (user decision 2026-09-21: keep it)" \
   'grep -q "^tap \"artginzburg/tap\"" Brewfile && grep -q "^brew \"artginzburg/tap/sudo-touchid\"" Brewfile'
 t "D1.5" "dead taps removed" \
@@ -98,6 +101,66 @@ t "D3.9" "no global core.hooksPath (it would disable .git/hooks in every repo)" 
   '[ "$(code_of config/git/config | grep -c "hooksPath")" -eq 0 ]'
 t "D3.10" "the repo hook install still sets hooksPath repo-locally" \
   'grep -q "config core.hooksPath .githooks" bin/dotfiles'
+
+section "D6 — new-Mac package changes (2026-09-29)"
+# Every token and id below was checked against formulae.brew.sh and the iTunes
+# lookup API on 2026-09-29; see the task report.
+t "D6.1" "apps that no longer exist in the App Store are gone" \
+  '[ "$(code_of Brewfile | grep -cE "^mas \"(LastPass|Messenger)\"")" -eq 0 ]'
+t "D6.2" "dockutil and pup come from homebrew-core, and their taps are gone" \
+  'grep -q "^brew \"dockutil\"" Brewfile && grep -q "^brew \"pup\"" Brewfile &&
+   [ "$(code_of Brewfile | grep -cE "lotyp/formulae|datadog-labs/pack")" -eq 0 ]'
+t "D6.3" "gnupg (mise node verification) and git (not the xcrun shim) are declared" \
+  'grep -q "^brew \"gnupg\"" Brewfile && grep -q "^brew \"git\"" Brewfile'
+t "D6.4" "runpodctl and its tap are declared, fully qualified" \
+  'grep -q "^tap \"runpod/runpodctl\"" Brewfile && grep -q "^brew \"runpod/runpodctl/runpodctl\"" Brewfile'
+t "D6.5" "the new casks are declared" '
+  bad=0
+  for c in chatgpt claude proton-mail proton-mail-bridge termius paragon-ntfs bambu-studio; do
+    grep -q "^cask \"$c\"" Brewfile || bad=$((bad + 1))
+  done
+  [ "$bad" -eq 0 ]'
+# homebrew-cask disabled openemu on 2026-09-01 (fails Gatekeeper). A disabled
+# cask hard-fails `brew bundle`, so it is documented rather than declared.
+t "D6.6" "openemu is not declared as a cask (disabled upstream)" \
+  '[ "$(code_of Brewfile | grep -c "^cask \"openemu\"")" -eq 0 ]'
+t "D6.7" "the new App Store apps are declared by the names mas prints" '
+  bad=0
+  for e in "Xcode:497799835" "Tailscale:1475387142" "UTM:1538878817" "DaisyDisk:411643860" "Amphetamine:937984704" "Infuse:1136220934" "Canva:897446215" "Apple Configurator:1037126344"; do
+    grep -q "^mas \"${e%%:*}\", id: ${e##*:}\$" Brewfile || bad=$((bad + 1))
+  done
+  [ "$bad" -eq 0 ]'
+t "D6.8" "no package is declared twice" '
+  dup=$(code_of Brewfile | grep -E "^(brew|cask|mas|tap) " | sed -E "s/^(brew|cask|tap) \"([^\"]+)\".*/\1 \2/; s/^mas \"[^\"]+\", id: ([0-9]+).*/mas \1/" | sort | uniq -d | grep -c .)
+  [ "$dup" -eq 0 ]'
+# Behavioural: source the real file in zsh with a stub app binary.
+# _ts_alias <app-path> <path-dir> -- what `alias tailscale` prints after
+# sourcing the real system/.alias in a clean zsh.
+_ts_alias() {
+  env -i HOME="$W" PATH="$2:/usr/bin:/bin" TAILSCALE_APP="$1" \
+    zsh -f -c "source \"$ROOT_DIR/system/.alias\"; alias tailscale" 2>/dev/null
+}
+t "D6.9" "the tailscale alias points at the app binary when it exists and no tailscale is on PATH" \
+  '! command -v zsh >/dev/null 2>&1 || {
+     W=$(sandbox) && mkdir -p "$W/empty" && printf "#!/bin/sh\n" >"$W/Tailscale" && chmod +x "$W/Tailscale" &&
+     [ "$(_ts_alias "$W/Tailscale" "$W/empty")" = "tailscale=$W/Tailscale" ]
+   }'
+t "D6.10" "no tailscale alias when the app is absent" \
+  '! command -v zsh >/dev/null 2>&1 || {
+     W=$(sandbox) && mkdir -p "$W/empty" && [ -z "$(_ts_alias "$W/missing" "$W/empty")" ]
+   }'
+t "D6.11" "no tailscale alias when a tailscale command is already on PATH" \
+  '! command -v zsh >/dev/null 2>&1 || {
+     W=$(sandbox) && mkdir -p "$W/bin" && printf "#!/bin/sh\n" >"$W/Tailscale" && chmod +x "$W/Tailscale" &&
+     printf "#!/bin/sh\n" >"$W/bin/tailscale" && chmod +x "$W/bin/tailscale" &&
+     [ -z "$(_ts_alias "$W/Tailscale" "$W/bin")" ]
+   }'
+t "D6.12" "the private package lists Task 1 reads are gitignored" \
+  'git -c core.excludesFile=/dev/null check-ignore -q Brewfile.local && git -c core.excludesFile=/dev/null check-ignore -q packages/code.local.list'
+t "D6.13" "the sideloaded islands-dark theme is not in the marketplace list" \
+  '[ "$(code_of packages/code.list | grep -c "^bwya77.islands-dark")" -eq 0 ] && grep -q "islands-dark" packages/code.list'
+t "D6.14" ".idea and .superpowers are ignored at the repo level" \
+  'git -c core.excludesFile=/dev/null check-ignore -q .idea/x && git -c core.excludesFile=/dev/null check-ignore -q .superpowers/x'
 
 section "D4 — Neovim only"
 t "D4.1" "no setup_handlers" \

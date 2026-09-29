@@ -108,6 +108,14 @@ alias update='sudo softwareupdate -i -a; brew update; brew upgrade; brew upgrade
 alias ip="curl -s https://ipinfo.io | jq -r '.ip'"
 alias ipl="ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1'"
 
+# Tailscale is the App Store app, which ships its CLI inside the bundle. The
+# brew formula is not installed (its CLI needs a daemon that never runs).
+_tailscale_app="${TAILSCALE_APP:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
+if [[ -x "$_tailscale_app" ]] && (( ! $+commands[tailscale] )); then
+  alias tailscale="$_tailscale_app"
+fi
+unset _tailscale_app
+
 #############################################################
 # Spotlight
 #############################################################

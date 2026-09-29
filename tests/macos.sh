@@ -339,7 +339,7 @@ t "G1.6" "Inches does not also declare metric units" \
 t "G1.7" "defaults.sh carries no computer name, locale or timezone literal" \
   '[ "$(code_of macos/defaults.sh | grep -cE "STiXzoOR|en_CY|el-CY|Europe/Athens")" -eq 0 ]'
 t "G1.8" "local.sh is gitignored and only the example is tracked" \
-  'git check-ignore -q macos/local.sh && [ ! -e macos/local.sh ] && [ -f macos/local.sh.example ]'
+  'git -c core.excludesFile=/dev/null check-ignore -q macos/local.sh && [ ! -e macos/local.sh ] && [ -f macos/local.sh.example ]'
 t "G1.9" "the example sets every variable the script reads" '
   bad=0
   for v in DOTFILES_COMPUTER_NAME DOTFILES_LANGUAGES DOTFILES_LOCALE DOTFILES_MEASUREMENT_UNITS DOTFILES_TIMEZONE; do
@@ -556,7 +556,7 @@ t "G5.6" "atuin config sets enter_accept and is a valid, minimal file" \
 t "G5.7" "gh config: https protocol and the co alias" \
   'grep -q "^git_protocol: https" config/gh/config.yml && grep -q "co: pr checkout" config/gh/config.yml'
 t "G5.8" "gh hosts.yml (holds the login) is gitignored and not tracked" \
-  'git check-ignore -q config/gh/hosts.yml && [ -z "$(git ls-files config/gh/hosts.yml)" ]'
+  'git -c core.excludesFile=/dev/null check-ignore -q config/gh/hosts.yml && [ -z "$(git ls-files config/gh/hosts.yml)" ]'
 t "G5.9" "gh config carries no token" \
   '[ "$(grep -ciE "oauth_token|ghp_|gho_|github_pat" config/gh/config.yml)" -eq 0 ]'
 t "G5.10" "the VS Code keybindings are valid JSON with the two ctrl+d bindings" \

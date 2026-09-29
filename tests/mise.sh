@@ -350,7 +350,7 @@ t "M4.8" "the check notices a deleted sidecar (mutation, in a sandbox copy)" \
 
 # The tree used to be ignored, which is what left a fresh clone without it.
 t "M4.9" "config/mise/locks is not gitignored" \
-  '! git check-ignore -q config/mise/locks/npm-svgo/x'
+  '! git -c core.excludesFile=/dev/null check-ignore -q config/mise/locks/npm-svgo/x'
 
 t "M4.10" "the sidecar tree is tracked" \
   '[ "$(git ls-files config/mise/locks | grep -c .)" -gt 0 ]'
