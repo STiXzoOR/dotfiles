@@ -296,6 +296,21 @@ install_plugins() {
   if [[ $skipped -gt 0 ]]; then
     ok "$skipped plugins already installed, skipped"
   fi
+
+  warn_duplicate_safety_net
+}
+
+# The plugin was renamed safety-net -> cc-safety-net. A Mac that has the old one
+# and gets the new one runs both hooks. Warn with the exact command; never
+# uninstall anything here.
+warn_duplicate_safety_net() {
+  local installed
+  installed="$(claude plugin list --json 2>/dev/null || true)"
+  if printf '%s' "$installed" | grep -Eq '(^|[^-[:alnum:]])safety-net@cc-marketplace' &&
+    printf '%s' "$installed" | grep -Fq 'cc-safety-net@cc-marketplace'; then
+    warn "two Safety Net plugins are installed (the legacy safety-net and cc-safety-net); remove the legacy one with: claude plugin uninstall safety-net@cc-marketplace"
+  fi
+  return 0
 }
 
 # ─── 3b. MCP servers ─────────────────────────────────────────────────────────
@@ -359,7 +374,8 @@ register_mcp_servers() {
 # The CLI keeps a canonical copy in ~/.agents/skills and symlinks it into the
 # agent directories, so an existing symlink means "already installed". A real
 # directory (a hand-placed copy) would make the CLI refuse or clobber it, so it
-# is moved aside to <skill>.bak.<epoch>, the repo's backup convention.
+# is moved to ~/.claude/backups/skills/<skill>.<epoch>, outside the skills tree
+# (Claude Code would load a sibling backup as a second skill).
 install_skills() {
   local line source skill dest failed=0
   if [[ ! -f "$CLAUDE_DIR/skills.list" && ! -f "$CLAUDE_DIR/skills.local.list" ]]; then
@@ -378,7 +394,7 @@ install_skills() {
     fi
 
     dest="$CLAUDE_HOME/skills/$skill"
-    if [[ -L "$dest" ]]; then
+    if [[ -L "$dest" && -e "$dest" ]]; then
       ok "skill $skill already installed"
       continue
     fi
@@ -388,14 +404,22 @@ install_skills() {
       failed=$((failed + 1))
       continue
     fi
-    if [[ -e "$dest" ]]; then
-      if ! mv "$dest" "$dest.bak.$(date +%s)"; then
+    if [[ -L "$dest" ]]; then
+      # A dangling link is not an install: drop it so the CLI can recreate it.
+      rm -f "$dest"
+    elif [[ -e "$dest" ]]; then
+      # Outside the skills tree: Claude Code loads everything under skills/,
+      # so a "$skill.bak.<epoch>" sibling would be a second, stale skill.
+      local backup_dir="$CLAUDE_HOME/backups/skills"
+      local backup
+      backup="$backup_dir/$skill.$(date +%s)"
+      if ! mkdir -p "$backup_dir" || ! mv "$dest" "$backup"; then
         warn "could not move $dest aside"
         FAILURES+=("skill: $skill")
         failed=$((failed + 1))
         continue
       fi
-      ok "moved the existing $skill aside to $skill.bak.<epoch>"
+      ok "moved the existing $skill aside to ~/.claude/backups/skills/$skill.<epoch>"
     fi
 
     running "skill $skill"
