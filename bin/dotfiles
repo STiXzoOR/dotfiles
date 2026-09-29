@@ -61,6 +61,7 @@ sub_install_help() {
   echo "Commands:"
   echo "   --all              Run all below commands"
   echo "   --claude           Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)"
+  echo "   --codex            Codex CLI (plugins, config)"
   echo "   --fonts            Local fonts"
   echo "   --help             This help message"
   echo "   --homebrew         Homebrew itself (install, or update && upgrade)"
@@ -89,54 +90,92 @@ sub_update_help() {
   echo "   --help             This help message"
 }
 
-sub_install() {
-  bot "Hi! I'm going to install tooling and tweak your system settings. Here I go..."
-
-  # Cache one sudo credential and keep it warm for the rest of the run.
-  #
-  # There is deliberately no NOPASSWD installer any more. The rule this used
-  # to write granted passwordless root over $HOMEBREW_PREFIX/bin/brew -- a
-  # file owned and writable by the very user being granted root over it -- and
-  # over /usr/bin/xattr with unrestricted arguments, which strips Gatekeeper
-  # quarantine anywhere on disk. Touch ID via /etc/pam.d/sudo_local is the
-  # supported way to stop retyping the password; `dotfiles doctor` reports on
-  # it and prints the recipe.
-  sudo -v
+# Cache one sudo credential and keep it warm for the rest of the run.
+#
+# There is deliberately no NOPASSWD installer any more. The rule this used
+# to write granted passwordless root over $HOMEBREW_PREFIX/bin/brew -- a
+# file owned and writable by the very user being granted root over it -- and
+# over /usr/bin/xattr with unrestricted arguments, which strips Gatekeeper
+# quarantine anywhere on disk. Touch ID via /etc/pam.d/sudo_local is the
+# supported way to stop retyping the password; `dotfiles doctor` reports on
+# it and prints the recipe.
+dotfiles_sudo_keepalive() {
+  sudo -v || return 1
 
   while true; do
     sudo -n true
     sleep 60
     kill -0 "$$" || exit
   done 2>/dev/null &
+}
 
-  $0 install --ssh
+# Steps that failed in this run, one name per line. Run a step through
+# dotfiles_run_step and it lands here when it returns non-zero; the summary
+# then names each one instead of the run ending in a success banner.
+DOTFILES_FAILED_STEPS=""
 
+dotfiles_run_step() { # dotfiles_run_step <name> <command...>
+  local name="$1"
+  shift
+  if "$@"; then
+    return 0
+  fi
+  DOTFILES_FAILED_STEPS="${DOTFILES_FAILED_STEPS}${name}"$'\n'
+  error "step failed: $name"
+  return 1
+}
+
+# Print the failed steps and return non-zero, or return 0 when none failed.
+dotfiles_report_failed_steps() {
+  [[ -z "$DOTFILES_FAILED_STEPS" ]] && return 0
+  local step
+  error "these steps failed:"
+  while IFS= read -r step; do
+    [[ -n "$step" ]] && echo "   - $step"
+  done <<<"$DOTFILES_FAILED_STEPS"
+  return 1
+}
+
+sub_install() {
+  bot "Hi! I'm going to install tooling and tweak your system settings. Here I go..."
+
+  dotfiles_sudo_keepalive || return 1
+
+  # The Command Line Tools come first, and nothing after them can work
+  # without them: git, the SSH key comment and Homebrew all need them.
   bot "ensuring build/install tools are available"
   sub_install_clt || return 1
 
-  sub_install_homebrew
-
+  # Every step below reports into the summary, so a failed Homebrew does not
+  # end in a success banner. mise (install --node) is not here: it needs
+  # `link` to have run first, so it is one of the follow-up commands.
+  DOTFILES_FAILED_STEPS=""
+  dotfiles_run_step homebrew sub_install_homebrew
   action "installing stow..."
-  require_brew stow
+  dotfiles_run_step stow require_brew stow
+  dotfiles_run_step ssh sub_install_ssh
 
-  sub_install_node
+  dotfiles_report_failed_steps || return 1
 
   # Every one of these needs the -- prefix: the dispatcher matches
   # $SUB_COMMAND_NAME against --${SUB_COMMAND_NAME#--}, so the bare-word forms
   # this used to print all fell through to an error.
   bot "Woot. All done!. You should run the complementary commands to have your machine fully configured and ready to use:\n"
-  echo "$BIN_NAME install --hosts"
   echo "$BIN_NAME install --prezto"
   echo "$BIN_NAME link (This should be run after prezto)"
-  echo "$BIN_NAME install --fonts"
+  echo "$BIN_NAME install --node (This should be run after link)"
   echo "$BIN_NAME install --packages"
+  echo "$BIN_NAME install --fonts"
   echo "$BIN_NAME install --launchagents"
   echo "$BIN_NAME install --claude"
+  echo "$BIN_NAME install --codex"
   echo "$BIN_NAME configure --defaults"
-  echo -e "$BIN_NAME configure --dock\n"
+  echo "$BIN_NAME configure --dock"
+  echo -e "$BIN_NAME install --hosts (Last: the blocklist can break downloads)\n"
 
+  echo "Or run all of them, in this order: $BIN_NAME install --all"
   if confirm "Should i run them for you?"; then
-    $0 install --all
+    "$0" install --all || return 1
   fi
 
   # This used to `open /Applications/Warp.app` and then kill Terminal --
@@ -152,59 +191,35 @@ sub_install_all() {
   # actually non-interactive, as the help text has always claimed.
   export DOTFILES_YES=1
 
-  $0 install --hosts
-  $0 install --prezto
-  $0 link
-  $0 install --fonts
-  $0 install --packages
-  $0 install --launchagents
-  $0 install --claude
-  $0 configure
+  # Its own keep-alive: --all is also run directly, without `install` having
+  # cached a credential first.
+  dotfiles_sudo_keepalive || return 1
+
+  # Order matters. prezto before link (link backs up the runcoms prezto
+  # would otherwise leave behind), link before node (mise needs
+  # ~/.config/mise to be the repo copy), and hosts last: the blocklist can
+  # break downloads made later in the run.
+  DOTFILES_FAILED_STEPS=""
+  dotfiles_run_step prezto "$0" install --prezto
+  dotfiles_run_step link "$0" link
+  dotfiles_run_step node "$0" install --node
+  dotfiles_run_step packages "$0" install --packages
+  dotfiles_run_step fonts "$0" install --fonts
+  dotfiles_run_step launchagents "$0" install --launchagents
+  dotfiles_run_step claude "$0" install --claude
+  dotfiles_run_step codex "$0" install --codex
+  dotfiles_run_step configure "$0" configure
+  dotfiles_run_step hosts "$0" install --hosts
+
+  dotfiles_report_failed_steps || return 1
+  bot "Woot. All done!"
 }
 
+# The logic lives in scripts/lib/clt.sh so remote-install.sh and the setup
+# wizard run the very same installer.
 sub_install_clt() {
-  if xcode-select --print-path >/dev/null 2>&1; then
-    ok "Command Line Tools already installed"
-    return 0
-  fi
-
-  action "installing the Command Line Tools"
-
-  # `xcode-select --install` opens a GUI dialog and the old code then spun in
-  # `until xcode-select --print-path; do sleep 5; done` -- forever, if the
-  # dialog was dismissed. softwareupdate installs them headlessly, but only
-  # offers them while this sentinel file exists.
-  local sentinel="/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
-  local label
-  sudo touch "$sentinel"
-  label=$(softwareupdate --list 2>/dev/null |
-    grep -E '\*.*Command Line Tools' |
-    tail -1 |
-    sed -E 's/^[[:space:]]*\*[[:space:]]*(Label:[[:space:]]*)?//; s/[[:space:]]*$//')
-  sudo rm -f "$sentinel"
-
-  if [[ -z "$label" ]]; then
-    error "softwareupdate offered no Command Line Tools package; run: xcode-select --install"
-    return 1
-  fi
-
-  if ! sudo softwareupdate --install "$label" --agree-to-license; then
-    error "Command Line Tools install failed"
-    return 1
-  fi
-
-  sudo xcode-select -s /Library/Developer/CommandLineTools
-  print_result $? "Command Line Tools installed"
-
-  # xcodebuild needs full Xcode. With only the CLT present /usr/bin/xcodebuild
-  # is a shim that errors out, so the unconditional `sudo xcodebuild -license`
-  # this replaces could never succeed on the path that reached it.
-  local xc_path
-  xc_path=$(xcode-select -p 2>/dev/null)
-  if [[ "$xc_path" == *"Xcode.app"* ]]; then
-    sudo xcodebuild -license accept
-    print_result $? "Xcode licence accepted"
-  fi
+  source "$ROOT_DIR/scripts/lib/clt.sh"
+  dotfiles_install_clt
 }
 
 sub_install_homebrew() {
@@ -213,7 +228,7 @@ sub_install_homebrew() {
     action "installing homebrew"
     if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
       error "unable to install homebrew, script $0 abort!"
-      exit 2
+      return 1
     fi
     source_brew
     brew analytics off
@@ -234,22 +249,35 @@ sub_install_homebrew() {
   fi
 
   mkdir -p "$HOME"/Library/Caches/Homebrew/Formula
-  brew doctor
+  # brew doctor exits non-zero on warnings, which are advice and not a failed
+  # install; the output above it is what the reader needs.
+  brew doctor || warn "brew doctor reported warnings; see above"
 }
 
 sub_install_node() {
   # No trailing unconditional `ok`: require_* already prints one on success
   # and returns non-zero on failure, so an extra ok here reported a failed
   # install as a clean one all over again.
+  #
+  # mise reads ~/.config/mise, so that has to be the repo copy: pointing
+  # MISE_GLOBAL_CONFIG_FILE at the repo instead makes mise treat it as a
+  # project config and rewrite every path in mise.lock (locks/... becomes
+  # .mise/locks/...). So this step runs after `link`, and says so if it has not.
+  local mise_dir repo_mise_dir
+  mise_dir=$(cd -P "${XDG_CONFIG_HOME:-$HOME/.config}/mise" 2>/dev/null && pwd -P)
+  repo_mise_dir=$(cd -P "$ROOT_DIR/config/mise" 2>/dev/null && pwd -P)
+  if [[ -z "$mise_dir" || "$mise_dir" != "$repo_mise_dir" ]]; then
+    error "the mise config directory is not linked to $ROOT_DIR/config/mise; run '$BIN_NAME link' first"
+    return 1
+  fi
+
   require_mise || return 1
 
-  # MISE_GLOBAL_CONFIG_FILE points at the copy in the repo rather than the
-  # stowed one, so `install --node` works on a machine where `dotfiles link`
-  # has not run yet -- which is the machine this subcommand exists for. An
-  # already-exported value wins, so a caller can install from another config.
+  # config.toml sets [settings.node] gpg_verify = true, which needs gpg.
+  require_brew gnupg || return 1
+
   action "installing node and the CLIs declared in config/mise/config.toml..."
-  if MISE_GLOBAL_CONFIG_FILE="${MISE_GLOBAL_CONFIG_FILE:-$ROOT_DIR/config/mise/config.toml}" \
-    mise install; then
+  if mise install; then
     ok "node and the declared CLIs are installed"
   else
     error "mise install failed"
@@ -293,15 +321,26 @@ sub_install_ssh() {
     # for; failing that, user and host name the machine well enough.
     local ssh_email=""
     if [[ "${DOTFILES_YES:-0}" == "1" ]]; then
-      ssh_email=$(git config --file "$ROOT_DIR/config/git/config.local" user.email 2>/dev/null)
+      # On a bare Mac /usr/bin/git is the Command Line Tools shim, and running
+      # it pops the GUI installer. Only call git once the tools exist.
+      if xcode-select -p >/dev/null 2>&1; then
+        ssh_email=$(git config --file "$ROOT_DIR/config/git/config.local" user.email 2>/dev/null)
+      fi
       [[ -n "$ssh_email" ]] || ssh_email="${USER:-$(id -un)}@$(hostname -s)"
       action "using $ssh_email as the key comment"
     else
       read -r -p "Please enter an email to associate your ssh key: " ssh_email
     fi
 
-    ssh-keygen -t ed25519 -C "$ssh_email" -f "$HOME/.ssh/id_ed25519"
-    ok
+    # ssh-keygen will not create its parent directory, and on a clean machine
+    # nothing has made ~/.ssh yet.
+    mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+    if ssh-keygen -t ed25519 -C "$ssh_email" -f "$HOME/.ssh/id_ed25519"; then
+      ok
+    else
+      error "ssh-keygen failed; no SSH key was created"
+      return 1
+    fi
   else
     skip
   fi
@@ -335,6 +374,13 @@ sub_install_prezto() {
     # only thing that puts prezto on disk before the script below reads it.
     if ! dotfiles_ensure_submodule modules/prezto; then
       error "could not initialise modules/prezto"
+      return 1
+    fi
+
+    # The shell config sources fzf-tab, and it is the only other submodule a
+    # login shell needs; the apps/* themes are fetched by `configure`.
+    if ! dotfiles_ensure_submodule modules/fzf-tab; then
+      error "could not initialise modules/fzf-tab"
       return 1
     fi
 
@@ -397,19 +443,28 @@ sub_install_hosts() {
     # take the machine off the network, so neither may fail silently: without
     # the backup there is nothing to roll back to, and a half-done write is
     # worse than no write at all.
-    action "cp /etc/hosts /etc/hosts.backup"
-    if ! sudo cp /etc/hosts /etc/hosts.backup; then
-      error "could not back up /etc/hosts; leaving it untouched"
-      rm -f "$tmp" "$filtered"
-      return 1
+    #
+    # The backup is made once. It used to be overwritten on every run, so the
+    # second run replaced the pristine file with the previous blocklist and
+    # there was nothing left to roll back to.
+    local hosts_file="${DOTFILES_HOSTS_FILE:-/etc/hosts}"
+    if [[ -e "$hosts_file.backup" ]]; then
+      skip "$hosts_file.backup already exists; keeping the original"
+    else
+      action "cp $hosts_file $hosts_file.backup"
+      if ! sudo cp "$hosts_file" "$hosts_file.backup"; then
+        error "could not back up $hosts_file; leaving it untouched"
+        rm -f "$tmp" "$filtered"
+        return 1
+      fi
     fi
 
-    if ! sudo cp "$filtered" /etc/hosts; then
-      error "could not write /etc/hosts; the previous copy is in /etc/hosts.backup"
+    if ! sudo cp "$filtered" "$hosts_file"; then
+      error "could not write $hosts_file; the previous copy is in $hosts_file.backup"
       rm -f "$tmp" "$filtered"
       return 1
     fi
-    sudo chmod 644 /etc/hosts
+    sudo chmod 644 "$hosts_file"
     rm -f "$tmp" "$filtered"
 
     action "flushing the DNS cache"
@@ -444,77 +499,125 @@ sub_install_fonts() {
 sub_install_packages() {
   bot "Packages install\n"
 
-  pushd "$ROOT_DIR" >/dev/null 2>&1 || exit
+  if [[ ! -f "$ROOT_DIR/Brewfile" ]]; then
+    error "Brewfile not found at $ROOT_DIR/Brewfile"
+    return 1
+  fi
 
-  # Check if Brewfile exists (preferred method)
-  if [[ -f "Brewfile" ]]; then
-    if confirm "Install packages using Brewfile (brew bundle)?"; then
-      # Homebrew 7 refuses to load formulae, casks or commands from an
-      # untrusted third-party tap, with no environment-variable escape hatch,
-      # so a fresh bootstrap fails outright at bundle time until every
-      # declared tap is trusted. `brew tap` alone no longer suffices.
-      action "trusting third-party taps declared in the Brewfile"
-      local _taps _tap
-      _taps=$(sed -n -E 's/^tap "([^"]+)".*/\1/p' Brewfile)
-      for _tap in $_taps; do
-        [[ -n "$_tap" ]] || continue
-        brew trust --tap "$_tap" >/dev/null 2>&1 || warn "could not trust tap $_tap"
-      done
+  if ! confirm "Install packages using Brewfile (brew bundle)?"; then
+    skip
+    return 0
+  fi
 
-      action "Installing packages via brew bundle..."
-      if brew bundle install --file=Brewfile; then
-        ok "Homebrew packages installed"
+  pushd "$ROOT_DIR" >/dev/null 2>&1 || return 1
+  if ! source "$ROOT_DIR/scripts/lib/lists.sh"; then
+    error "cannot read $ROOT_DIR/scripts/lib/lists.sh"
+    popd >/dev/null 2>&1 || true
+    return 1
+  fi
+
+  # Nothing below may end the step early. A failure is recorded in rc and the
+  # next part still runs, so one bad cask cannot skip the VS Code extensions
+  # and the summary always says what actually happened.
+  local rc=0 file tap brewfiles="Brewfile"
+  # Brewfile.local is the gitignored companion for packages that should not
+  # be in a public repo; it is bundled after the public one.
+  [[ -f Brewfile.local ]] && brewfiles="Brewfile Brewfile.local"
+
+  # Homebrew 7 refuses to load formulae, casks or commands from an
+  # untrusted third-party tap, with no environment-variable escape hatch,
+  # so a fresh bootstrap fails outright at bundle time until every
+  # declared tap is trusted. `brew tap` alone no longer suffices.
+  action "trusting third-party taps declared in the Brewfile"
+  for file in $brewfiles; do
+    while IFS= read -r tap; do
+      [[ -n "$tap" ]] || continue
+      if brew tap "$tap"; then
+        brew trust --tap "$tap" || warn "could not trust tap $tap"
       else
-        error "brew bundle install failed; see the output above"
-        popd >/dev/null 2>&1 || true
-        return 1
+        warn "could not tap $tap"
       fi
+    done < <(sed -n -E 's/^tap "([^"]+)".*/\1/p' "$file")
+  done
 
-      # mas entries need you signed in to the App Store, and mas may prompt
-      # for sudo. brew bundle reports those as failures if you are not.
-      if grep -q '^mas ' Brewfile; then
-        warn "mas entries need an App Store login; sign in and re-run if any were skipped"
-      fi
+  for file in $brewfiles; do
+    action "Installing packages via brew bundle ($file)..."
+    if brew bundle install --file="$file"; then
+      ok "packages from $file installed"
+    else
+      error "brew bundle install --file=$file failed; see the output above"
+      rc=1
+    fi
+  done
 
-      # No npm step. Every CLI that used to be a line in packages/npm.list is
-      # declared in config/mise/config.toml and installed by
-      # `dotfiles install --node`, pinned by config/mise/mise.lock.
-      action "node CLIs come from config/mise/config.toml (dotfiles install --node)"
+  # mas entries need you signed in to the App Store, and mas may prompt
+  # for sudo. brew bundle reports those as failures if you are not.
+  for file in $brewfiles; do
+    if grep -q '^mas ' "$file"; then
+      warn "mas entries need an App Store login; sign in and re-run if any were skipped"
+      break
+    fi
+  done
 
-      # Handle VS Code extensions separately
-      if [[ -f "packages/code.list" ]]; then
-        if confirm "Install VS Code extensions?"; then
-          action "Installing VS Code extensions..."
-          while IFS= read -r extension || [[ -n "$extension" ]]; do
-            [[ $extension =~ ^[[:space:]]*# ]] && continue
-            [[ -z "${extension// /}" ]] && continue
-            require_code "$extension"
-          done <"packages/code.list"
-          ok "VS Code extensions installed"
+  # No npm step. Every CLI that used to be a line in packages/npm.list is
+  # declared in config/mise/config.toml and installed by
+  # `dotfiles install --node`, pinned by config/mise/mise.lock.
+  action "node CLIs come from config/mise/config.toml (dotfiles install --node)"
+
+  # brew bundle does not cover VS Code extensions. The public list is
+  # packages/code.list, plus the gitignored packages/code.local.list.
+  if confirm "Install VS Code extensions?"; then
+    action "Installing VS Code extensions..."
+    local code_bin wanted installed ext have=0 added=0 failed=""
+    code_bin=$(command -v code || true)
+    [[ -n "$code_bin" ]] ||
+      code_bin="${DOTFILES_CODE_BIN_FALLBACK:-/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code}"
+
+    if [[ ! -x "$code_bin" ]]; then
+      error "no VS Code CLI found at $code_bin; no extensions were installed"
+      rc=1
+    elif ! installed=$("$code_bin" --list-extensions </dev/null); then
+      error "the VS Code CLI could not list its extensions; none were installed"
+      rc=1
+    else
+      # One --list-extensions call, not one per extension: each launches
+      # Electron. Extension ids are case-insensitive.
+      wanted=$(read_list "$ROOT_DIR/packages" code)
+      while IFS= read -r ext; do
+        [[ -n "${ext// /}" ]] || continue
+        if printf '%s\n' "$installed" | grep -qixF -- "$ext"; then
+          have=$((have + 1))
+        elif "$code_bin" --install-extension "$ext" </dev/null; then
+          added=$((added + 1))
+        else
+          failed="$failed $ext"
         fi
-      fi
+      done <<<"$wanted"
 
-      # `brew cleanup --force` already clears the cache. The unguarded
-      # recursive delete of /Library/Caches/Homebrew that followed ran
-      # unprivileged with all output discarded, so it did nothing and said
-      # nothing; and the recursive quarantine strip of ~/Library/QuickLook
-      # removed Gatekeeper from every QuickLook plugin, which run on a
-      # spacebar press.
-      running "cleanup homebrew"
-      brew cleanup --force >/dev/null 2>&1
-      popd >/dev/null 2>&1 || exit
-      ok
-      return
+      if [[ -n "$failed" ]]; then
+        error "VS Code extensions that failed to install:$failed"
+        rc=1
+      else
+        ok "VS Code extensions: $added installed, $have already present"
+      fi
     fi
   fi
 
-  # The legacy tap/brew/cask/mas .list files are gone: the Brewfile is the one
-  # source of truth and had drifted 10 months ahead of them. npm.list is gone
-  # too, replaced by config/mise/config.toml. code.list remains -- brew bundle
-  # does not cover VS Code extensions -- and is handled in the branch above.
-  error "Brewfile not found at $ROOT_DIR/Brewfile"
+  # `brew cleanup --force` already clears the cache. The unguarded
+  # recursive delete of /Library/Caches/Homebrew that followed ran
+  # unprivileged with all output discarded, so it did nothing and said
+  # nothing; and the recursive quarantine strip of ~/Library/QuickLook
+  # removed Gatekeeper from every QuickLook plugin, which run on a
+  # spacebar press.
+  running "cleanup homebrew"
+  if brew cleanup --force >/dev/null 2>&1; then
+    ok
+  else
+    warn "brew cleanup failed"
+  fi
+
   popd >/dev/null 2>&1 || true
-  return 1
+  return "$rc"
 }
 
 sub_install_launchagents() {
@@ -544,6 +647,12 @@ sub_install_launchagents() {
       # was never verified; a copy behaves the same everywhere.
       cp -f "$plist" "$target"
 
+      # macOS 27's launchd refuses a plist that carries com.apple.quarantine,
+      # and cp preserves it: a repo fetched as a browser ZIP has it on every
+      # file. Only this one copied file is touched, and only this one
+      # attribute. xattr fails when the attribute is not there, which is fine.
+      xattr -d com.apple.quarantine "$target" 2>/dev/null || true
+
       # bootout/bootstrap, not load/unload: the legacy verbs have been
       # superseded since macOS 10.11. bootout fails when nothing is loaded,
       # which is the normal first-install case, so its status is ignored.
@@ -565,6 +674,20 @@ sub_install_claude() {
 
   if confirm "Install Claude Code (binary, plugins, marketplaces, hooks, rules, QMD)?"; then
     bash "$ROOT_DIR/scripts/install_claude.sh" || return 1
+  else
+    skip
+  fi
+}
+
+sub_install_codex() {
+  bot "Codex Bootstrap\n"
+
+  if confirm "Install Codex (plugins, config)?"; then
+    if [[ ! -f "$ROOT_DIR/scripts/install_codex.sh" ]]; then
+      error "scripts/install_codex.sh is missing from this checkout"
+      return 1
+    fi
+    bash "$ROOT_DIR/scripts/install_codex.sh" || return 1
   else
     skip
   fi
@@ -596,6 +719,16 @@ sub_configure_defaults() {
 
   if confirm "Do you want to update the system defaults?"; then
     shopt -s nullglob
+
+    # The defaults scripts copy themes out of the apps/* submodules, and a
+    # remote install clones without any of them. The list comes from
+    # .gitmodules so a new submodule is picked up without editing this.
+    local _sm_path
+    while IFS= read -r _sm_path; do
+      [[ -n "$_sm_path" ]] || continue
+      dotfiles_ensure_submodule "$_sm_path" ||
+        warn "could not initialise $_sm_path; its settings will be skipped"
+    done < <(sed -n -E 's/^[[:space:]]*path[[:space:]]*=[[:space:]]*(apps\/.*)$/\1/p' "$DOTFILES_DIR/.gitmodules" 2>/dev/null)
 
     for DEFAULTS_FILE in "$DOTFILES_DIR"/macos/defaults*.sh; do
       . "$DEFAULTS_FILE"

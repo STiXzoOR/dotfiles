@@ -170,8 +170,16 @@ run_cli() {
   else
     echo ""
     print_warning "$label did not complete (retry: dotfiles $*)"
+    # A failed step is not fatal to the wizard, but the caller can tell, and
+    # the closing summary only claims what actually succeeded.
+    return 1
   fi
 }
+
+# Set to 1 by the step that did the work, so print_summary reports only what
+# happened. Declining a prompt, or a step failing, leaves it at 0.
+STEP_CLT=0
+STEP_LINKED=0
 
 #############################################################################
 # System Detection & Validation
@@ -193,8 +201,10 @@ check_prerequisites() {
 
   local missing=()
 
-  # Check for git
-  if command -v git &>/dev/null; then
+  # Check for git. /usr/bin/git is a shim on a bare Mac, so `command -v git`
+  # alone succeeds with nothing installed, and running it pops the installer:
+  # only probe it once the Command Line Tools are known to be there.
+  if xcode-select -p &>/dev/null && command -v git &>/dev/null; then
     print_success "Git installed ($(git --version | cut -d' ' -f3))"
   else
     print_error "Git not found"
@@ -235,9 +245,25 @@ check_prerequisites() {
 # Installation Functions
 #############################################################################
 
+install_clt() {
+  print_section "Command Line Tools"
+
+  # First, because git, Homebrew and everything after them need the tools,
+  # and the git shim on a bare Mac opens a GUI installer when run.
+  # shellcheck source=../scripts/lib/clt.sh
+  source "$ROOT_DIR/scripts/lib/clt.sh"
+  if dotfiles_install_clt; then
+    STEP_CLT=1
+    print_success "Command Line Tools"
+  else
+    print_error "The Command Line Tools are required. Install them with: xcode-select --install"
+    exit 1
+  fi
+}
+
 install_homebrew() {
   print_section "Homebrew Installation"
-  run_cli "Homebrew" install --homebrew
+  run_cli "Homebrew" install --homebrew || true
 }
 
 install_packages() {
@@ -253,14 +279,14 @@ install_packages() {
     return
   fi
 
-  run_cli "Packages" install --packages
+  run_cli "Packages" install --packages || true
 }
 
 setup_shell() {
   print_section "Shell Configuration"
 
   if ask_yes_no "Install Prezto (Zsh framework)?" "y"; then
-    run_cli "Prezto" install --prezto
+    run_cli "Prezto" install --prezto || true
   else
     print_info "Skipping Prezto"
   fi
@@ -293,20 +319,22 @@ link_dotfiles() {
     return
   fi
 
-  run_cli "Dotfiles linking" link
+  if run_cli "Dotfiles linking" link; then
+    STEP_LINKED=1
+  fi
 }
 
 configure_macos() {
   print_section "macOS Configuration"
 
   if ask_yes_no "Apply macOS system defaults?"; then
-    run_cli "macOS defaults" configure --defaults
+    run_cli "macOS defaults" configure --defaults || true
   else
     print_info "Skipping macOS defaults"
   fi
 
   if ask_yes_no "Configure Dock?"; then
-    run_cli "Dock" configure --dock
+    run_cli "Dock" configure --dock || true
   fi
 }
 
@@ -314,7 +342,7 @@ setup_node() {
   print_section "Node.js Setup"
 
   if ask_yes_no "Install mise, Node and the declared CLIs?" "y"; then
-    run_cli "Node.js" install --node
+    run_cli "Node.js" install --node || true
   else
     print_info "Skipping Node.js setup"
   fi
@@ -322,7 +350,7 @@ setup_node() {
 
 generate_ssh_key() {
   print_section "SSH Key Setup"
-  run_cli "SSH key" install --ssh
+  run_cli "SSH key" install --ssh || true
 }
 
 #############################################################################
@@ -333,7 +361,12 @@ print_summary() {
   print_section "Setup Complete!"
 
   echo "  ${CHECKMARK} Dotfiles installed to: ${CYAN}$DOTFILES_DIR${RESET}"
-  echo "  ${CHECKMARK} Configuration linked to: ${CYAN}$HOME${RESET}"
+  [[ "$STEP_CLT" -eq 1 ]] && echo "  ${CHECKMARK} Command Line Tools installed"
+  if [[ "$STEP_LINKED" -eq 1 ]]; then
+    echo "  ${CHECKMARK} Configuration linked to: ${CYAN}$HOME${RESET}"
+  else
+    print_info "Configuration not linked (run: dotfiles link)"
+  fi
   echo "  ${CHECKMARK} Log file: ${CYAN}$LOG_FILE${RESET}"
   echo ""
 
@@ -375,6 +408,7 @@ main() {
 
   # Run setup steps
   detect_system
+  install_clt
   check_prerequisites
   install_homebrew
   install_packages

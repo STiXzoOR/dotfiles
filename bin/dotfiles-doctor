@@ -91,7 +91,14 @@ section() {
 check_dotfiles_linked() {
   section "Symlink Status"
 
-  local files=(".zshrc" ".zprofile" ".zpreztorc" ".vimrc" ".gitconfig")
+  # Expected links are whatever runcom/ ships: a hardcoded list drifted (it
+  # kept warning about ~/.vimrc and ~/.gitconfig long after runcom/ dropped
+  # them) and would drift again.
+  local files=()
+  local runcom_file
+  for runcom_file in "$DOTFILES_DIR"/runcom/.*(N.); do
+    files+=("${runcom_file:t}")
+  done
   local all_linked=true
 
   for file in "${files[@]}"; do
@@ -121,6 +128,16 @@ check_dotfiles_linked() {
       fi
     done
   fi
+
+  # mise reads ~/.config/mise, and `dotfiles install --node` refuses to run
+  # until that resolves into this repo (a copy, or a link elsewhere, makes
+  # mise rewrite the lockfile paths).
+  local mise_dir="${XDG_CONFIG_HOME:-$HOME/.config}/mise"
+  if [[ "${mise_dir:A}" == "${DOTFILES_DIR:A}/config/mise" ]]; then
+    ok "mise config is linked ($mise_dir → $DOTFILES_DIR/config/mise)"
+  else
+    warn "mise config is not linked to $DOTFILES_DIR/config/mise (run: dotfiles link)"
+  fi
 }
 
 check_submodules() {
@@ -128,15 +145,30 @@ check_submodules() {
 
   pushd "$DOTFILES_DIR" >/dev/null 2>&1
 
-  local submodules=("modules/prezto" "modules/prezto-contrib" "modules/stevenblack-hosts")
+  # The list is .gitmodules itself. A hardcoded copy still named two modules
+  # that were removed long ago, so the doctor exited 1 on every machine.
+  # Parsed with sed, not `git config`: git is only usable once the Command
+  # Line Tools are, and this check has to work before then.
+  local submodules=()
+  local submodule_path
+  if [[ -f .gitmodules ]]; then
+    while IFS= read -r submodule_path; do
+      [[ -n "$submodule_path" ]] && submodules+=("$submodule_path")
+    done < <(sed -n -E 's/^[[:space:]]*path[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$/\1/p' .gitmodules)
+  fi
+
   for submodule in "${submodules[@]}"; do
     if [[ -d "$submodule" && -n "$(ls -A "$submodule" 2>/dev/null)" ]]; then
       ok "$submodule initialized"
     else
       error "$submodule not initialized"
       if $FIX_MODE; then
-        fix "Initializing submodules..."
-        git submodule update --init --recursive
+        if xcode-select -p &>/dev/null; then
+          fix "Initializing $submodule..."
+          git submodule update --init --depth 1 -- "$submodule"
+        else
+          warn "cannot initialize $submodule without the Command Line Tools (run: xcode-select --install)"
+        fi
       fi
     fi
   done
@@ -293,7 +325,11 @@ check_tools() {
     local tool="${tool_info%%:*}"
     local desc="${tool_info##*:}"
 
-    if command -v "$tool" &>/dev/null; then
+    # /usr/bin/git exists on a bare Mac as a shim for the Command Line Tools,
+    # so `command -v git` succeeds with nothing installed.
+    if [[ "$tool" == "git" ]] && ! xcode-select -p &>/dev/null; then
+      warn "git is not usable: the Command Line Tools are not installed (run: xcode-select --install)"
+    elif command -v "$tool" &>/dev/null; then
       ok "$tool ($desc)"
     else
       warn "$tool not installed ($desc)"
@@ -352,16 +388,22 @@ check_node() {
 check_git_config() {
   section "Git Configuration"
 
-  if [[ -n "$(git config --global user.name)" ]]; then
-    ok "Git user.name: $(git config --global user.name)"
-  else
-    warn "Git user.name not configured"
-  fi
+  # Running git on a Mac with no Command Line Tools pops the GUI installer, so
+  # the identity is only read once they exist.
+  if xcode-select -p &>/dev/null; then
+    if [[ -n "$(git config --global user.name)" ]]; then
+      ok "Git user.name: $(git config --global user.name)"
+    else
+      warn "Git user.name not configured"
+    fi
 
-  if [[ -n "$(git config --global user.email)" ]]; then
-    ok "Git user.email: $(git config --global user.email)"
+    if [[ -n "$(git config --global user.email)" ]]; then
+      ok "Git user.email: $(git config --global user.email)"
+    else
+      warn "Git user.email not configured"
+    fi
   else
-    warn "Git user.email not configured"
+    warn "Command Line Tools not installed; skipping the git identity check (run: xcode-select --install)"
   fi
 
   if [[ -f "$HOME/.ssh/id_ed25519" ]]; then

@@ -14,7 +14,14 @@ if [[ ! -f "$PREZTO_DIR/init.zsh" ]]; then
   exit 1
 fi
 
+# Link only the runcoms this repo does not ship. runcom/ carries its own
+# zshrc, zprofile, zpreztorc and zlogin; linking Prezto's copies as well made
+# `dotfiles link` back them up straight away. zlogout is never linked: it
+# prints a fortune-style quote on every shell exit.
+RUNCOM_DIR="${DOTFILES_DIR:-${PREZTO_DIR:h:h}}/runcom"
 for rcfile in "$PREZTO_DIR"/runcoms/^README.md(.N); do
+  [[ "${rcfile:t}" == zlogout ]] && continue
+  [[ -e "$RUNCOM_DIR/.${rcfile:t}" ]] && continue
   ln -s "$rcfile" "${ZDOTDIR:-$HOME}/.${rcfile:t}" 2>/dev/null
 done
 
