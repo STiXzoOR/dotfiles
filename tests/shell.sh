@@ -556,4 +556,28 @@ t "P1.3" "a rich terminal still gets the Starship prompt, and no theme functions
 t "P1.4" "the module list no longer names prompt" \
   '[ "$(code_of runcom/.zpreztorc | grep -cx "[[:space:]]*.prompt.")" -eq 0 ]'
 
+section "P2 — prezto's utility module does not fork eza to ask for its version"
+# An eza that logs its argv. `ls` is aliased to eza, and prezto's utility module
+# runs `ls --version` twice to look for GNU ls.
+_eza_sandbox() {
+  local h
+  h=$(_zsh_sandbox) || return 1
+  printf '#!/bin/sh\necho "$*" >> "%s/eza.log"\n' "$h" >"$h/.stubs/eza"
+  chmod +x "$h/.stubs/eza"; : >"$h/eza.log"
+  printf '%s' "$h"
+}
+_ALIAS_PROBE='print -r -- "$(alias ls ll la lr ld lx)"; print -r -- "EZA=$(whence -w eza)"'
+t "P2.1" "startup never asks eza for its version" \
+  'H=$(_eza_sandbox) && ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(grep -c -e "--version" "$H/eza.log" 2>/dev/null)" -eq 0 ]'
+t "P2.2" "the ls aliases are the same as without the shim, and no eza function is left" \
+  'H=$(_eza_sandbox) && G=$(_eza_sandbox) &&
+   sed -i.bak "/eza-shim:begin/,/eza-shim:end/d" "$G/.zshrc" &&
+   [ "$(grep -c "eza-shim" "$G/.zshrc")" -eq 0 ] &&
+   A=$(ZSHRUN_HOME="$H" zshrun "$_ALIAS_PROBE") && B=$(ZSHRUN_HOME="$G" zshrun "$_ALIAS_PROBE") &&
+   [ -n "$A" ] && [ "$A" = "$B" ] && [ "$(printf "%s\n" "$A" | grep -c "^EZA=eza: command")" -eq 1 ] &&
+   [ "$(grep -c -e "--version" "$G/eza.log")" -gt 0 ] && [ "$(grep -c -e "--version" "$H/eza.log")" -eq 0 ]'
+t "P2.3" "a shell without eza starts as before" \
+  '[ "$(zshrun_all "echo ok")" = ok ]'
+
 finish

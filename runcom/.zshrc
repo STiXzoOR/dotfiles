@@ -53,7 +53,19 @@ fi
 # Add completions to fpath BEFORE compinit (Prezto handles compinit)
 fpath=("$DOTFILES_DIR/completions" $fpath)
 
+# eza-shim:begin
+# `ls` is aliased to eza (system/.alias), and Prezto's utility module runs
+# `ls --version` twice to look for GNU ls: two forks, about 9 ms. Answer a
+# trailing --version in-shell for the duration of the load; everything else
+# reaches the real binary.
+if (( $+commands[eza] )); then
+  eza() {
+    if [[ "${@[-1]}" == --version ]]; then print -r -- eza; else command eza "$@"; fi
+  }
+fi
+# eza-shim:end
 [[ -s "$DOTFILES_DIR/modules/prezto/init.zsh" ]] && . "$DOTFILES_DIR/modules/prezto/init.zsh"
+(( $+functions[eza] )) && unfunction eza
 
 # Prezto's prompt module is not loaded (.zpreztorc), so a shell that does not
 # get Starship keeps zsh's own PS1; hold it at what the module's "off" theme
