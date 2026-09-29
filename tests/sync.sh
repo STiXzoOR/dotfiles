@@ -239,6 +239,16 @@ t "S4.4" "an action that ran is no longer pending: the next run does not repeat 
   sy_env "DOTFILES_YES=1" syn >/dev/null 2>&1; [ "$(_calls "^mise")" -eq 0 ] && [ "$(_calls "^dotfiles-stub")" -eq 0 ]'
 t "S4.5" "a failing action is reported and keeps the exit status non-zero" '
   W=$(senv); _actions "$W"; stub "$W/bin" mise "exit 1"; sy_env "DOTFILES_YES=1" syn >/dev/null 2>&1; [ "$?" -ne 0 ]'
+t "S4.10" "a raycast Mac: the sync bundle check and bundle install see HOMEBREW_DOTFILES_LAUNCHER=raycast" '
+  W=$(senv); _actions "$W"; mkdir -p "$W/pub/macos"; printf "DOTFILES_LAUNCHER=raycast\n" >"$W/pub/macos/machine.local.sh"
+  stub "$W/bin" brew "case \"\$*\" in
+  \"bundle check\"*) echo \"seen-check \${HOMEBREW_DOTFILES_LAUNCHER-unset}\" >>\"\$STUB_LOG\"; [ -f \"\$STUB_STATE/unsatisfied\" ] && exit 1 ;;
+  \"bundle install\"*) echo \"seen-install \${HOMEBREW_DOTFILES_LAUNCHER-unset}\" >>\"\$STUB_LOG\" ;;
+esac
+exit 0"
+  sy_env "DOTFILES_YES=1" syn >/dev/null 2>&1
+  grep -qx "seen-check raycast" "$W/log" && grep -qx "seen-install raycast" "$W/log" &&
+  [ "$(grep -c "seen-.* tinycast\|seen-.* unset" "$W/log")" -eq 0 ]'
 t "S4.6" "secrets.age changing upstream is only reported: no import, no prompt" '
   W=$(senv); push_change "$W" priv secrets.age "age"; out=$(sy_env "DOTFILES_YES=1" syn 2>&1)
   printf "%s\n" "$out" | grep -q "dotfiles secrets import" && [ "$(_calls "secrets")" -eq 0 ] && [ "$(_calls "^dotfiles-stub")" -eq 0 ]'

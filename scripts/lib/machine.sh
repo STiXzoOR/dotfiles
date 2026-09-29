@@ -76,3 +76,11 @@ dotfiles_launcher() {
       ;;
   esac
 }
+
+# Export the resolved launcher where `brew bundle` can see it. brew hides every
+# variable that does not start with HOMEBREW_ from the Brewfile, so this is
+# HOMEBREW_DOTFILES_LAUNCHER. Call it before any `brew bundle check|install`.
+dotfiles_export_launcher() {
+  HOMEBREW_DOTFILES_LAUNCHER=$(dotfiles_launcher "$@")
+  export HOMEBREW_DOTFILES_LAUNCHER
+}

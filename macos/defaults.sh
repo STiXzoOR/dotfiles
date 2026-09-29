@@ -418,25 +418,42 @@ ok
 DOTFILES_LAUNCHER=$(dotfiles_launcher "$DOTFILES_DIR")
 TINYCAST_HOTKEY='{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}'
 RAYCAST_APP="${DOTFILES_RAYCAST_APP:-/Applications/Raycast.app}"
+# _tinycast_get <key> -- the raw stored value, or nothing. `defaults read` prints
+# a string quoted and escaped, so the domain is exported to a plist and read with
+# PlistBuddy (":" is its path separator, so a dotted key is one key).
+_tinycast_get() {
+  local tmp v
+  tmp=$(mktemp "${TMPDIR:-/tmp}/tinycast.XXXXXX") || return 1
+  defaults export com.tinycast.app "$tmp" >/dev/null 2>&1
+  v=$(/usr/libexec/PlistBuddy -c "Print :$1" "$tmp" 2>/dev/null)
+  rm -f "$tmp"
+  printf '%s' "$v"
+}
 if [ "$DOTFILES_LAUNCHER" = tinycast ]; then
   running "Tinycast: Cmd-Space as the summon hotkey, settings file on"
-  if pgrep -x Tinycast >/dev/null 2>&1; then
-    osascript -e 'quit app "Tinycast"' >/dev/null 2>&1
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
-      pgrep -x Tinycast >/dev/null 2>&1 || break
-      sleep 0.5
-    done
-  fi
-  if pgrep -x Tinycast >/dev/null 2>&1; then
-    warn "Tinycast is still running, so its hotkey was not set; quit it and re-run configure, or set Cmd-Space in Tinycast > Settings > General"
+  if [ "$(_tinycast_get hotkey.togglePalette)" = "$TINYCAST_HOTKEY" ] &&
+    [ "$(_tinycast_get settingsFileEnabled)" = true ]; then
+    ok "already set"
   else
-    defaults write com.tinycast.app hotkey.togglePalette "$TINYCAST_HOTKEY"
-    defaults write com.tinycast.app settingsFileEnabled -bool true
-    got=$(defaults read com.tinycast.app hotkey.togglePalette 2>/dev/null)
-    if [ "$got" = "$TINYCAST_HOTKEY" ]; then
-      ok
+    if pgrep -x Tinycast >/dev/null 2>&1; then
+      action "quitting Tinycast to set its hotkey (it caches its settings while running)"
+      osascript -e 'quit app "Tinycast"' >/dev/null 2>&1
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pgrep -x Tinycast >/dev/null 2>&1 || break
+        sleep 0.5
+      done
+    fi
+    if pgrep -x Tinycast >/dev/null 2>&1; then
+      warn "Tinycast is still running, so its hotkey was not set; quit it and re-run configure, or set Cmd-Space in Tinycast > Settings > General"
     else
-      error "Tinycast hotkey read back as '$got', expected '$TINYCAST_HOTKEY'; set Cmd-Space in Tinycast > Settings > General"
+      defaults write com.tinycast.app hotkey.togglePalette "$TINYCAST_HOTKEY"
+      defaults write com.tinycast.app settingsFileEnabled -bool true
+      got=$(_tinycast_get hotkey.togglePalette)
+      if [ "$got" = "$TINYCAST_HOTKEY" ]; then
+        ok
+      else
+        error "Tinycast hotkey read back as '$got', expected '$TINYCAST_HOTKEY'; set Cmd-Space in Tinycast > Settings > General"
+      fi
     fi
   fi
   if [ -d "$RAYCAST_APP" ]; then

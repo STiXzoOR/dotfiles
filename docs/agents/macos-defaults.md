@@ -79,10 +79,12 @@ with `systemsetup -getremotelogin`, and a Mac where it is still off gets an
 - The Spotlight (Cmd-Space), Finder search and screenshot symbolic hotkeys are
   disabled because the launcher (Tinycast or Raycast) and Shottr replace them.
 - The launcher block (`dotfiles_launcher`, see [new-mac.md](new-mac.md#launcher))
-  runs after them. On a Tinycast Mac it quits a running Tinycast (skipping with a
-  warning if it will not quit), writes `hotkey.togglePalette` (Cmd-Space,
+  runs after them. On a Tinycast Mac it first reads the stored hotkey and switch
+  (raw, through PlistBuddy: `defaults read` quotes and escapes strings) and does
+  nothing when both are already right. Otherwise it says so, quits a running
+  Tinycast (skipping with a warning if it will not quit), writes `hotkey.togglePalette` (Cmd-Space,
   `{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}`) and
-  `settingsFileEnabled` to `com.tinycast.app`, and reads the hotkey back; a
+  `settingsFileEnabled` to `com.tinycast.app`, and reads the hotkey back the same way; a
   mismatch is an error, not ignored. The hotkey format is documented upstream as
   not stable, so this is best-effort with Tinycast > Settings > General as the
   fallback. If Raycast.app is still installed it warns once and names

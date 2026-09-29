@@ -175,7 +175,20 @@ cask "proton-mail-bridge"
 # "raycast", means Tinycast, so CI's `brew bundle list` works; a bare
 # `brew bundle` on a Raycast Mac needs the variable set by hand. The Tinycast
 # tap is indented on purpose: sub_install_packages trusts it only for Tinycast.
-if ENV["HOMEBREW_DOTFILES_LAUNCHER"] == "raycast"
+# Unset, it mirrors dotfiles_launcher for a bare `brew bundle`: the first
+# DOTFILES_LAUNCHER= line in macos/machine.local.sh, then macos/local.sh.
+launcher = ENV["HOMEBREW_DOTFILES_LAUNCHER"].to_s
+if launcher.empty?
+  %w[machine.local.sh local.sh].each do |name|
+    file = File.join(__dir__, "macos", name)
+    next unless File.file?(file)
+    line = File.foreach(file).find { |l| l.match?(/^DOTFILES_LAUNCHER=/) }
+    next unless line
+    launcher = line[/^DOTFILES_LAUNCHER=["']?([A-Za-z]*)/, 1].to_s
+    break
+  end
+end
+if launcher == "raycast"
   cask "raycast"                    # Spotlight replacement
 else
   tap "abue-ammar/tinycast"         # Tinycast (third-party tap; no core cask)

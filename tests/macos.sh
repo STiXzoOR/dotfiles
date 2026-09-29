@@ -281,10 +281,28 @@ _g_env() {
     _stub "$W/bin" "$n"
   done
   _stub "$W/bin" sudo 'exec "$@"'
+  # `defaults` for com.tinycast.app: write records into $HK_STATE / $SFE_STATE,
+  # `export <domain> <file>` writes a real plist holding them (what the script
+  # reads through PlistBuddy), and `read` prints the value the way the real tool
+  # does: quoted, inner quotes escaped. HK_FORCE replaces the stored hotkey.
   _stub "$W/bin" defaults '
-if [ "$1 $2" = "write com.tinycast.app" ] && [ "$3" = hotkey.togglePalette ]; then printf "%s" "$4" >"$HK_STATE"; fi
+if [ "$1 $2" = "write com.tinycast.app" ]; then
+  case "$3" in
+    hotkey.togglePalette) printf "%s" "$4" >"$HK_STATE" ;;
+    settingsFileEnabled) [ "$4" = "-bool" ] && printf "%s" "$5" >"$SFE_STATE" ;;
+  esac
+fi
+if [ "$1 $2" = "export com.tinycast.app" ]; then
+  {
+    printf "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\n"
+    if [ -n "${HK_FORCE:-}" ]; then printf "<key>hotkey.togglePalette</key><string>%s</string>\n" "$HK_FORCE"
+    elif [ -f "$HK_STATE" ]; then printf "<key>hotkey.togglePalette</key><string>%s</string>\n" "$(cat "$HK_STATE")"; fi
+    [ -f "$SFE_STATE" ] && printf "<key>settingsFileEnabled</key><%s/>\n" "$(cat "$SFE_STATE")"
+    printf "</dict></plist>\n"
+  } >"$3"
+fi
 if [ "$1 $2 $3" = "read com.tinycast.app hotkey.togglePalette" ]; then
-  if [ -n "${HK_FORCE:-}" ]; then printf "%s\n" "$HK_FORCE"; else cat "$HK_STATE" 2>/dev/null; echo; fi
+  v=$(cat "$HK_STATE" 2>/dev/null); printf "\"%s\"\n" "$(printf "%s" "$v" | sed "s/\"/\\\\\"/g")"
 fi
 exit 0'
   _stub "$W/bin" pgrep '[ -e "$W_STATE/running" ] && [ "$1 $2" = "-x Tinycast" ]'
@@ -337,7 +355,7 @@ _g_run() {
     DOTFILES_SOCKETFILTERFW="$W/bin/socketfilterfw" \
     DOTFILES_ACTIVATE_SETTINGS="$W/bin/activateSettings" \
     DOTFILES_LSREGISTER="$W/bin/lsregister" \
-    HK_STATE="$W/hk" W_STATE="$W" DOTFILES_RAYCAST_APP="$W/Raycast.app" \
+    HK_STATE="$W/hk" SFE_STATE="$W/sfe" W_STATE="$W" DOTFILES_RAYCAST_APP="$W/Raycast.app" \
     "$@" /bin/bash "$W/df/macos/$f" </dev/null >"$W/out" 2>&1
 }
 
@@ -699,11 +717,12 @@ t "G8.1" "default (no launcher configured): Tinycast's summon hotkey is set to C
   '_logged "$TC" "defaults write com.tinycast.app hotkey.togglePalette $HK"'
 t "G8.2" "the Tinycast settings-file switch is turned on (the documented settingsFileEnabled default)" \
   '_logged "$TC" "defaults write com.tinycast.app settingsFileEnabled -bool true"'
-t "G8.3" "the hotkey is read back after the write" \
+t "G8.3" "the hotkey is read back after the write, as the raw value (not through defaults read, which quotes it)" \
   '[ "$(_first_line "defaults write com.tinycast.app hotkey.togglePalette" "$TC/log")" -gt 0 ] &&
-   [ "$(_first_line "defaults read com.tinycast.app hotkey.togglePalette" "$TC/log")" -gt "$(_first_line "defaults write com.tinycast.app hotkey.togglePalette" "$TC/log")" ]'
-t "G8.4" "a matching read-back reports no error and no warning about Tinycast" \
-  '! grep -qiE "tinycast.*(read back|still running)" "$TC/out"'
+   [ "$(sed -n "/defaults write com.tinycast.app hotkey.togglePalette/,\$p" "$TC/log" | grep -c "defaults export com.tinycast.app")" -ge 1 ] &&
+   [ "$(_logcount "$TC" "defaults read com.tinycast.app")" -eq 0 ]'
+t "G8.4" "a matching read-back reports no error and no warning about Tinycast (the real defaults read output is quoted and escaped, and must not matter)" \
+  '! grep -qiE "tinycast.*(read back|still running)" "$TC/out" && ! grep -q "hotkey read back" "$TC/out"'
 t "G8.5" "Spotlight Cmd-Space stays disabled (symbolic hotkey 64)" \
   '_logged "$TC" "$(_hk 64 32 49 1048576)"'
 
@@ -721,7 +740,7 @@ t "G8.9" "a Tinycast that is not running is not quit" \
   '[ "$(_logcount "$TC" "quit app \"Tinycast\"")" -eq 0 ]'
 STK=$(_g_env); : >"$STK/running"; _g_launch_run "$STK" HK_STUCK=1
 t "G8.10" "a Tinycast that will not quit is skipped with a clear message, and nothing is written" \
-  '[ "$(_logcount "$STK" "com.tinycast.app")" -eq 0 ] && grep -qi "still running" "$STK/out"'
+  '[ "$(_logcount "$STK" "defaults write com.tinycast.app")" -eq 0 ] && grep -qi "still running" "$STK/out"'
 
 RC=$(_g_env); mkdir -p "$RC/Raycast.app"; _g_launch_run "$RC" DOTFILES_LAUNCHER=raycast
 t "G8.11" "launcher=raycast: Tinycast's domain is never touched" \
@@ -748,5 +767,18 @@ t "G8.18" "a launcher set only in macos/local.sh is honoured" \
 t "G8.19" "the environment beats both files" '
   W=$(_g_env); printf "DOTFILES_LAUNCHER=tinycast\n" >"$W/df/macos/machine.local.sh"; _g_launch_run "$W" DOTFILES_LAUNCHER=raycast
   [ "$(_logcount "$W" "com.tinycast.app")" -eq 0 ]'
+
+ALR=$(_g_env); printf '%s' "$HK" >"$ALR/hk"; printf true >"$ALR/sfe"; : >"$ALR/running"; _g_run "$ALR" defaults.sh
+t "G8.20" "hotkey and settings switch already right: a running Tinycast is left running and nothing is written" \
+  '[ "$(_logcount "$ALR" "quit app")" -eq 0 ] && [ "$(_logcount "$ALR" "defaults write com.tinycast.app")" -eq 0 ] && [ -e "$ALR/running" ]'
+t "G8.21" "already right: the run says so and reports no error" \
+  'grep -qi "already set" "$ALR/out" && ! grep -q "hotkey read back" "$ALR/out"'
+SFO=$(_g_env); printf '%s' "$HK" >"$SFO/hk"; _g_run "$SFO" defaults.sh
+t "G8.22" "hotkey right but the settings switch off: both are written again" \
+  '_logged "$SFO" "defaults write com.tinycast.app settingsFileEnabled -bool true"'
+t "G8.23" "a running Tinycast that must be quit is announced first" '
+  grep -qi "quitting tinycast" "$RUN/out"'
+t "G8.24" "a Tinycast that is not running is not announced as quit" \
+  '! grep -qi "quitting tinycast" "$TC/out"'
 
 finish

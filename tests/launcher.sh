@@ -131,4 +131,37 @@ t "L4.5" "the machine-local launcher file is gitignored, its example is tracked"
 t "L4.6" "dotfiles private never links or syncs machine.local.sh" \
   '[ "$(code_of bin/dotfiles-private | grep -c "machine.local")" -eq 0 ]'
 
+section "L5 -- dotfiles_export_launcher"
+_el() { # _el <dir> [VAR=val...] -- the exported HOMEBREW_DOTFILES_LAUNCHER, seen by a child process
+  local d="$1"; shift
+  env -i PATH="/usr/bin:/bin" HOME="$d" "$@" bash -c '. "$1/scripts/lib/machine.sh"; dotfiles_export_launcher "$2" 2>/dev/null; env | grep "^HOMEBREW_DOTFILES_LAUNCHER=" || echo none' _ "$ROOT_DIR" "$d"
+}
+t "L5.1" "exports the resolved launcher to child processes" \
+  'D=$(_lc_dir); printf "DOTFILES_LAUNCHER=raycast\n" >"$D/macos/machine.local.sh"; [ "$(_el "$D")" = HOMEBREW_DOTFILES_LAUNCHER=raycast ]'
+t "L5.2" "nothing configured exports tinycast" \
+  'D=$(_lc_dir); [ "$(_el "$D")" = HOMEBREW_DOTFILES_LAUNCHER=tinycast ]'
+t "L5.3" "an invalid value exports tinycast" \
+  'D=$(_lc_dir); [ "$(_el "$D" DOTFILES_LAUNCHER=alfred)" = HOMEBREW_DOTFILES_LAUNCHER=tinycast ]'
+
+section "L6 -- a bare brew bundle falls back to the machine files"
+# HOMEBREW_DOTFILES_LAUNCHER unset: the Brewfile reads the first DOTFILES_LAUNCHER=
+# assignment in macos/machine.local.sh, then macos/local.sh, next to itself.
+_bare() { # _bare <dir> [VAR=val...] -- brew bundle list --cask against <dir>/Brewfile
+  local d="$1"; shift
+  env HOMEBREW_NO_AUTO_UPDATE=1 "$@" brew bundle list --cask --file="$d/Brewfile" 2>/dev/null
+}
+_bdir() { local d; d=$(_lc_dir) && cp Brewfile "$d/Brewfile" && printf '%s' "$d"; }
+t "L6.1" "machine.local.sh says raycast: Raycast, no Tinycast" \
+  '! command -v brew >/dev/null || { D=$(_bdir); printf "DOTFILES_LAUNCHER=\"raycast\"\n" >"$D/macos/machine.local.sh"; o=$(_bare "$D"); printf "%s\n" "$o" | grep -qx raycast && ! printf "%s\n" "$o" | grep -q tinycast; }'
+t "L6.2" "only local.sh says raycast: Raycast" \
+  '! command -v brew >/dev/null || { D=$(_bdir); printf "DOTFILES_LAUNCHER=raycast\n" >"$D/macos/local.sh"; o=$(_bare "$D"); printf "%s\n" "$o" | grep -qx raycast; }'
+t "L6.3" "machine.local.sh beats local.sh" \
+  '! command -v brew >/dev/null || { D=$(_bdir); printf "DOTFILES_LAUNCHER=tinycast\n" >"$D/macos/machine.local.sh"; printf "DOTFILES_LAUNCHER=raycast\n" >"$D/macos/local.sh"; o=$(_bare "$D"); printf "%s\n" "$o" | grep -qx tinycast; }'
+t "L6.4" "an unknown value is tinycast" \
+  '! command -v brew >/dev/null || { D=$(_bdir); printf "DOTFILES_LAUNCHER=alfred\n" >"$D/macos/machine.local.sh"; o=$(_bare "$D"); printf "%s\n" "$o" | grep -qx tinycast; }'
+t "L6.5" "HOMEBREW_DOTFILES_LAUNCHER beats the files" \
+  '! command -v brew >/dev/null || { D=$(_bdir); printf "DOTFILES_LAUNCHER=raycast\n" >"$D/macos/machine.local.sh"; o=$(_bare "$D" HOMEBREW_DOTFILES_LAUNCHER=tinycast); printf "%s\n" "$o" | grep -qx tinycast; }'
+t "L6.6" "no files at all: tinycast" \
+  '! command -v brew >/dev/null || { D=$(_bdir); o=$(_bare "$D"); printf "%s\n" "$o" | grep -qx tinycast; }'
+
 finish

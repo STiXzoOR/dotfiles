@@ -61,6 +61,8 @@ source "$SELF_DIR/../scripts/echos.sh"
 source "$SELF_DIR/../scripts/lib/lists.sh"
 # shellcheck source=../scripts/lib/fs.sh
 source "$SELF_DIR/../scripts/lib/fs.sh"
+# shellcheck source=../scripts/lib/machine.sh
+source "$SELF_DIR/../scripts/lib/machine.sh"
 
 SCHEDULED=0
 ATTN=""    # one line per thing that needs the owner
@@ -253,6 +255,7 @@ brewfiles() {
 brew_unsatisfied() {
   local f rc=1
   command -v brew >/dev/null 2>&1 || return 1
+  dotfiles_export_launcher "$DOTFILES_DIR"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     brew bundle check --file="$f" >/dev/null 2>&1 || { printf '%s\n' "$f"; rc=0; }
@@ -280,6 +283,7 @@ run_action() { # run_action <name> <description> <command...>
 
 install_brew_bundle() {
   local f rc=0
+  dotfiles_export_launcher "$DOTFILES_DIR"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     brew bundle install --file="$f" || rc=1

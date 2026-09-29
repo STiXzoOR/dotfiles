@@ -555,9 +555,8 @@ sub_install_packages() {
   # its entry is indented in the Brewfile, so the loop below does not see it.
   # shellcheck disable=SC1091
   source "$ROOT_DIR/scripts/lib/machine.sh"
-  launcher=$(dotfiles_launcher "$ROOT_DIR")
-  # brew bundle hides variables that do not start with HOMEBREW_ from the Brewfile.
-  export HOMEBREW_DOTFILES_LAUNCHER="$launcher"
+  dotfiles_export_launcher "$ROOT_DIR"
+  launcher="$HOMEBREW_DOTFILES_LAUNCHER"
   if [[ "$launcher" == tinycast ]]; then
     if brew tap abue-ammar/tinycast; then
       brew trust --tap abue-ammar/tinycast || warn "could not trust tap abue-ammar/tinycast"
