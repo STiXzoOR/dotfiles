@@ -51,6 +51,9 @@ if [[ ! -d "$DOTFILES_DIR" ]]; then
   # Try to find it relative to this script
   DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 fi
+# The tools this runs (dotfiles-baseline, tests/run.sh) default to
+# $HOME/.dotfiles, which does not exist on CI.
+export DOTFILES_DIR
 
 # Test result functions
 pass() {
@@ -1130,6 +1133,17 @@ main() {
   echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
   echo ""
   echo "Testing: $DOTFILES_DIR"
+
+  # DOTFILES_TEST_ONLY=<test_function> runs one check (used by tests/cli.sh).
+  if [[ -n "${DOTFILES_TEST_ONLY:-}" ]]; then
+    case "$DOTFILES_TEST_ONLY" in
+      test_*) typeset -f "$DOTFILES_TEST_ONLY" >/dev/null || { echo "no such test: $DOTFILES_TEST_ONLY" >&2; exit 2; } ;;
+      *) echo "DOTFILES_TEST_ONLY must name a test_* function" >&2; exit 2 ;;
+    esac
+    "$DOTFILES_TEST_ONLY"
+    [[ $TESTS_FAILED -eq 0 ]]
+    exit $?
+  fi
 
   # Run all tests
   test_file_structure

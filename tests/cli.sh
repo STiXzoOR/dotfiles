@@ -1378,4 +1378,20 @@ t "W1.5" "timeout works under a stock PATH with no GNU timeout" '
 t "W1.6" "timeout runs a shell function-free command normally under a stock PATH" '
   out=$(env PATH=/usr/bin:/bin bash -c "source tests/lib.sh; timeout 5 echo ok" 2>/dev/null); [ "$out" = ok ]'
 
+#############################################################################
+section "W2 — dotfiles-test hands its repo path to the tools it runs"
+#############################################################################
+
+# CI has no ~/.dotfiles: the runner checks the repo out elsewhere. Without an
+# exported DOTFILES_DIR, dotfiles-baseline fell back to $HOME/.dotfiles, listed
+# 0 keys and failed, and set -e then skipped tests/run.sh.
+t "W2.1" "the baseline check passes with an empty HOME and the repo elsewhere" '
+  W=$(sandbox); mkdir -p "$W/h"
+  out=$(env -u DOTFILES_DIR HOME="$W/h" DOTFILES_TEST_ONLY=test_defaults_baseline "$PWD/bin/dotfiles-test" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && case "$out" in *"Captures all"*) true ;; *) false ;; esac'
+t "W2.2" "DOTFILES_TEST_ONLY refuses a name that is not a test function" '
+  W=$(sandbox); mkdir -p "$W/h"
+  ! env HOME="$W/h" DOTFILES_TEST_ONLY=rm "$PWD/bin/dotfiles-test" >/dev/null 2>&1 &&
+  ! env HOME="$W/h" DOTFILES_TEST_ONLY=test_nonesuch "$PWD/bin/dotfiles-test" >/dev/null 2>&1'
+
 finish
