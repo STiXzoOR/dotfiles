@@ -420,6 +420,13 @@ t "N12.5" "a failed uninstall names the manual command and does not fail the run
 t "N12.6" "nothing else is ever uninstalled" '
   W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; _full_run "$W"
   [ "$(grep "^claude plugin uninstall" "$W/log" | grep -vc "^claude plugin uninstall safety-net@cc-marketplace$")" -eq 0 ]'
+t "N12.7" "a trailing space on the plugins.list line does not stop the migration" '
+  W=$(sandbox); _stubs "$W"; ln -s "$W/claude-stub" "$W/bin/claude"; mkdir -p "$W/cl"
+  printf "cc-safety-net@cc-marketplace  \n" >| "$W/cl/plugins.list"; _sn_json "$W" safety-net
+  ( export HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" STUBLOG="$W/log" STUBDIR="$W"
+    source scripts/install_claude.sh --lib; mkdir -p "$(dirname "$CLAUDE_INSTALL_LOG")"; CLAUDE_DIR="$W/cl"; FAILURES=()
+    migrate_legacy_safety_net >/dev/null 2>&1 )
+  [ "$(_uninstalls "$W")" -eq 1 ]'
 
 section "N13 — deferred minors (Task 16)"
 t "N13.1" "a missing binary is one failure, not also a failed release verification" '

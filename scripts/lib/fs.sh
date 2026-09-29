@@ -222,7 +222,8 @@ dotfiles_link_abort() {
 # `dotfiles-sync` cannot drift. --restow makes a re-run idempotent (not
 # --adopt: that pulls the machine's files into the tracked tree). --ignore
 # keeps Finder litter out (stow matches it against the whole name, so it is
-# anchored: an unanchored one also dropped a real file called notes.DS_Store): an untracked, gitignored runcom/.DS_Store made stow
+# anchored: an unanchored one also dropped a real file called notes.DS_Store):
+# an untracked, gitignored runcom/.DS_Store made stow
 # abort with "neither a link nor a directory" against ~/.DS_Store. A
 # .stow-local-ignore would REPLACE stow's built-in ignore list; a command-line
 # --ignore adds to it.

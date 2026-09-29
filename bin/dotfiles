@@ -855,6 +855,8 @@ GITLOCAL
   movelog=$(mktemp "${TMPDIR:-/tmp}/dotfiles-link.XXXXXX") || return 1
   export DOTFILES_STOW_MOVELOG="$movelog"
   # Ctrl-C or a TERM mid-link must not strand the moved files in the backup.
+  # sub_link owns INT/TERM until it returns: every `trap - INT TERM` below
+  # resets to the default and replaces any caller trap (none exist in this repo).
   # shellcheck disable=SC2064
   trap "dotfiles_link_abort INT \"$movelog\" \"$backup_dir\"" INT
   # shellcheck disable=SC2064

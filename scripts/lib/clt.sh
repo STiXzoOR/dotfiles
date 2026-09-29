@@ -89,6 +89,7 @@ _dotfiles_clt_cleanup() {
 
 _dotfiles_clt_on_signal() { # _dotfiles_clt_on_signal <signal>
   _dotfiles_clt_cleanup
+  # This function owns INT/TERM while it runs and replaces any caller trap.
   trap - INT TERM
   kill -s "$1" "$$"
 }
@@ -109,10 +110,14 @@ dotfiles_install_clt() {
     return 1
   }
   _DOTFILES_CLT_SENTINEL_PATH="$sentinel"
+  # dotfiles_install_clt owns INT/TERM for its duration and replaces any
+  # caller trap (none exist in this repo).
   trap '_dotfiles_clt_on_signal INT' INT
   trap '_dotfiles_clt_on_signal TERM' TERM
   # stdio is detached so a caller's `$(...)` does not wait on the sleep, and
-  # TERM takes the sleep down with the loop.
+  # TERM takes the sleep down with the loop. It also ends when the parent is
+  # gone (SIGKILL runs no trap), or it would keep sudo warm forever.
+  local parent=$$
   (
     nap=""
     trap 'kill "$nap" 2>/dev/null; exit 0' TERM
@@ -120,13 +125,14 @@ dotfiles_install_clt() {
       sleep "${DOTFILES_CLT_KEEPALIVE_INTERVAL:-30}" &
       nap=$!
       wait "$nap"
+      kill -0 "$parent" 2>/dev/null || exit 0
       sudo -n true 2>/dev/null || exit 0
     done
   ) >/dev/null 2>&1 </dev/null &
   _DOTFILES_CLT_KEEPALIVE_PID=$!
   _dotfiles_clt_install_locked || rc=1
   _dotfiles_clt_cleanup
-  trap - INT TERM
+  trap - INT TERM # restores the default: see the note at the traps above
   return "$rc"
 }
 

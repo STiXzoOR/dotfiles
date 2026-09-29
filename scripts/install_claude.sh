@@ -317,7 +317,8 @@ migrate_legacy_safety_net() {
   for f in ${FAILURES[@]+"${FAILURES[@]}"}; do
     [[ "$f" == "plugin: $current" ]] && return 0
   done
-  read_list "$CLAUDE_DIR" plugins | grep -Fqx "$current" || return 0
+  # read_list keeps trailing whitespace, so trim before the exact-line match.
+  [[ "$(read_list "$CLAUDE_DIR" plugins | sed 's/[[:space:]]*$//' | grep -cFx "$current")" -ge 1 ]] || return 0
   list_has_token "$(claude plugin list --json 2>/dev/null || true)" "$legacy" || return 0
 
   if claude plugin uninstall "$legacy" >>"$CLAUDE_INSTALL_LOG" 2>&1; then
