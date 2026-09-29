@@ -1,0 +1,11 @@
+# app|process name (pgrep -x). dotfiles-apps restore refuses while any of
+# these run. Every allowlisted app needs at least one line (check enforces it).
+bartender|Bartender 6 Setapp
+cleanshot|CleanShot X Setapp
+flux|Flux
+istat-menus-setapp|iStat Menus
+magnet|Magnet
+openemu-settings|OpenEmu
+pixelsnap2-setapp|PixelSnap 2 Setapp
+proxyman-setapp|Proxyman
+spark-setapp|Spark Mail

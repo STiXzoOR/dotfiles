@@ -26,8 +26,8 @@ t "D1.7" "neovim and mise declared" \
   'grep -q "^brew \"neovim\"" Brewfile && grep -q "^brew \"mise\"" Brewfile'
 t "D1.8" "keg-only readline and ssh-copy-id removed" \
   '! grep -qE "^brew \"(readline|ssh-copy-id)\"" Brewfile'
-t "D1.9" "mackup, thefuck, fnm removed; pay-respects added" \
-  '! grep -qE "^brew \"(mackup|thefuck|fnm)\"" Brewfile && grep -qE "^brew \"(timescam/tap/)?pay-respects\"" Brewfile'
+t "D1.9" "thefuck, fnm removed; pay-respects and mackup (copy-mode app settings) present" \
+  '! grep -qE "^brew \"(thefuck|fnm)\"" Brewfile && grep -qE "^brew \"(timescam/tap/)?pay-respects\"" Brewfile && grep -qE "^brew \"mackup\"" Brewfile'
 t "D1.10" "tools the machine relies on are declared" \
   '(for f in rtk asc xcodegen atuin gitleaks age lazygit difftastic starship; do grep -q "\"$f\"" Brewfile || exit 1; done)'
 t "D1.11" "claude-usage-tracker tap is declared or the cask removed" \
