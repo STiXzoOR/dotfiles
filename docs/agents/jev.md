@@ -31,8 +31,11 @@ hook does exactly what it did before plus its deterministic checks.
 | `privacy` | `.githooks/pre-commit`, per added hunk that no deterministic check caught | Does this added text reveal a person's name, a computer or host name, a client or private project name, a private network address or a home directory path? |
 | `secrets` | pre-commit, `dotfiles apps backup` (staging tree), `dotfiles jev scan-vault` | Is this masked value a live credential rather than a placeholder, example, hash or identifier? Asked only for an *ambiguous* hit. |
 
-Task 9 adds drift classification, app-backup suggestions and the skip gate for
-the daily jobs, and wires the private repo's pre-commit and a daily vault scan.
+The `secrets` point also runs in the private repo's pre-commit hook
+(`dotfiles jev guard-private`, installed by `dotfiles private`) and in the daily
+scheduled sync (the vault scan): see "Secrets leakage" below. Drift
+classification, app-backup suggestions and the skip gate for the daily jobs come
+in later tasks.
 
 Each point is `off`, `shadow` (the default for every point) or `on`.
 
@@ -173,6 +176,13 @@ hits.
   published to iCloud (`dotfiles jev scan-tree`). A hit keeps the snapshot local
   in the staging tree and reports it; nothing reaches iCloud. If the scan cannot
   run, the backup refuses.
+- **Private repo (pre-commit)**: `dotfiles private` installs the hook, which runs
+  `dotfiles jev guard-private`. It is the same secrets guard as the public
+  repo's, with gitleaks included (the private repo has no other gitleaks hook):
+  definite hits block, ambiguous ones warn and, in `on` mode, Jev can block them.
+  `secrets.age` is the one exempt file. The privacy checks are not run, since
+  names, hosts and addresses belong in that repo. A missing guard blocks the
+  commit.
 - **`dotfiles jev scan-vault [dir]`**: scans `Claude-Sessions/` in the vault
   (`DOTFILES_VAULT_DIR`, default `~/Vault`), which syncs through iCloud. It
   reports `file:line`, never edits or deletes, and exits 1 on a hit. Binary

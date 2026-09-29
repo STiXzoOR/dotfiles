@@ -9,6 +9,8 @@
 #   link      Symlink every private file to its path in this repo
 #   status    Ahead/behind/dirty, and local-only files that will not sync
 #   install   clone, then link (what `dotfiles install --private` runs)
+#   hook      Install the secrets guard as the private repo's pre-commit hook
+#             (init, clone and link do it too; it is idempotent)
 #
 # The public repo is public, so the files that must not be in it (git identity,
 # private profiles, work marketplaces, extra packages, macOS locale, private
@@ -127,6 +129,9 @@ EOF
     warn "could not make the first commit (is a git identity set?); commit in $PRIVATE_DIR yourself"
   fi
 
+  # After the first commit: moving the existing files in is not a new leak.
+  install_hook || true
+
   local slug
   slug=$(remote_slug)
   say "created $PRIVATE_DIR with $moved file(s)."
@@ -143,7 +148,27 @@ EOF
 # clone
 #############################################################################
 
-cmd_clone() {
+# passphrase_keys: the private keys in ~/.ssh that are protected by a
+# passphrase. ssh runs here with BatchMode, so it cannot ask for one and such a
+# key is refused exactly like a key GitHub does not know.
+passphrase_keys() {
+  local k msg
+  command -v ssh-keygen >/dev/null 2>&1 || return 0
+  for k in "$HOME"/.ssh/id_*; do
+    [ -f "$k" ] || continue
+    case "$k" in *.pub) continue ;; esac
+    msg=$(ssh-keygen -y -P '' -f "$k" 2>&1 >/dev/null)
+    case "$msg" in *passphrase*) printf '%s\n' "$k" ;; esac
+  done
+  return 0
+}
+
+# clone_repo: 0 cloned (or already there), 3 not set up yet, 1 any other
+# failure. Only what GitHub says when the repo or the access is not there yet
+# (Repository not found, Permission denied (publickey)) is "not set up"; a
+# network failure, a typo in the remote or a changed host key is a fault and
+# must be seen, so git's own message is always kept.
+clone_repo() {
   if have_private; then
     say "private repo already at $PRIVATE_DIR"
     return 0
@@ -155,9 +180,17 @@ cmd_clone() {
 
   # Never wait at a credential prompt: an install run should fail with the
   # guidance below, not hang.
-  if GIT_TERMINAL_PROMPT=0 git clone -q "$REMOTE" "$PRIVATE_DIR" 2>/dev/null; then
+  local gitmsg notyet=0 denied=0 k
+  if gitmsg=$(GIT_TERMINAL_PROMPT=0 git clone -q "$REMOTE" "$PRIVATE_DIR" 2>&1 >/dev/null); then
     say "cloned the private repo into $PRIVATE_DIR"
     return 0
+  fi
+  case "$gitmsg" in *"Repository not found"*) notyet=1 ;; esac
+  case "$gitmsg" in *"Permission denied (publickey)"*) notyet=1 denied=1 ;; esac
+  if [ "$notyet" -eq 0 ]; then
+    err "could not clone the private repo ($REMOTE). This is a fault (not a missing repo or key), so it fails instead of being passed over:"
+    printf '%s\n' "$gitmsg" | sed 's/^/  git: /' >&2
+    return 1
   fi
 
   local slug
@@ -171,13 +204,87 @@ cmd_clone() {
 
   # Not set up yet: the repo does not exist, there is no GitHub auth, or the
   # SSH key is not on GitHub. Exit 3 tells `install` this is a skip, not a fault.
-  warn "could not clone the private repo ($REMOTE); it is probably not set up yet"
+  warn "could not clone the private repo ($REMOTE); it is probably not set up yet. git said:"
+  printf '%s\n' "$gitmsg" | sed 's/^/  git: /' >&2
+  if [ "$denied" -eq 1 ]; then
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      warn "  - $k is protected by a passphrase and ssh cannot ask for it here (it runs with BatchMode), so it was refused."
+      warn "    Load it once, then run clone again: ssh-add $k"
+    done <<EOF
+$(passphrase_keys)
+EOF
+  fi
   warn "  - if the repo does not exist yet, on the Mac that has the files run: dotfiles private init,"
   warn "    then: gh repo create ${slug:-<owner>/dotfiles-private} --private --source \"$PRIVATE_DIR\" --push"
   warn "  - otherwise add an SSH key to your GitHub account (dotfiles install --ssh makes one), or run: gh auth login"
   warn "  - then run: dotfiles private clone"
   return 3
 }
+
+cmd_clone() {
+  local rc=0
+  clone_repo || rc=$?
+  [ "$rc" -eq 0 ] && install_hook
+  return "$rc"
+}
+
+#############################################################################
+# The secrets guard as the private repo's pre-commit hook
+#############################################################################
+
+HOOK_MARK='# dotfiles-private-guard'
+
+# sh_quote <text>: one single-quoted shell word.
+sh_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# The hook: run the public repo's guard over the staged diff. A missing guard
+# blocks the commit, because a check that cannot run must not wave a secret
+# through. Only secrets.age may hold a secret.
+hook_body() {
+  cat <<EOF
+#!/usr/bin/env bash
+$HOOK_MARK (installed by \`dotfiles private\`, rewritten on every run: do not edit)
+guard=$(sh_quote "$PUBLIC_DIR/bin/dotfiles-jev")
+if [ ! -x "\$guard" ]; then
+  echo "dotfiles private: the secrets guard cannot run (\$guard is missing); commit blocked, it never fails open" >&2
+  exit 1
+fi
+export DOTFILES_DIR=$(sh_quote "$PUBLIC_DIR")
+[ -n "\${DOTFILES_PRIVATE_DIR:-}" ] || DOTFILES_PRIVATE_DIR=$(sh_quote "$PRIVATE_DIR")
+export DOTFILES_PRIVATE_DIR
+exec "\$guard" guard-private
+EOF
+}
+
+# install_hook: idempotent. A hook that is already ours is rewritten only when
+# it differs; a different hook is moved to pre-commit.bak.<epoch> first.
+install_hook() {
+  local gitdir hooks hook new bak
+  need_private || return 1
+  gitdir=$(git -C "$PRIVATE_DIR" rev-parse --absolute-git-dir 2>/dev/null) || { err "could not find the git dir of $PRIVATE_DIR"; return 1; }
+  hooks="$gitdir/hooks"
+  hook="$hooks/pre-commit"
+  mkdir -p "$hooks" || return 1
+  new=$(mktemp "$hooks/.pre-commit.XXXXXX") || { err "could not write in $hooks"; return 1; }
+  hook_body >"$new"
+  chmod 755 "$new"
+  if [ -f "$hook" ] && [ ! -L "$hook" ] && cmp -s "$new" "$hook"; then
+    rm -f "$new"
+    return 0
+  fi
+  if [ -e "$hook" ] || [ -L "$hook" ]; then
+    if [ -L "$hook" ] || ! grep -q "$HOOK_MARK" "$hook" 2>/dev/null; then
+      bak="$hook.bak.$(date +%s)"
+      mv "$hook" "$bak" || { rm -f "$new"; err "could not move $hook aside"; return 1; }
+      say "moved your existing pre-commit hook aside to $bak (it no longer runs)"
+    fi
+  fi
+  mv -f "$new" "$hook" || { rm -f "$new"; err "could not install $hook"; return 1; }
+  say "installed the secrets guard as the private repo's pre-commit hook"
+}
+
+cmd_hook() { install_hook; }
 
 #############################################################################
 # link
@@ -207,6 +314,7 @@ link_one() {
 cmd_link() {
   need_private || return 1
   local rel rc=0
+  install_hook || rc=1
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     if [ "$rel" = ssh/config ]; then
@@ -285,6 +393,7 @@ Usage: dotfiles private <command>
   link      Symlink each private file to its path in the public repo
   status    Ahead/behind/dirty, and gitignored files that will not sync
   install   clone, then link
+  hook      Install the secrets guard as the private repo's pre-commit hook
 USAGE
 }
 
@@ -294,6 +403,7 @@ case "${1:-}" in
   link) cmd_link ;;
   status) cmd_status ;;
   install) cmd_install ;;
+  hook) cmd_hook ;;
   -h | --help | help) usage ;;
   *)
     usage >&2

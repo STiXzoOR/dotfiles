@@ -15,6 +15,9 @@
 #                              `dotfiles apps backup` before it publishes)
 #   guard-staged               The privacy and secrets guard over the staged
 #                              diff (run by .githooks/pre-commit)
+#   guard-private              The secrets guard over the private repo's staged
+#                              diff (its pre-commit hook, installed by
+#                              `dotfiles private`); secrets.age is exempt
 #
 # Points: privacy, secrets. Each is off, shadow (decide and log, change
 # nothing; the default) or on. DOTFILES_JEV=off switches everything off.
@@ -266,6 +269,10 @@ secrets_jev_stage() {
 }
 
 GUARD_TMP="" GUARD_KEEP=0
+# public: the privacy and secrets guard of this repo. private: the secrets
+# guard of the private companion repo (no privacy checks: names, hosts and
+# addresses belong there; only secrets.age may hold a secret).
+GUARD_KIND=public
 guard_cleanup() {
   [ "$GUARD_KEEP" -eq 1 ] && return 0
   jev_cleanup
@@ -273,7 +280,7 @@ guard_cleanup() {
 }
 
 cmd_guard_staged() {
-  local tmp added root n f ln kind text where cls name len classes f3 masked pmode smode sync="${DOTFILES_JEV_SYNC:-}"
+  local tmp added root n f ln kind text where cls name len classes f3 masked pmode smode exempt gl sync="${DOTFILES_JEV_SYNC:-}"
   root=$(git rev-parse --show-toplevel 2>/dev/null) || { err "not in a git repository"; return 2; }
   cd "$root" || return 2
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/jev-guard.XXXXXX") || return 2
@@ -291,7 +298,9 @@ cmd_guard_staged() {
   : >"$tmp/ambig.tsv"
 
   # ---- privacy, deterministic ------------------------------------------
-  if [ "${DOTFILES_PRIVACY_OK:-}" = 1 ]; then
+  if [ "$GUARD_KIND" = private ]; then
+    pmode=off
+  elif [ "${DOTFILES_PRIVACY_OK:-}" = 1 ]; then
     n=$(grep -c . "$added")
     jev_log privacy "$pmode" "override: DOTFILES_PRIVACY_OK=1 ($n added lines not privacy-checked)"
     say "note: privacy check skipped for this commit (DOTFILES_PRIVACY_OK=1, logged)"
@@ -311,11 +320,18 @@ cmd_guard_staged() {
 
   # ---- secrets, deterministic --------------------------------------------
   : >"$tmp/all.txt"; : >"$tmp/map.tsv"
-  awk -F'\t' -v all="$tmp/all.txt" -v map="$tmp/map.tsv" '
-    $1 ~ /^(\.githooks\/pre-commit|tests\/fixtures\/make-secrets\.sh|tests\/fixtures\/jev\/replay\/)/ { next }
+  # A dynamic regex: [.] rather than a backslash, which awk -v would reprocess.
+  exempt='^([.]githooks/pre-commit|tests/fixtures/make-secrets[.]sh|tests/fixtures/jev/replay/)'
+  [ "$GUARD_KIND" = private ] && exempt='^secrets[.]age$'
+  awk -F'\t' -v all="$tmp/all.txt" -v map="$tmp/map.tsv" -v exempt="$exempt" '
+    $1 ~ exempt { next }
     { t = $0; sub(/^[^\t]*\t[^\t]*\t[^\t]*\t/, "", t); print t > all; print $1 "\t" $2 > map }' "$added"
   if [ -s "$tmp/all.txt" ]; then
-    JEV_GITLEAKS="${JEV_GITLEAKS:-0}" jev_scan "$tmp/all.txt" |
+    # The public hook has already run gitleaks over the staged diff; the
+    # private repo's hook has not, so it is one of this guard's layers.
+    gl=0
+    [ "$GUARD_KIND" = private ] && gl=1
+    JEV_GITLEAKS="${JEV_GITLEAKS:-$gl}" jev_scan "$tmp/all.txt" |
       awk -F'\t' 'NR == FNR { f[FNR] = $1; l[FNR] = $2; next }
                   { print f[$1] ":" l[$1] "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8 }' "$tmp/map.tsv" - >"$tmp/scan.tsv"
     while IFS=$'\t' read -r where cls kind name len classes f3 masked; do
@@ -356,6 +372,11 @@ cmd_guard_staged() {
   [ "$pmode" = off ] || privacy_jev_stage "$added" "$tmp/hits.tsv" "$tmp"
   secrets_jev_stage "$tmp/ambig.tsv"
   return "$BLOCKED"
+}
+
+cmd_guard_private() {
+  GUARD_KIND=private
+  cmd_guard_staged "$@"
 }
 
 #############################################################################
@@ -690,6 +711,7 @@ main() {
     scan-vault) cmd_scan_vault "$@" ;;
     scan-tree) cmd_scan_tree "$@" ;;
     guard-staged) cmd_guard_staged "$@" ;;
+    guard-private) cmd_guard_private "$@" ;;
     "" | -h | --help | help) usage ;;
     *)
       err "unknown command '$cmd'"
