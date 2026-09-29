@@ -53,6 +53,16 @@ password; it runs only on a terminal without `DOTFILES_YES`, otherwise the
 command is printed for you to run. `pmset standbydelay` is not written (Apple
 silicon ignores it).
 
+**Two Macs.** Remote Login and the desktop power settings above are not yet
+gated by machine role. Until the sync work lands, do not re-run
+`dotfiles configure` on the MacBook: it would enable Remote Login and the
+mini's power settings there.
+
+Remote Login is read back like the firewall: `systemsetup -setremotelogin` can
+print success without Full Disk Access and change nothing, so the state is read
+with `systemsetup -getremotelogin`, and a Mac where it is still off gets an
+`error` naming Full Disk Access.
+
 ## Other things worth knowing
 
 - The scripts reproduce the owner's live values (for example `KeyRepeat` 2,
