@@ -96,6 +96,15 @@ sync only reports the change and never imports.
    casks, `mas list`, VS Code extensions) that neither the public nor the private
    lists declare, each with the line to add.
 
+5. **Scheduled runs only**, once a day: `dotfiles jev scan-vault` over the vault's
+   `Claude-Sessions/` notes, which sync through iCloud (a token pasted into a
+   session lands there). A hit, definite or ambiguous, adds one line to the
+   notification: the count and up to three `file:line` positions, never the value.
+   It is report-only, so nothing in the vault is edited, moved or deleted. A day
+   stamp (`~/.local/state/dotfiles/vault-scan-last`) keeps it to one scan a day; a
+   scan that could not run is notified and retried the next run. No vault folder
+   means nothing to scan.
+
 **Interactively**, step 3 asks (`confirm`) before each action. **Scheduled**
 (`--scheduled`) it logs to `~/Library/Logs/dotfiles-sync.log`, never prompts,
 never runs `sudo`, and never installs or upgrades anything (no `brew bundle`, no

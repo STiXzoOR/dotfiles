@@ -42,7 +42,7 @@ Each point is `off`, `shadow` (the default for every point) or `on`.
 | Mode | Effect |
 | ---- | ------ |
 | `off` | Jev is not asked. Deterministic checks still run. |
-| `shadow` | Jev is asked and the answer is logged as "shadow: would have ...". Nothing is blocked or warned. In the pre-commit hook the request runs in the background, so a commit is not delayed. |
+| `shadow` | Jev is asked and the answer is logged as "shadow: would have ...". Nothing is blocked or warned. In the pre-commit hook the request runs in the background, so a commit is not delayed (and no job is started at all when there is no key). |
 | `on` | The answer acts: block at high probability, warn in the middle band. Any Jev error fails open with a "not checked" warning. |
 
 Set a mode with `dotfiles jev promote <point> [on|shadow|off]`. It is stored in
@@ -63,9 +63,10 @@ secrets.warn_p=0.5
 On the **added lines** of the staged diff:
 
 - a value from the never-send list (always), or this Mac's LocalHostName / an
-  SSH host alias when it holds a digit or a hyphen (`my-mac-mini` yes,
-  `mediashelf` no unless it is in the never-send list), as a whole word
-  (case-insensitive)
+  SSH host alias / computer name when it holds a digit, a hyphen or a space
+  (`my-mac-mini` and a two-word computer name yes, `mediashelf` no unless it is
+  in the never-send list), as a whole word (case-insensitive). A blank computer
+  name is ignored
 - a home directory path with a real user name (`/Users/<name>` and other
   documentation placeholders are fine)
 - a private network address: the 10, 172.16 to 31 and 192.168 ranges, and the
@@ -123,8 +124,15 @@ empty pattern.
 of these values. They are matched as plain in-memory strings instead, because a
 substring match catches a value embedded in a longer string (a URL, a quoted
 header), which hashing whole tokens misses, and the values leave memory exactly
-as they would for hashing. If the Keychain is locked or an item unreadable, the
-own-secret check is skipped with one warning per run (the commit is not failed).
+as they would for hashing. An item that does not exist yet (a fresh Mac) is
+silent: there is nothing to compare. If the Keychain is locked, or `security`
+fails any other way, the own-secret check is skipped with one warning per run
+that says which (`keychain locked (security exit 36)` or `keychain error
+(security exit N)`); the commit is not failed. Values are read once per run, and
+structural lines of a multi-line value (PEM `-----BEGIN ...-----` and
+`-----END ...-----` armor, `Proc-Type`/`DEK-Info` headers, lines with no letter
+or digit) are never patterns, so a public certificate in a file does not match.
+In a plist, `<data>` values are base64-decoded before the check.
 
 The API key goes to curl on stdin (`curl --config -`), never on the command
 line and never in a file or the log.
@@ -185,7 +193,9 @@ hits.
   commit.
 - **`dotfiles jev scan-vault [dir]`**: scans `Claude-Sessions/` in the vault
   (`DOTFILES_VAULT_DIR`, default `~/Vault`), which syncs through iCloud. It
-  reports `file:line`, never edits or deletes, and exits 1 on a hit. Binary
+  reports `file:line`, never edits or deletes, and exits 1 on a hit. The daily
+  `dotfiles sync --scheduled` runs it once a day and notifies on hits (file and
+  line only, never the value; report-only). Binary
   plists are converted with `plutil`, other binary files are read as their
   printable runs; only an unreadable file is reported as not scanned.
 
@@ -194,7 +204,9 @@ hits.
 `${XDG_STATE_HOME:-~/.local/state}/dotfiles/jev.jsonl`, one JSON line per
 decision: `ts`, `point`, `mode`, `questions`, `answers` (probability and
 confidence), `latency_ms`, `action`. It never holds state text or a value.
-`dotfiles jev log [-n N] [--raw]` reads it.
+`confidence` is the one the verdict used: Jev's own when it gave one, else the
+derived one (the probability of the side it leans to), with
+`confidence_derived: true`. `dotfiles jev log [-n N] [--raw]` reads it.
 
 ## Cost
 

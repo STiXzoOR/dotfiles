@@ -304,6 +304,58 @@ t "S6.6" "the extra Brewfile.local entries count as declared" \
 t "S7.1" "an unknown argument is a usage error" \
   'W=$(senv); out=$(syn --frobnicate 2>&1); rc=$?; [ "$rc" -eq 2 ] && printf "%s\n" "$out" | grep -q "Usage"'
 
+# The daily vault scan (Task 12.2). vault_of <W>: the sandbox vault's
+# Claude-Sessions folder. jevstub <W> <exit> [output line]: a dotfiles-jev that
+# logs its argv and JEV_SCHEDULED, prints the line and exits with <exit>.
+vault_of() { mkdir -p "$1/home/Vault/Claude-Sessions"; printf '%s' "$1/home/Vault/Claude-Sessions"; }
+jevstub() {
+  stub "$1/bin" dotfiles-jev-stub 'echo "JEV_SCHEDULED=${JEV_SCHEDULED:-}" >>"$STUB_LOG"; [ -n "'"${3:-}"'" ] && printf "%s\n" "'"${3:-}"'"; exit '"$2"
+}
+JEVSTUB_ENV() { printf 'DOTFILES_JEV_BIN=%s/bin/dotfiles-jev-stub' "$1"; }
+stampf() { printf '%s/home/.local/state/dotfiles/vault-scan-last' "$1"; }
+
+t "S8.1" "scheduled: a real scan of a vault with a pasted token notifies once with file and line, never the value" '
+  W=$(senv); d=$(vault_of "$W"); tok="ghp_$(rand_chars 36 A-Za-z0-9)"
+  printf "notes\nexport GH_TOKEN=%s\nmore\n" "$tok" >"$d/session-1.md"; printf "fine\n" >"$d/session-2.md"
+  syn --scheduled >/dev/null 2>&1; l=$(command cat "$W/home/Library/Logs/dotfiles-sync.log")
+  [ "$(_calls "^osascript")" -eq 1 ] && grep "^osascript" "$W/log" | grep -q "session-1.md:2" &&
+  [ "$(grep "^osascript" "$W/log" | grep -c "$tok")" -eq 0 ] && [ "$(printf "%s\n" "$l" | grep -c "$tok")" -eq 0 ] &&
+  [ "$(printf "%s\n" "$l" | grep -c "FOUND session-1.md:2")" -eq 1 ]'
+t "S8.2" "scheduled: a clean vault does not notify, is logged, and is not scanned again the same day" '
+  W=$(senv); d=$(vault_of "$W"); printf "fine\n" >"$d/s.md"; jevstub "$W" 0 "no credentials found"; E=$(JEVSTUB_ENV "$W")
+  with_x() { local SYNENV="$E"; syn --scheduled >/dev/null 2>&1; }; with_x; with_x
+  [ "$(_calls "^osascript")" -eq 0 ] && [ "$(_calls "^dotfiles-jev-stub scan-vault")" -eq 1 ] &&
+  [ "$(cat "$(stampf "$W")")" = "$(date +%Y-%m-%d)" ] && grep -q "no credentials found" "$W/home/Library/Logs/dotfiles-sync.log"'
+t "S8.3" "scheduled: a stamp from an earlier day scans again" '
+  W=$(senv); d=$(vault_of "$W"); jevstub "$W" 0; E=$(JEVSTUB_ENV "$W")
+  mkdir -p "$(dirname "$(stampf "$W")")"; printf "2020-01-01\n" >"$(stampf "$W")"
+  SYNENV="$E" syn --scheduled >/dev/null 2>&1
+  [ "$(_calls "^dotfiles-jev-stub scan-vault")" -eq 1 ] && [ "$(cat "$(stampf "$W")")" = "$(date +%Y-%m-%d)" ]'
+t "S8.4" "scheduled: the scan runs with the scheduled timeout and gets the Claude-Sessions folder" '
+  W=$(senv); d=$(vault_of "$W"); jevstub "$W" 0; E=$(JEVSTUB_ENV "$W"); SYNENV="$E" syn --scheduled >/dev/null 2>&1
+  grep -q "^JEV_SCHEDULED=1$" "$W/log" && grep -qx "dotfiles-jev-stub scan-vault $d" "$W/log"'
+t "S8.5" "an interactive sync does not scan the vault" '
+  W=$(senv); d=$(vault_of "$W"); jevstub "$W" 1 "FOUND s.md:2: a credential"; E=$(JEVSTUB_ENV "$W"); SYNENV="$E" syn >/dev/null 2>&1
+  [ "$(_calls "^dotfiles-jev-stub")" -eq 0 ] && [ ! -e "$(stampf "$W")" ]'
+t "S8.6" "no vault folder: nothing to scan, no notification, no stamp, exit 0" '
+  W=$(senv); jevstub "$W" 1 "FOUND s.md:2: x"; E=$(JEVSTUB_ENV "$W"); SYNENV="$E" syn --scheduled >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && [ "$(_calls "^dotfiles-jev-stub")" -eq 0 ] && [ "$(_calls "^osascript")" -eq 0 ] && [ ! -e "$(stampf "$W")" ]'
+t "S8.7" "a scan that cannot run notifies, and is retried the next run (no stamp)" '
+  W=$(senv); d=$(vault_of "$W"); jevstub "$W" 3 "boom"; E=$(JEVSTUB_ENV "$W"); SYNENV="$E" syn --scheduled >/dev/null 2>&1
+  [ "$(_calls "^osascript")" -eq 1 ] && grep "^osascript" "$W/log" | grep -q "vault scan could not run" && [ ! -e "$(stampf "$W")" ]'
+t "S8.8" "hits are listed by file and line, at most three, and counted; ambiguous ones count too" '
+  W=$(senv); d=$(vault_of "$W")
+  jevstub "$W" 1 "FOUND a.md:2: a credential (pattern, name=-, length 40)
+FOUND b.md:5: a credential (pattern, name=-, length 40)
+WARN  c.md:7: a high-entropy value in x (length 40) looks like a credential
+FOUND d.md:9: flagged by gitleaks"
+  E=$(JEVSTUB_ENV "$W"); SYNENV="$E" syn --scheduled >/dev/null 2>&1; n=$(grep "^osascript" "$W/log")
+  [ "$(_calls "^osascript")" -eq 1 ] && printf "%s\n" "$n" | grep -q "4 possible credential" && printf "%s\n" "$n" | grep -q "a.md:2" &&
+  printf "%s\n" "$n" | grep -q "c.md:7" && printf "%s\n" "$n" | grep -q "+1 more" && [ "$(printf "%s\n" "$n" | grep -c "d.md:9")" -eq 0 ]'
+t "S8.9" "the scan is report-only: it never edits, deletes or moves anything in the vault" '
+  W=$(senv); d=$(vault_of "$W"); tok="ghp_$(rand_chars 36 A-Za-z0-9)"; printf "x=%s\n" "$tok" >"$d/s.md"
+  a=$(shasum "$d/s.md"); syn --scheduled >/dev/null 2>&1; [ "$(shasum "$d/s.md")" = "$a" ] && [ "$(ls "$d" | wc -l | tr -d " ")" -eq 1 ]'
+
 
 #############################################################################
 section "V -- dotfiles vault migrate (bin/dotfiles-vault)"
