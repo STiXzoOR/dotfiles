@@ -453,7 +453,7 @@ t "F9" "legacy entries are never modified by backup, restore or list" \
 snapdir() { printf '%s' "$W/icloud/macA/snapshots/$(latest_of)"; }
 t "F10" "backup writes a MANIFEST with sha256, size and path for every staged file" \
   'W=$(newenv); run_apps backup && m="$(snapdir)/MANIFEST" && [ -f "$m" ] &&
-   [ "$(grep -c . "$m")" -eq 2 ] && grep -q "Library/Preferences/com.example.alpha.plist" "$m" &&
+   [ "$(grep -vc "^#" "$m")" -eq 2 ] && grep -q "Library/Preferences/com.example.alpha.plist" "$m" &&
    h=$(shasum -a 256 "$W/home/Library/Preferences/com.example.alpha.plist" | cut -d" " -f1) && grep -q "^$h" "$m"'
 t "F11" "restore refuses a file whose size differs (dataless or truncated), listing it" \
   'W=$(newenv); run_apps backup && chg2() { printf "x" >"$(snapdir)/Mackup/Library/Application Support/Beta/settings.json"; }; chg2
@@ -479,6 +479,77 @@ t "F18" "a refused post-restore symlink check still flushes cfprefsd" \
   'W=$(newenv); run_apps backup && APPS_ENV="STUB_RESTORE_LINK=1" run_apps restore; grep -q "^killall cfprefsd" "$W/log"'
 t "F19" "a refusal before anything was touched does not flush" \
   'W=$(newenv); run_apps backup && printf "alphaProc\n" >"$W/running"; run_apps restore; [ "$(grep -c "^killall" "$W/log")" -eq 0 ]'
+
+mfst() { printf '%s' "$(snapdir)/MANIFEST"; }
+t "F20" "the manifest opens with a header: the file count and a SHA-256 of the body" \
+  'W=$(newenv); run_apps backup && m=$(mfst) && h=$(head -n 1 "$m") &&
+   printf "%s\n" "$h" | grep -Eq "^# dotfiles-apps manifest v1 files=2 sha256=[0-9a-f]{64}\$" &&
+   body=$(tail -n +2 "$m" | shasum -a 256 | cut -d" " -f1) && [ "${h##*sha256=}" = "$body" ]'
+t "F21" "a manifest with a line cut off (fewer files than the header says) is refused" \
+  'W=$(newenv); run_apps backup && m=$(mfst) && sed "\$d" "$m" >"$m.x" && command mv "$m.x" "$m"
+   refused "manifest" restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "F22" "a manifest with its lines reordered (same files, same count) is refused by the body SHA-256" \
+  'W=$(newenv); run_apps backup && m=$(mfst) && { sed -n 1p "$m"; sed -n 3p "$m"; sed -n 2p "$m"; } >"$m.x" && command mv "$m.x" "$m"
+   out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -qi "manifest" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "F23" "a manifest without a header (the old format) is refused" \
+  'W=$(newenv); run_apps backup && m=$(mfst) && tail -n +2 "$m" >"$m.x" && command mv "$m.x" "$m"
+   refused "manifest" restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "F24" "a file in the snapshot that the manifest does not list is refused" \
+  'W=$(newenv); run_apps backup && printf x >"$(snapdir)/Mackup/extra.txt"
+   refused "extra.txt" restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "F25" "an app file named MANIFEST below the root is listed and verified" \
+  'W=$(newenv); printf "{}\n" >"$W/home/Library/Application Support/Beta/MANIFEST"; run_apps backup &&
+   grep -q "Beta/MANIFEST\$" "$(mfst)" && [ "$(grep -vc "^#" "$(mfst)")" -eq 3 ] &&
+   printf "changed\n" >"$(snapdir)/Mackup/Library/Application Support/Beta/MANIFEST" &&
+   refused "Beta/MANIFEST" restore && [ "$(mackup_calls restore)" -eq 0 ]'
+# A cp that, like a file iCloud swaps under us, changes the staged copy after
+# copying it: same size, different content.
+mk_swapping_cp() { # mk_swapping_cp <W>
+  command cat >"$1/stubs/cp" <<'CPEOF'
+#!/bin/sh
+/bin/cp "$@" || exit $?
+for a; do d=$a; done
+case "$d" in
+  */stage/) printf '{"a":2}\n' >"$d/Mackup/Library/Application Support/Beta/settings.json" ;;
+esac
+CPEOF
+  chmod +x "$1/stubs/cp"
+}
+# A dotfiles-baseline that says something on stderr that looks like a domain
+# row, then prints the real list.
+mk_noisy_baseline() { # mk_noisy_baseline <file>
+  { printf '#!/bin/sh\n'
+    printf 'printf "STDERRNOISE\\tk\\t\\n" >&2\n'
+    printf 'exec /bin/bash "%s/bin/dotfiles-baseline" list\n' "$ROOT_DIR"
+  } >"$1"
+  chmod +x "$1"
+}
+t "F26" "the staged copy is verified again before mackup restore (a change after the first check)" \
+  'W=$(newenv); run_apps backup && mk_swapping_cp "$W"; chg
+   out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -qi "manifest" && [ "$(mackup_calls restore)" -eq 0 ] &&
+   [ "$(command cat "$(alpha_plist)")" = "$PLIST_ALT" ]'
+t "F27" "dotfiles-baseline's stderr is not mixed into the domains the guard trusts" \
+  'W=$(newenv); add_app "$W" noiseapp "Library/Preferences/STDERRNOISE"; set_allow "$W" alpha noiseapp
+   mk_noisy_baseline "$W/noisybase"
+   APPS_ENV="DOTFILES_APPS_BASELINE=$W/noisybase" run_apps check'
+t "F28" "a failing dotfiles-baseline still has its stderr shown" \
+  'W=$(newenv); printf "#!/bin/sh\necho boomtext >&2\nexit 1\n" >"$W/badbase"; chmod +x "$W/badbase"
+   out=$(APPS_ENV="DOTFILES_APPS_BASELINE=$W/badbase" run_apps check 2>&1); printf "%s\n" "$out" | grep -q boomtext'
+
+t "F29" "--scheduled without mackup logs one skipped line and exits 0" \
+  'W=$(newenv); command rm -f "$W/stubs/mackup"
+   out=$(APPS_ENV="DOTFILES_APPS_NO_BREW_PATH=1" run_apps backup --scheduled 2>&1); rc=$?
+   l="$W/home/Library/Logs/dotfiles-apps.log"
+   [ "$rc" -eq 0 ] && [ -z "$out" ] && [ "$(grep -c "skipped: mackup is not installed" "$l")" -eq 1 ] && [ "$(nsnaps)" -eq 0 ]'
+t "F30" "--scheduled without iCloud Drive logs one skipped line and exits 0" \
+  'W=$(newenv); out=$(APPS_ENV="DOTFILES_APPS_STORE=" run_apps backup --scheduled 2>&1); rc=$?
+   l="$W/home/Library/Logs/dotfiles-apps.log"
+   [ "$rc" -eq 0 ] && [ -z "$out" ] && [ "$(grep -c "skipped: iCloud Drive is not available" "$l")" -eq 1 ] &&
+   [ ! -e "$W/home/Library/Mobile Documents" ]'
+t "F31" "interactive backup without mackup still fails" \
+  'W=$(newenv); command rm -f "$W/stubs/mackup"; APPS_ENV="DOTFILES_APPS_NO_BREW_PATH=1" refused "mackup" backup'
 
 #############################################################################
 section "C -- CLI routing, install flow and docs (6.6, 6.7)"
