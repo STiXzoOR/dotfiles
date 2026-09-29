@@ -91,7 +91,7 @@ run_apps() {
   env -i HOME="$W/home" XDG_CONFIG_HOME="$W/home/.config" PATH="$W/stubs:/usr/bin:/bin" \
     DOTFILES_DIR="${APPS_DF:-$ROOT_DIR}" DOTFILES_APPS_STORE="$W/icloud" \
     DOTFILES_MACHINE_NAME=macA DOTFILES_APPS_CFG="$W/cfg/mackup.cfg" \
-    DOTFILES_APPS_DL_WAIT=0 DOTFILES_APPS_DL_POLL=0 STUB_LOG="$W/log" STUB_DEFS="$W/defs" STUB_RUNNING="$W/running" \
+    DOTFILES_APPS_DL_WAIT=0 DOTFILES_APPS_DL_POLL=0 DOTFILES_JEV_LOCAL_ZSH="$W/no-local.zsh" STUB_LOG="$W/log" STUB_DEFS="$W/defs" STUB_RUNNING="$W/running" \
     ${APPS_ENV:-} bash "$ROOT_DIR/$APPS" "$@"
 }
 
@@ -560,7 +560,7 @@ t "C2" "dotfiles apps passes straight through to bin/dotfiles-apps" \
   'W=$(sandbox); mkdir -p "$W/h"; out=$(HOME="$W/h" bash bin/dotfiles apps bogus 2>&1); rc=$?
    [ "$rc" -eq 2 ] && printf "%s\n" "$out" | grep -q "dotfiles-apps: unknown command"'
 t "C3" "the routing line and function exist" \
-  'grep -q "\"apps\")" <(code_of bin/dotfiles) && grep -q "^sub_apps()" <(code_of bin/dotfiles)'
+  'grep -Eq "\"apps\"( [|] \"[a-z]+\")*\)" <(code_of bin/dotfiles) && grep -q "^sub_apps()" <(code_of bin/dotfiles)'
 t "C4" "install --all does not back up or restore app settings (restore is deliberate)" \
   'body=$(sed -n "/^sub_install_all()/,/^}/p" <(code_of bin/dotfiles)); [ "$(printf "%s\n" "$body" | grep -c "apps")" -eq 0 ]'
 t "C5" "the install summary points at apps restore" \
@@ -582,5 +582,30 @@ t "C12" "minimal PATH (as under launchd) still finds mackup when installed (skip
    W=$(sandbox); mkdir -p "$W/home/.config/mackup"; cp -R config/mackup/applications "$W/home/.config/mackup/applications"
    env -i HOME="$W/home" XDG_CONFIG_HOME="$W/home/.config" PATH="/usr/bin:/bin:/usr/sbin:/sbin" DOTFILES_DIR="$ROOT_DIR" \
      DOTFILES_APPS_STORE="$W/icloud" bash "$APPS" check; }'
+
+#############################################################################
+section "K -- the staging tree is scanned for credentials before it is published (Task 8)"
+#############################################################################
+
+t "K1" "a credential in an app setting keeps the snapshot local: refused, reported, nothing published" \
+  'W=$(newenv); tok="ghp_$(LC_ALL=C tr -dc "A-Za-z0-9" </dev/urandom | head -c 36)"
+   printf "{\"a\":1,\"token\":\"%s\"}\n" "$tok" >"$W/home/Library/Application Support/Beta/settings.json"
+   out=$(run_apps backup 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && [ "$(nsnaps)" -eq 0 ] && [ ! -e "$W/icloud/macA/latest" ] &&
+   [ "$(printf "%s\n" "$out" | grep -c "BLOCK .*settings.json:1:")" -eq 1 ] &&
+   [ "$(printf "%s\n" "$out" | grep -c "stays local")" -eq 1 ] &&
+   [ "$(printf "%s\n" "$out" | grep -c "$tok")" -eq 0 ] &&
+   [ "$(grep -rc "$tok" "$W/icloud" | grep -vc ":0$")" -eq 0 ] &&
+   [ "$(grep -rl "$tok" "$W/home/.local/state" | wc -l | tr -d " ")" -ge 1 ]'
+t "K2" "with the credential removed the same backup publishes" \
+  'W=$(newenv); run_apps backup && [ "$(nsnaps)" -eq 1 ]'
+t "K3" "a scan that cannot run refuses (fails closed)" \
+  'W=$(newenv); printf "#!/bin/sh\nexit 9\n" >"$W/fakejev"; chmod +x "$W/fakejev"
+   out=$(APPS_ENV="DOTFILES_APPS_JEV=$W/fakejev" run_apps backup 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "credential scan of the staging tree failed")" -eq 1 ] && [ "$(nsnaps)" -eq 0 ]'
+t "K3b" "a missing scanner refuses too (fails closed)" \
+  'W=$(newenv)
+   out=$(APPS_ENV="DOTFILES_APPS_JEV=$W/no-such-jev" run_apps backup 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "cannot be scanned for credentials")" -eq 1 ] && [ "$(nsnaps)" -eq 0 ] && [ ! -e "$W/icloud/macA/latest" ]'
 
 finish

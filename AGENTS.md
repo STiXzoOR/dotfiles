@@ -112,4 +112,5 @@ each edit run `zsh -n <file>` and `zsh -l -i -c 'exit'`.
 | App settings backup/restore (mackup, copy mode) | [app-settings.md](docs/agents/app-settings.md)              |
 | Setting up a new Mac (order, manual steps)     | [new-mac.md](docs/agents/new-mac.md)                         |
 | Two Macs: roles, private repo, sync, iCloud vault | [two-mac-sync.md](docs/agents/two-mac-sync.md)            |
+| Jev guards: privacy, secrets, shadow mode      | [jev.md](docs/agents/jev.md)                                 |
 | Neovim config (lazy.nvim)                      | [neovim.md](docs/agents/neovim.md)                           |

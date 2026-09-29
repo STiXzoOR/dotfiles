@@ -195,6 +195,22 @@ Settings of apps that nothing else here manages (Bartender, CleanShot, Flux, iSt
 
 Restoring is never part of `install --all`. See [docs/agents/app-settings.md](docs/agents/app-settings.md).
 
+A backup is scanned for credentials before it is published; a hit keeps the snapshot local and says where (see below).
+
+## Privacy and Secrets Guards (Jev)
+
+The pre-commit hook blocks private values before they reach this public repo: a value from a private never-send list, home paths with a real user name, private network addresses, unknown email addresses, and credentials (gitleaks, known formats, your own Keychain values). [TypeSafe's Jev](https://docs.typesafe.ai/api.md) is an optional second opinion on what those checks cannot decide. It starts in shadow mode (logs only), never sees a secret, and is off without a key or with `DOTFILES_JEV=off`.
+
+```shell
+./bin/dotfiles jev status                   # switch, key, mode of each point
+./bin/dotfiles jev log                      # what shadow mode would have done
+./bin/dotfiles jev replay privacy           # pick thresholds from labelled cases (real API, by hand)
+./bin/dotfiles jev promote privacy          # shadow -> on
+./bin/dotfiles jev scan-vault               # look for pasted tokens in Claude-Sessions notes
+```
+
+See [docs/agents/jev.md](docs/agents/jev.md).
+
 ## Managing Hosts Whitelist
 
 The `/etc/hosts` installation blocks ads and tracking domains using StevenBlack's unified hosts file. If you need to whitelist certain domains (prevent them from being blocked), you can add them to `system/hosts.whitelist`:

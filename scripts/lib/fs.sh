@@ -129,15 +129,15 @@ dotfiles_backup_stow_targets() {
 
     _dfb_dest="$_dfb_target/$_dfb_name"
 
-    # A link we already own: drop it; --restow would replace it anyway. A
-    # symlink pointing anywhere else is the user's, so it is kept.
+    # A link we already own is left exactly where it is: `stow --restow`
+    # replaces it itself. Dropping it here, before stow had proven it could
+    # run, left $HOME without a single link whenever stow then aborted. A
+    # symlink pointing anywhere else is the user's, so it is backed up below.
     #
     # The comparison has to be against a resolved path. Stow writes RELATIVE
     # links -- `readlink ~/.zshrc` is `.dotfiles/runcom/.zshrc` and
     # `readlink ~/.config/git` is `../.dotfiles/config/git` -- so matching
-    # readlink output against the absolute package path never fired, and every
-    # re-run of `dotfiles link` moved the repo's own links into the backup
-    # directory, where they dangle.
+    # readlink output against the absolute package path never fired.
     if [ -L "$_dfb_dest" ]; then
       _dfb_link=$(readlink "$_dfb_dest")
       case "$_dfb_link" in
@@ -147,10 +147,7 @@ dotfiles_backup_stow_targets() {
       _dfb_resolved=$(_dotfiles_abspath "$_dfb_resolved") || _dfb_resolved=""
 
       case "$_dfb_resolved" in
-        "$_dfb_pkg_abs" | "$_dfb_pkg_abs"/*)
-          rm -f "$_dfb_dest"
-          continue
-          ;;
+        "$_dfb_pkg_abs" | "$_dfb_pkg_abs"/*) continue ;;
       esac
     fi
 
@@ -158,6 +155,10 @@ dotfiles_backup_stow_targets() {
       mkdir -p "$_dfb_backup" || return 1
       echo "backup saved as $_dfb_backup/$_dfb_name"
       mv "$_dfb_dest" "$_dfb_backup/$_dfb_name" || return 1
+      # Remember the move so a failed link can undo it.
+      if [ -n "${DOTFILES_STOW_MOVELOG:-}" ]; then
+        printf '%s\t%s\n' "$_dfb_dest" "$_dfb_backup/$_dfb_name" >>"$DOTFILES_STOW_MOVELOG"
+      fi
     fi
   done << EOF
 $(find "$_dfb_pkg" -mindepth 1 -maxdepth 1 2>/dev/null)
@@ -166,6 +167,71 @@ EOF
   unset _dfb_pkg _dfb_pkg_abs _dfb_target _dfb_backup _dfb_path _dfb_name \
     _dfb_dest _dfb_link _dfb_resolved
   return 0
+}
+
+# usage: dotfiles_undo_backup_moves <movelog> <backup-dir>
+#
+# Put every file the sweep moved (one "<original><TAB><backup>" line each, as
+# written to $DOTFILES_STOW_MOVELOG) back where it was, newest first, then
+# remove the backup directories that are left empty. A failed `link` uses this
+# so it leaves $HOME as it found it. A symlink already sitting in the original
+# slot (stow made it before failing) is removed; anything else there is left
+# alone and reported, because it is not ours to overwrite.
+dotfiles_undo_backup_moves() {
+  _dfu_log="$1"
+  _dfu_backup="$2"
+  _dfu_rc=0
+  _dfu_tab=$(printf '\t')
+  [ -s "$_dfu_log" ] || { unset _dfu_log _dfu_backup _dfu_rc _dfu_tab; return 0; }
+
+  # `sed -n '1!G;h;$p'` is tac for bash 3.2 and BSD tools.
+  while IFS="$_dfu_tab" read -r _dfu_dest _dfu_saved; do
+    [ -n "$_dfu_dest" ] || continue
+    [ -L "$_dfu_dest" ] && rm -f "$_dfu_dest"
+    if [ -e "$_dfu_dest" ]; then
+      echo "could not restore $_dfu_dest: something is already there; your file is at $_dfu_saved" >&2
+      _dfu_rc=1
+      continue
+    fi
+    mkdir -p "$(dirname "$_dfu_dest")" && mv "$_dfu_saved" "$_dfu_dest" || _dfu_rc=1
+  done << EOF
+$(sed -n '1!G;h;$p' "$_dfu_log")
+EOF
+
+  rmdir "$_dfu_backup/.config" "$_dfu_backup" "$(dirname "$_dfu_backup")" 2>/dev/null
+  unset _dfu_log _dfu_backup _dfu_tab _dfu_dest _dfu_saved
+  _dfu_ret=$_dfu_rc
+  unset _dfu_rc
+  return "$_dfu_ret"
+}
+
+# usage: dotfiles_stow <-n|-> <target-dir> <package>   (run from the repo root)
+#
+# The one place the stow command line is spelled, so `dotfiles link` and
+# `dotfiles-sync` cannot drift. --restow makes a re-run idempotent (not
+# --adopt: that pulls the machine's files into the tracked tree). --ignore
+# keeps Finder litter out: an untracked, gitignored runcom/.DS_Store made stow
+# abort with "neither a link nor a directory" against ~/.DS_Store. A
+# .stow-local-ignore would REPLACE stow's built-in ignore list; a command-line
+# --ignore adds to it.
+dotfiles_stow() {
+  if [ "$1" = "-n" ]; then
+    stow -n --restow --ignore='\.DS_Store$' -t "$2" "$3"
+  else
+    stow --restow --ignore='\.DS_Store$' -t "$2" "$3"
+  fi
+}
+
+# usage: dotfiles_stow_all <-n|-> <repo-root> <home> <xdg-config-home>
+#
+# runcom into <home>, config into <xdg-config-home>; -n only simulates. Stops
+# at the first failure and leaves stow's output (which names the conflict) for
+# the caller to capture.
+dotfiles_stow_all() {
+  (
+    cd "$2" || exit 1
+    dotfiles_stow "$1" "$3" runcom && dotfiles_stow "$1" "$4" config
+  )
 }
 
 # usage: dotfiles_restore_ignored_from_backup <repo-dir> <package> <backup-bucket>

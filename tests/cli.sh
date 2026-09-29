@@ -229,37 +229,37 @@ t "A9.1" "link backs up ~/.config targets too" '
 # `readlink ~/.zshrc` is `.dotfiles/runcom/.zshrc` and `readlink ~/.config/git`
 # is `../.dotfiles/config/git`. The absolute link this used to build is a case
 # that does not arise, so it hid a dead own-link branch.
-t "A9.1b" "a relative symlink into the package is just dropped, not backed up" '
+t "A9.1b" "a relative symlink into the package is left in place, not backed up" '
   W=$(sandbox); mkdir -p "$W/df/runcom" "$W/target" "$W/backup"
   echo REPO > "$W/df/runcom/.testrc"
   ln -s "../df/runcom/.testrc" "$W/target/.testrc"
   (source scripts/lib/fs.sh; dotfiles_backup_stow_targets "$W/df/runcom" "$W/target" "$W/backup")
-  [ ! -e "$W/target/.testrc" ] && [ ! -L "$W/backup/.testrc" ]'
-t "A9.1e" "an absolute symlink into the package is dropped too" '
+  [ -L "$W/target/.testrc" ] && [ ! -L "$W/backup/.testrc" ]'
+t "A9.1e" "an absolute symlink into the package is left in place too" '
   W=$(sandbox); mkdir -p "$W/pkg" "$W/target" "$W/backup"
   echo REPO > "$W/pkg/.testrc"; ln -s "$W/pkg/.testrc" "$W/target/.testrc"
   (source scripts/lib/fs.sh; dotfiles_backup_stow_targets "$W/pkg" "$W/target" "$W/backup")
-  [ ! -e "$W/target/.testrc" ] && [ ! -L "$W/backup/.testrc" ]'
+  [ -L "$W/target/.testrc" ] && [ ! -L "$W/backup/.testrc" ]'
 t "A9.1f" "a relative symlink pointing outside the package is still backed up" '
   W=$(sandbox); mkdir -p "$W/df/runcom" "$W/target" "$W/backup" "$W/elsewhere"
   echo THEIRS > "$W/elsewhere/.testrc"; : > "$W/df/runcom/.testrc"
   ln -s "../elsewhere/.testrc" "$W/target/.testrc"
   (source scripts/lib/fs.sh; dotfiles_backup_stow_targets "$W/df/runcom" "$W/target" "$W/backup")
   [ -L "$W/backup/.testrc" ]'
-t "A9.1g" "a nested relative link, as stow makes under ~/.config, is dropped" '
+t "A9.1g" "a nested relative link, as stow makes under ~/.config, is left in place" '
   W=$(sandbox); mkdir -p "$W/df/config/git" "$W/target/xdg" "$W/backup"
   echo REPO > "$W/df/config/git/config"
   ln -s "../../df/config/git" "$W/target/xdg/git"
   (source scripts/lib/fs.sh; dotfiles_backup_stow_targets "$W/df/config" "$W/target/xdg" "$W/backup")
-  [ ! -e "$W/target/xdg/git" ] && [ ! -L "$W/backup/git" ]'
+  [ -L "$W/target/xdg/git" ] && [ ! -L "$W/backup/git" ]'
 t "A9.1c" "a foreign symlink is preserved in the backup" '
   W=$(sandbox); mkdir -p "$W/pkg" "$W/target" "$W/backup" "$W/elsewhere"
   echo THEIRS > "$W/elsewhere/.testrc"; : > "$W/pkg/.testrc"
   ln -s "$W/elsewhere/.testrc" "$W/target/.testrc"
   (source scripts/lib/fs.sh; dotfiles_backup_stow_targets "$W/pkg" "$W/target" "$W/backup")
   [ -L "$W/backup/.testrc" ]'
-t "A9.1d" "link stows config against XDG_CONFIG_HOME with a restow" \
-  'grep -q "stow --restow -t \"\$XDG_CONFIG_HOME\" config" <(code_of bin/dotfiles)'
+t "A9.1d" "link stows config against XDG_CONFIG_HOME through the shared helper" \
+  'grep -q "dotfiles_stow_all - \"\$ROOT_DIR\" \"\$HOME\" \"\$XDG_CONFIG_HOME\"" <(code_of bin/dotfiles) && grep -q "dotfiles_stow \"\$1\" \"\$4\" config" <(code_of scripts/lib/fs.sh)'
 t "A9.2" "unlink on an empty backup does not claim success" '
   W=$(sandbox); mkdir -p "$W/h/.dotfiles_backup/2026.01.01"
   out=$(HOME="$W/h" bash bin/dotfiles unlink 2026.01.01 2>&1 || true)
@@ -1537,5 +1537,80 @@ t "T7.6" "install --private runs bin/dotfiles-private install after a confirm" '
   ( DOTFILES_DIR="$W/df"; DOTFILES_YES=1; bot() { :; }; confirm() { return 0; }; skip() { :; }
     source "$W/fn.sh"; sub_install_private ) >/dev/null 2>&1 &&
   [ "$(command cat "$W/log")" = "private install" ]'
+
+#############################################################################
+section "L — link is all-or-nothing and stow never sees Finder litter"
+#############################################################################
+# Incident: runcom/.DS_Store (Finder, gitignored) made `stow --restow` abort
+# AFTER the backup sweep had dropped every owned link, leaving $HOME with no
+# shell config. These run the real sub_link against a sandbox HOME and repo.
+_have_stow() { command -v stow >/dev/null 2>&1; }
+# _lk_env <W> [stow-wrapper-body]: sandbox repo (runcom + config), HOME, runner.
+# The wrapper, when given, runs first with "$@" and may exit; otherwise real stow.
+_lk_env() {
+  local W="$1" real; real=$(command -v stow)
+  mkdir -p "$W/repo/runcom" "$W/repo/config/git" "$W/h/.config" "$W/bin"
+  local f; for f in .zshrc .zprofile .zlogin .gemrc .hushlogin; do echo "repo $f" >"$W/repo/runcom/$f"; done
+  echo repo >"$W/repo/config/git/config"; : >"$W/repo/config/git/config.local"
+  printf '#!/bin/bash\n%s\nexec "%s" "$@"\n' "${2:-:}" "$real" >"$W/bin/stow"; chmod +x "$W/bin/stow"
+  fn_of sub_link >"$W/fn.sh"
+  cat >"$W/run.sh" <<RUN
+PATH="$W/bin:\$PATH"; HOME="$W/h"; XDG_CONFIG_HOME="$W/h/.config"; ROOT_DIR="$W/repo"; DOTFILES_YES=1
+cd "$PWD" || exit 1
+. scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
+sub_link
+RUN
+}
+_lk_run() { bash "$1/run.sh" </dev/null >"$1/out" 2>&1; }
+# _lk_state <W>: every entry directly in HOME and XDG with what it points at.
+_lk_state() {
+  local f; for f in "$1"/h/.[a-z]* "$1"/h/.config/*; do
+    if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"
+    elif [ -e "$f" ]; then printf '%s %s\n' "$f" "$(command cat "$f" 2>/dev/null | head -c 40)"; fi
+  done | LC_ALL=C sort
+}
+
+t "L1.1" "a runcom/.DS_Store and a ~/.DS_Store do not stop link: every runcom link exists" '
+  _have_stow || return 0
+  W=$(sandbox); _lk_env "$W"; : >"$W/repo/runcom/.DS_Store"; : >"$W/h/.DS_Store"
+  _lk_run "$W" && for f in .zshrc .zprofile .zlogin .gemrc .hushlogin; do [ -L "$W/h/$f" ] || return 1; done &&
+  [ -L "$W/h/.config/git" ] && [ ! -L "$W/h/.DS_Store" ]'
+
+t "L2.1" "a failed dry-run leaves HOME exactly as found and link returns non-zero" '
+  _have_stow || return 0
+  W=$(sandbox); _lk_env "$W" "case \"\$*\" in *-n*config*) echo \"WARNING! cannot stow config/git over existing target git\"; exit 1;; esac"
+  (cd "$W/repo" && command stow --restow -t "$W/h" runcom && command stow --restow -t "$W/h/.config" config)
+  rm "$W/h/.hushlogin"; echo MINE >"$W/h/.hushlogin"   # a real file the sweep will move
+  before=$(_lk_state "$W")
+  _lk_run "$W"; rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_lk_state "$W")" = "$before" ] && [ "$(command cat "$W/h/.hushlogin")" = MINE ] &&
+  grep -q "cannot stow config/git" "$W/out" && grep -qi "error" "$W/out"'
+
+t "L2.2" "a real stow that fails after a good dry-run is rolled back too" '
+  _have_stow || return 0
+  W=$(sandbox); _lk_env "$W" "case \"\$*\" in *-n*) ;; *config*) echo \"stow: real run failed\"; exit 1;; esac"
+  (cd "$W/repo" && command stow --restow -t "$W/h" runcom && command stow --restow -t "$W/h/.config" config)
+  rm "$W/h/.hushlogin"; echo MINE >"$W/h/.hushlogin"
+  before=$(_lk_state "$W")
+  _lk_run "$W"; rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_lk_state "$W")" = "$before" ] && [ "$(command cat "$W/h/.hushlogin")" = MINE ] &&
+  grep -q "real run failed" "$W/out"'
+
+t "L3.1" "the sweep no longer drops links the repo already owns" '
+  W=$(sandbox); mkdir -p "$W/df/runcom" "$W/target" "$W/backup"
+  echo REPO >"$W/df/runcom/.testrc"; ln -s "../df/runcom/.testrc" "$W/target/.testrc"
+  (source scripts/lib/fs.sh; dotfiles_backup_stow_targets "$W/df/runcom" "$W/target" "$W/backup")
+  [ -L "$W/target/.testrc" ] && [ ! -e "$W/backup" -o -z "$(ls -A "$W/backup")" ]'
+
+t "L4.1" "the shared helper passes the .DS_Store ignore to stow, simulated or not" '
+  W=$(sandbox); mkdir -p "$W/bin" "$W/repo/runcom" "$W/repo/config"; : >"$W/log"
+  printf "#!/bin/bash\necho \"\$*\" >>\"$W/log\"\n" >"$W/bin/stow"; chmod +x "$W/bin/stow"
+  (PATH="$W/bin:$PATH"; source scripts/lib/fs.sh; dotfiles_stow_all -n "$W/repo" "$W/h" "$W/x"; dotfiles_stow_all - "$W/repo" "$W/h" "$W/x")
+  [ "$(grep -cF -- "--ignore=\\.DS_Store\$" "$W/log")" -eq 4 ] && [ "$(grep -c -- "^-n " "$W/log")" -eq 2 ]'
+
+t "L4.2" "link and sync both go through the helper (no bare stow --restow left)" '
+  ! grep -q "stow --restow" <(code_of bin/dotfiles bin/dotfiles-sync) &&
+  grep -q dotfiles_stow_all <(code_of bin/dotfiles) && grep -q dotfiles_stow_all <(code_of bin/dotfiles-sync)'
+
 
 finish

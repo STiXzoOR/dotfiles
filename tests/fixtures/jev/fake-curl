@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#
+# tests/fixtures/jev/fake-curl -- stands in for curl in tests/jev.sh. Never
+# touches the network. Records what it was given, answers from fixtures.
+#
+# Recordings, under $FAKE_CURL_DIR: argv.log (one line per call), stdin.log
+# (the --config read from stdin), body.log (the request body file), count.
+# Answers: FAKE_CURL_SEQ is a comma-separated list of HTTP codes, one per call
+# (the last repeats); a 200 answers from the first line of $FAKE_CURL_DIR/rules
+# ("<substring><TAB><fixture>") whose substring occurs in the request body,
+# else from $FAKE_CURL_ANSWER (default answer-low.json). FAKE_CURL_TIMEOUT=1
+# exits 28 like a curl that hit --max-time.
+#
+# shellcheck shell=bash
+set -u
+: "${FAKE_CURL_DIR:?}"
+FIX="${FAKE_CURL_FIXDIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+out="" fmt="" body="" cfg=0
+printf '%s\n' "$*" >>"$FAKE_CURL_DIR/argv.log"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w) fmt="$2"; shift 2 ;;
+    --data-binary | -d) body="${2#@}"; shift 2 ;;
+    --config | -K) [ "$2" = - ] && cfg=1; shift 2 ;;
+    --max-time | -m | -H | -X) shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ "$cfg" -eq 1 ] && { cat >>"$FAKE_CURL_DIR/stdin.log"; printf '\n' >>"$FAKE_CURL_DIR/stdin.log"; }
+[ -n "$body" ] && [ -f "$body" ] && { cat "$body" >>"$FAKE_CURL_DIR/body.log"; printf '\n' >>"$FAKE_CURL_DIR/body.log"; }
+n=$(cat "$FAKE_CURL_DIR/count" 2>/dev/null || echo 0)
+n=$((n + 1))
+printf '%s' "$n" >"$FAKE_CURL_DIR/count"
+[ "${FAKE_CURL_TIMEOUT:-}" = 1 ] && exit 28
+code=200
+if [ -n "${FAKE_CURL_SEQ:-}" ]; then
+  IFS=, read -r -a _seq <<<"$FAKE_CURL_SEQ"
+  set -- "${_seq[@]}"
+  [ "$n" -gt "$#" ] && n=$#
+  eval "code=\${$n}"
+fi
+resp='{"error":"fake"}'
+if [ "$code" = 200 ]; then
+  fixture="${FAKE_CURL_ANSWER:-answer-low.json}"
+  if [ -f "$FAKE_CURL_DIR/rules" ] && [ -f "$body" ]; then
+    while IFS=$'\t' read -r sub fx; do
+      [ -n "$sub" ] || continue
+      if grep -Fq -- "$sub" "$body"; then fixture="$fx"; break; fi
+    done <"$FAKE_CURL_DIR/rules"
+  fi
+  resp=$(cat "$FIX/$fixture")
+fi
+if [ -n "$out" ]; then printf '%s' "$resp" >"$out"; else printf '%s' "$resp"; fi
+[ "$fmt" = '%{http_code}' ] && printf '%s' "$code"
+exit 0

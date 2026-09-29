@@ -356,6 +356,30 @@ validate_plists() {
   return "$rc"
 }
 
+# validate_secrets <dir>: no credential may reach iCloud. `dotfiles-jev
+# scan-tree` reads gitleaks, the credential formats, high-entropy values under
+# credential-named keys and the owner's own Keychain values; only a masked
+# shape of an ambiguous value ever goes to Jev. A hit keeps the snapshot
+# local (it stays in the staging tree, nothing is published) and says where.
+# Fails closed: a scanner that is missing or crashes refuses too.
+# DOTFILES_APPS_JEV overrides the scanner path (tests).
+validate_secrets() {
+  local jev="${DOTFILES_APPS_JEV:-$SELF_DIR/dotfiles-jev}" out rc
+  if [ ! -x "$jev" ]; then
+    err "refusing: $jev is missing, so the staging tree cannot be scanned for credentials"
+    return 1
+  fi
+  out=$("$jev" scan-tree "$1" 2>&1)
+  rc=$?
+  [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/  /' >&2
+  case "$rc" in
+    0) return 0 ;;
+    1) err "refusing to publish: the staged settings contain what looks like a credential. The snapshot stays local in $1 (nothing reached iCloud); take the app out of the allowlist or remove the credential, then run again" ;;
+    *) err "refusing: the credential scan of the staging tree failed (exit $rc)" ;;
+  esac
+  return 1
+}
+
 # validate_tree <dir>: both checks, reporting every problem before failing.
 validate_tree() {
   local rc=0
@@ -432,7 +456,7 @@ stage_local() {
   if [ "$mode" = rescue ]; then
     validate_symlinks "$STAGE" && validate_plists "$STAGE" keep
   else
-    validate_tree "$STAGE"
+    validate_tree "$STAGE" && validate_secrets "$STAGE"
   fi
 }
 

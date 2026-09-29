@@ -153,9 +153,30 @@ _remote() { git -C "$W/$1.git" rev-parse main; }
 
 t "S1.1" "behind and clean: fast-forwards the public repo" \
   'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1; [ "$(_head pub)" = "$(_remote pub)" ] && [ "$(command cat "$W/pub/README.md")" = new ]'
-t "S1.2" "after a move both stow packages are restowed" \
+t "S1.2" "after a move both stow packages are simulated first, then restowed, ignoring .DS_Store" \
   'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1
-   grep -qx "stow --restow -t $W/home runcom" "$W/log" && grep -qx "stow --restow -t $W/home/.config config" "$W/log"'
+   grep -qxF -- "stow -n --restow --ignore=\\.DS_Store\$ -t $W/home runcom" "$W/log" &&
+   grep -qxF -- "stow -n --restow --ignore=\\.DS_Store\$ -t $W/home/.config config" "$W/log" &&
+   grep -qxF -- "stow --restow --ignore=\\.DS_Store\$ -t $W/home runcom" "$W/log" &&
+   grep -qxF -- "stow --restow --ignore=\\.DS_Store\$ -t $W/home/.config config" "$W/log"'
+t "S1.2b" "the simulation runs before any real stow" \
+  'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1
+   [ "$(grep "^stow" "$W/log" | sed -n "1p;2p" | grep -c -- "^stow -n")" -eq 2 ]'
+t "S1.2c" "a conflict in the simulation: no real stow, the attention item is recorded, the run carries on" '
+  W=$(senv); push_change "$W" pub README.md new
+  stub "$W/bin" stow "case \"\$*\" in -n*) printf \"WARNING! stowing runcom would cause conflicts:\\n  * cannot stow x/.zshrc over existing target .zshrc since neither a link nor a directory\\n\"; exit 1;; esac"
+  syn --scheduled >/dev/null 2>&1; [ "$(_calls "^stow --restow")" -eq 0 ] &&
+  grep -q "^osascript .*stow conflict: cannot stow x/.zshrc over existing target .zshrc.* -- run dotfiles link" "$W/log" &&
+  [ -L "$W/pub/macos/local.sh" ]'
+t "S1.2d" "a conflict leaves the existing links exactly as they were (real stow)" '
+  command -v stow >/dev/null 2>&1 || return 0
+  W=$(senv); real=$(command -v stow); rm "$W/bin/stow"; ln -s "$real" "$W/bin/stow"
+  mkdir -p "$W/pub/runcom" "$W/pub/config"; echo z >"$W/pub/runcom/.zshrc"; echo y >"$W/pub/runcom/.zprofile"
+  (cd "$W/pub" && stow --restow -t "$W/home" runcom); rm "$W/home/.zprofile"; echo MINE >"$W/home/.zprofile"
+  ln -sfn /elsewhere "$W/home/.zprofile"
+  before=$(readlink "$W/home/.zshrc"); push_change "$W" pub README.md new
+  syn --scheduled >/dev/null 2>&1; [ "$(readlink "$W/home/.zshrc")" = "$before" ] && [ "$(readlink "$W/home/.zprofile")" = /elsewhere ] &&
+  grep -q "^osascript .*stow conflict:" "$W/log"'
 t "S1.3" "after a move dotfiles private link runs (the private files are linked in)" \
   'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1; [ -L "$W/pub/macos/local.sh" ]'
 t "S1.4" "nothing moved: no restow, no link" \

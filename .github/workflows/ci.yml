@@ -146,7 +146,7 @@ jobs:
       - name: Install dependencies
         run: |
           set -euo pipefail
-          brew install shellcheck coreutils gitleaks
+          brew install shellcheck coreutils gitleaks stow
 
       - name: Run the zsh test suite
         run: |

@@ -231,6 +231,33 @@ check_secrets() {
 }
 
 #############################################################################
+# Privacy and secrets guard (Jev)
+#############################################################################
+
+# bin/dotfiles-jev guard-staged layers on the credential scan above. Its
+# deterministic half (the private never-send list, home paths, private
+# addresses, unknown emails, your own Keychain values, credential formats)
+# always blocks and never fails open, so a guard that cannot run blocks too.
+# Its Jev half is off unless a key exists and DOTFILES_JEV is not off; shadow
+# mode (the default) only logs. gitleaks already ran above, so it is not
+# rerun. A repo without the guard behaves exactly as before.
+check_jev_guard() {
+  local root guard out rc
+  root=$(git rev-parse --show-toplevel 2> /dev/null) || return 0
+  guard="$root/bin/dotfiles-jev"
+  [[ -x "$guard" ]] || return 0
+  echo "Checking privacy and secrets guard..."
+  out=$(JEV_GITLEAKS=0 "$guard" guard-staged 2>&1)
+  rc=$?
+  [[ -z "$out" ]] || printf '%s\n' "$out"
+  case "$rc" in
+    0) ok "privacy and secrets guard: clean" ;;
+    1) err "the privacy and secrets guard blocked this commit" ;;
+    *) err "the privacy and secrets guard could not run (exit $rc); it never fails open" ;;
+  esac
+}
+
+#############################################################################
 # Main
 #############################################################################
 
@@ -242,6 +269,7 @@ fi
 check_syntax
 check_shellcheck
 check_secrets
+check_jev_guard
 
 if [[ "$ERRORS" -gt 0 ]]; then
   echo ""

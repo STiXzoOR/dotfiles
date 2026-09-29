@@ -59,6 +59,8 @@ export PATH
 source "$SELF_DIR/../scripts/echos.sh"
 # shellcheck source=../scripts/lib/lists.sh
 source "$SELF_DIR/../scripts/lib/lists.sh"
+# shellcheck source=../scripts/lib/fs.sh
+source "$SELF_DIR/../scripts/lib/fs.sh"
 
 SCHEDULED=0
 ATTN=""    # one line per thing that needs the owner
@@ -174,11 +176,23 @@ restow() {
     attn "stow is missing, so the new files were not linked"
     return 0
   fi
-  if (cd "$DOTFILES_DIR" && stow --restow -t "$HOME" runcom && stow --restow -t "$XDG_CONFIG_HOME" config); then
+  # Simulate both packages first: a conflict must not leave $HOME half-linked,
+  # and this runs unattended. On a conflict nothing is touched.
+  local out first
+  if ! out=$(dotfiles_stow_all -n "$DOTFILES_DIR" "$HOME" "$XDG_CONFIG_HOME" 2>&1); then
+    # The first line of stow's report is a generic "would cause conflicts";
+    # the line that names the file is the useful one.
+    first=$(printf '%s\n' "$out" | grep -m1 'cannot stow' | sed 's/^[ *]*//' || true)
+    [ -n "$first" ] || first=$(printf '%s\n' "$out" | sed -n 1p)
+    say "  stow would conflict; nothing was relinked: $first"
+    say "  run: dotfiles link"
+    attn "stow conflict: $first -- run dotfiles link"
+    FAILED=1
+  elif out=$(dotfiles_stow_all - "$DOTFILES_DIR" "$HOME" "$XDG_CONFIG_HOME" 2>&1); then
     say "  restowed runcom and config"
   else
     say "  stow reported a problem; run: dotfiles link"
-    attn "stow --restow failed (run dotfiles link)"
+    attn "stow failed while relinking (run dotfiles link)"
     FAILED=1
   fi
   if [ -d "$PRIVATE_DIR/.git" ]; then

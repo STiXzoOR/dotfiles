@@ -23,6 +23,7 @@ apps <check|backup|restore|list|undo>  # App settings backup (mackup, copy mode)
 private <init|clone|link|status>       # Private companion repo for the gitignored files; see two-mac-sync.md
 sync [--scheduled]      # Keep this Mac current: fetch, fast-forward, restow, report drift; see two-mac-sync.md
 vault migrate           # Move ~/Vault into iCloud Drive, leaving a symlink; see two-mac-sync.md
+jev <status|log|replay|promote|scan-vault>  # Jev privacy and secrets guards (shadow by default); see jev.md
 setup                   # Run the interactive setup wizard
 test                    # Run the test suite
 unlink <timestamp>      # Restore dotfiles from ~/.dotfiles_backup

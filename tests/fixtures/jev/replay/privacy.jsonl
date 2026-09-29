@@ -1,0 +1,18 @@
+{"id": "p01", "label": true, "state": "Host build-farm-zeta\n  HostName 10.20.30.40\n  User deploy"}
+{"id": "p02", "label": true, "state": "# Notes for the Vandelay Industries migration (client project)"}
+{"id": "p03", "label": true, "state": "export PROJECT_DIR=/Users/marta.kovacs/code/skunkworks"}
+{"id": "p04", "label": true, "state": "git config --global user.name \"Marta Kovacs\""}
+{"id": "p05", "label": true, "state": "scutil --set ComputerName \"Marta's MacBook Pro\""}
+{"id": "p06", "label": true, "state": "alias jump='ssh marta@orion-nas.local'"}
+{"id": "p07", "label": true, "state": "Project Nightjar roadmap: Q3 launch plan for Contoso Bank"}
+{"id": "p08", "label": true, "state": "tailscale ip: 100.72.14.9 (kitchen-mini)"}
+{"id": "n01", "label": false, "state": "alias gs=\"git status\""}
+{"id": "n02", "label": false, "state": "export EDITOR=nvim"}
+{"id": "n03", "label": false, "state": "brew \"ripgrep\""}
+{"id": "n04", "label": false, "state": "# Use /Users/<name>/ as a placeholder in documentation"}
+{"id": "n05", "label": false, "state": "ssh-keygen -t ed25519 -C \"you@example.com\""}
+{"id": "n06", "label": false, "state": "defaults write com.apple.dock autohide -bool true"}
+{"id": "n07", "label": false, "state": "Uses GNU Stow to link runcom/ into the home directory."}
+{"id": "n08", "label": false, "state": "curl -s https://api.github.com/repos/koalaman/shellcheck/releases/latest"}
+{"id": "n09", "label": false, "state": "# Copyright (c) 2015 Free Software Foundation, Inc."}
+{"id": "n10", "label": false, "state": "docker run --rm -p 8080:80 nginx:1.27"}

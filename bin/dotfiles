@@ -46,6 +46,7 @@ sub_help() {
   echo "   help             This help message"
   echo "   hooks            Install git pre-commit hooks"
   echo "   install          Bootstrap system"
+  echo "   jev              Jev privacy and secrets guards (status, log, replay, promote, scan-vault)"
   echo "   link             Link dotfiles to ~/"
   echo "   open             Open dotfiles in Finder"
   echo "   private          Private companion repo for gitignored files (init, clone, link, status)"
@@ -794,19 +795,11 @@ sub_link() {
 
   action "creating symlinks for project dotfiles..."
 
-  local now backup_dir rc=0
+  local now backup_dir
   now=$(date +"%Y.%m.%d.%H.%M.%S")
   backup_dir="$HOME/.dotfiles_backup/$now"
 
   [[ -d "$XDG_CONFIG_HOME" ]] || mkdir -p "$XDG_CONFIG_HOME"
-
-  # Two sweeps, because stow has two targets: runcom into $HOME and config
-  # into $XDG_CONFIG_HOME. The ~/.config half was never swept, so a
-  # pre-existing ~/.config/git or ~/.config/nvim aborted stow, and `unlink`
-  # had nothing saved to put back. The config bucket is nested under
-  # .config/ inside the backup so unlink can aim it at the right target.
-  dotfiles_backup_stow_targets "$ROOT_DIR/runcom" "$HOME" "$backup_dir"
-  dotfiles_backup_stow_targets "$ROOT_DIR/config" "$XDG_CONFIG_HOME" "$backup_dir/.config"
 
   # Git identity is deliberately not tracked. Without config.local git
   # cannot commit at all, so ask once rather than failing later.
@@ -835,13 +828,52 @@ GITLOCAL
     fi
   fi
 
-  pushd "$ROOT_DIR" >/dev/null 2>&1 || return 1
+  # Two sweeps, because stow has two targets: runcom into $HOME and config
+  # into $XDG_CONFIG_HOME. The ~/.config half was never swept, so a
+  # pre-existing ~/.config/git or ~/.config/nvim aborted stow, and `unlink`
+  # had nothing saved to put back. The config bucket is nested under
+  # .config/ inside the backup so unlink can aim it at the right target.
+  #
+  # Nothing here is final: every move is logged, and if the simulated stow
+  # below (or the real one) fails, all of them are put back and no link is
+  # touched. A failed link leaves $HOME as it found it.
+  local movelog stow_out
+  movelog=$(mktemp "${TMPDIR:-/tmp}/dotfiles-link.XXXXXX") || return 1
+  export DOTFILES_STOW_MOVELOG="$movelog"
+  if ! { dotfiles_backup_stow_targets "$ROOT_DIR/runcom" "$HOME" "$backup_dir" &&
+    dotfiles_backup_stow_targets "$ROOT_DIR/config" "$XDG_CONFIG_HOME" "$backup_dir/.config"; }; then
+    dotfiles_undo_backup_moves "$movelog" "$backup_dir"
+    unset DOTFILES_STOW_MOVELOG
+    command rm -f "$movelog"
+    error "could not back up the files in the way; nothing was changed"
+    return 1
+  fi
+
+  # Dry-run both packages, with the same flags as the real run, before any
+  # link changes.
+  if ! stow_out=$(dotfiles_stow_all -n "$ROOT_DIR" "$HOME" "$XDG_CONFIG_HOME" 2>&1); then
+    printf '%s\n' "$stow_out" >&2
+    dotfiles_undo_backup_moves "$movelog" "$backup_dir"
+    unset DOTFILES_STOW_MOVELOG
+    command rm -f "$movelog"
+    error "stow would conflict; nothing was linked and everything moved was put back"
+    return 1
+  fi
+
   # --restow makes a re-run idempotent. Not --adopt: that pulls whatever is in
   # the way into the tracked tree, overwriting the repo's own copy with the
-  # machine's. The sweeps above already cleared the targets.
-  stow --restow -t "$HOME" runcom || rc=1
-  stow --restow -t "$XDG_CONFIG_HOME" config || rc=1
-  popd >/dev/null 2>&1 || true
+  # machine's. The sweep above already cleared the targets.
+  if ! stow_out=$(dotfiles_stow_all - "$ROOT_DIR" "$HOME" "$XDG_CONFIG_HOME" 2>&1); then
+    printf '%s\n' "$stow_out" >&2
+    dotfiles_undo_backup_moves "$movelog" "$backup_dir"
+    unset DOTFILES_STOW_MOVELOG
+    command rm -f "$movelog"
+    error "stow failed; the files it had moved were put back"
+    return 1
+  fi
+  [[ -n "$stow_out" ]] && printf '%s\n' "$stow_out"
+  unset DOTFILES_STOW_MOVELOG
+  command rm -f "$movelog"
 
   # Files the repo ignores (gh's hosts.yml login) went into the backup with
   # the directory stow replaced; put them back where the new link exposes them.
@@ -849,13 +881,6 @@ GITLOCAL
 
   mkdir -p "$HOME/.local/runtime"
   chmod 700 "$HOME/.local/runtime"
-
-  # This used to end in `popd || exit`, so the function's status was popd's
-  # and a stow conflict -- or a missing stow -- still read as success.
-  if [[ $rc -ne 0 ]]; then
-    error "stow reported a problem; see the output above"
-    return 1
-  fi
 
   ok "linked runcom into $HOME and config into $XDG_CONFIG_HOME"
 }
@@ -1081,6 +1106,10 @@ sub_vault() {
   "$DOTFILES_DIR/bin/dotfiles-vault" "$@"
 }
 
+sub_jev() {
+  "$DOTFILES_DIR/bin/dotfiles-jev" "$@"
+}
+
 
 sub_baseline() {
   "$DOTFILES_DIR/bin/dotfiles-baseline" "$@"
@@ -1153,7 +1182,7 @@ case $COMMAND_NAME in
 "" | "help")
   sub_help
   ;;
-"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "private" | "sync" | "vault" | "apps")
+"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "private" | "sync" | "vault" | "apps" | "jev")
   shift
   sub_"$COMMAND_NAME" "$@"
   ;;

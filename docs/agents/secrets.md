@@ -32,3 +32,11 @@ tree `export` will write into; any other is still refused. Commit and push the
 file. On the other Mac, `dotfiles secrets import <private repo>/secrets.age`
 asks for the passphrase, so `dotfiles sync` only reports that it changed and
 never imports it.
+
+## Leak detection
+
+`dotfiles jev` guards against secrets leaking into the public repo, the iCloud
+app-settings backup and the vault, and compares against your own Keychain
+values (named by `dotfiles-secrets get <name>` in `profiles/local.zsh`). Jev
+itself only ever sees a masked shape. The Jev API key is the `typesafe_api_key`
+item: `dotfiles secrets set typesafe_api_key`. See [jev.md](jev.md).
