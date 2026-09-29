@@ -903,12 +903,13 @@ test_config_modernization() {
     fi
   fi
 
-  # Test git hooks are configured
+  # A global core.hooksPath would disable .git/hooks in every other repo;
+  # `dotfiles hooks` sets it repo-locally instead.
   if [[ -f "$git_config" ]]; then
     if grep -q 'hooksPath' "$git_config"; then
-      pass "Git config: hooksPath is set"
+      fail "Git config: global hooksPath is set (disables .git/hooks everywhere)"
     else
-      fail "Git config: hooksPath not configured"
+      pass "Git config: no global hooksPath"
     fi
   fi
 

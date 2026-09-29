@@ -92,6 +92,13 @@ t "D3.7" "ssh signing scaffold present, key in local" \
 t "D3.8" "ld alias quotes the email" \
   'grep -qF -- "--author \\\"\$(git config user.email)\\\"" config/git/config'
 
+# hooksPath in the stowed global config disables .git/hooks in every other
+# repo. `dotfiles hooks` sets it repo-locally instead.
+t "D3.9" "no global core.hooksPath (it would disable .git/hooks in every repo)" \
+  '[ "$(code_of config/git/config | grep -c "hooksPath")" -eq 0 ]'
+t "D3.10" "the repo hook install still sets hooksPath repo-locally" \
+  'grep -q "config core.hooksPath .githooks" bin/dotfiles'
+
 section "D4 — Neovim only"
 t "D4.1" "no setup_handlers" \
   '! grep -q setup_handlers config/nvim/lua/plugins/lsp.lua'
