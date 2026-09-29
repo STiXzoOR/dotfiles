@@ -80,9 +80,9 @@ t "L2.3" "DOTFILES_LAUNCHER=raycast: Raycast, not Tinycast" \
 t "L2.4" "an unknown value gets Tinycast, matching dotfiles_launcher" \
   '! command -v brew >/dev/null || { o=$(_bl HOMEBREW_DOTFILES_LAUNCHER=alfred); printf "%s\n" "$o" | grep -qx tinycast; }'
 t "L2.5" "the Blender cask is declared (the blender MCP needs Blender 5.1+)" \
-  'grep -q "^cask \"blender\"" Brewfile'
+  '[ "$(code_of Brewfile | grep -c "^cask \"blender\"")" -ge 1 ]'
 t "L2.6" "the Tinycast cask is fully qualified and its tap declared in the Brewfile" \
-  'code_of Brewfile | grep -q "tap \"abue-ammar/tinycast\"" && code_of Brewfile | grep -q "cask \"abue-ammar/tinycast/tinycast\""'
+  '[ "$(code_of Brewfile | grep -c "tap \"abue-ammar/tinycast\"")" -ge 1 ] && [ "$(code_of Brewfile | grep -c "cask \"abue-ammar/tinycast/tinycast\"")" -ge 1 ]'
 
 section "L3 -- sub_install_packages trusts the Tinycast tap only for Tinycast"
 fn_of() { sed -n "/^$1()/,/^}/p" "${2:-bin/dotfiles}"; }
