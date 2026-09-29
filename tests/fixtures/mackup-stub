@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#
+# A stand-in for mackup 0.11 for tests/apps.sh. It speaks the subset that
+# bin/dotfiles-apps uses and takes real code paths against a sandbox HOME:
+#   show <app>      definitions come from $STUB_DEFS/<app>.cfg
+#   backup / restore   copy files between $HOME and <cfg path>/Mackup
+#   link ...        refused, exit 2 (the wrapper must never call it)
+# Every call's argv is appended to $STUB_LOG. $STUB_DENY names apps whose
+# files "fail with Operation not permitted" the way a TCC denial does.
+# $STUB_PLANT_LINK makes backup leave a symlink in the store, and
+# $STUB_RESTORE_LINK makes restore leave one in $HOME, so the wrapper's
+# symlink refusals can be exercised.
+set -u
+printf '%s\n' "$*" >>"${STUB_LOG:-/dev/null}"
+
+cfg=""; rest=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -c) cfg="$2"; shift 2 ;;
+    -f | -v | -n | -r) shift ;;
+    *) rest+=("$1"); shift ;;
+  esac
+done
+cmd="${rest[0]:-}"
+
+files_of() { # files_of <app>
+  awk '/^\[/ { s = ($0 == "[configuration_files]"); next }
+       s && NF && $0 !~ /^#/ { print }' "$STUB_DEFS/$1.cfg"
+}
+apps_of() { # apps_of <cfg>
+  awk '/^\[/ { s = ($0 == "[applications_to_sync]"); next }
+       s && NF && $0 !~ /^#/ { print }' "$1"
+}
+
+case "$cmd" in
+  show)
+    app="${rest[1]:-}"
+    [ -f "$STUB_DEFS/$app.cfg" ] || { echo "Unsupported application: $app"; exit 1; }
+    echo "Name: $app"
+    echo "Configuration files:"
+    files_of "$app" | sed 's/^/ - /'
+    ;;
+  list)
+    for f in "$STUB_DEFS"/*.cfg; do echo " - $(basename "$f" .cfg)"; done
+    ;;
+  backup | restore)
+    [ -n "$cfg" ] || { echo "stub: -c required" >&2; exit 3; }
+    path=$(sed -n 's/^path *= *//p' "$cfg")
+    store="$HOME/$path/Mackup"
+    [ "$cmd" = backup ] && mkdir -p "$store"
+    for app in $(apps_of "$cfg"); do
+      printf '\n\033[34m---\033[0m \033[1m%s\033[0m \033[34m---\033[0m\n' "$app"
+      files_of "$app" | while IFS= read -r f; do
+        if [ "$cmd" = backup ]; then
+          [ -e "$HOME/$f" ] || continue
+          case " ${STUB_DENY:-} " in
+            *" $app "*)
+              echo "Error: Unable to copy file from $HOME/$f to $store/$f due to permission issue: [Errno 1] Operation not permitted"
+              continue ;;
+          esac
+          echo "Backing up $f ..."
+          mkdir -p "$(dirname "$store/$f")"
+          command rm -r -f "${store:?}/$f"
+          cp -RL "$HOME/$f" "$store/$f"
+        else
+          [ -e "$store/$f" ] || continue
+          echo "Recovering $f ..."
+          command rm -r -f "${HOME:?}/$f"
+          mkdir -p "$(dirname "$HOME/$f")"
+          cp -R "$store/$f" "$HOME/$f"
+        fi
+      done
+    done
+    [ "$cmd" = backup ] && [ -n "${STUB_PLANT_LINK:-}" ] && ln -s /etc/hosts "$store/planted"
+    [ "$cmd" = restore ] && [ -n "${STUB_RESTORE_LINK:-}" ] &&
+      { command rm -f "$HOME/Library/Preferences/com.example.alpha.plist"; ln -s /etc/hosts "$HOME/Library/Preferences/com.example.alpha.plist"; }
+    exit 0
+    ;;
+  *)
+    echo "stub mackup: refusing '$cmd'" >&2
+    exit 2
+    ;;
+esac

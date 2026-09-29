@@ -1,0 +1,695 @@
+#!/usr/bin/env bash
+#
+# dotfiles-apps - back up and restore app settings that nothing else in the
+#                 dotfiles manages, with mackup in COPY mode
+#
+# Usage: dotfiles-apps <command>
+#
+#   check                      Verify the allowlist never touches anything the
+#                              dotfiles own (runs first in backup and restore)
+#   backup [--scheduled]       Stage, validate, publish a snapshot to iCloud
+#   restore [--from <machine>] [<snapshot>]
+#                              Apply a snapshot (default: this Mac's latest)
+#   list                       Snapshots of every Mac, and local rescue copies
+#   undo                       Put back the latest rescue copy
+#
+# Ownership rule: the dotfiles own everything they stow, copy or
+# `defaults write`; mackup owns only the apps listed in
+# config/mackup/mackup.cfg. See docs/agents/app-settings.md.
+#
+# mackup is only ever called as `backup -f`, `restore -f`, `show` and `list`,
+# never `link`: the symlink model clobbered settings. Nothing here is
+# two-way sync -- copy mode is last-writer-wins, so restoring another Mac's
+# snapshot is a deliberate `restore --from <machine>`.
+#
+# Bash 3.2 (macOS /bin/bash): no mapfile, no associative arrays, and never
+# `((x++))`. GNU tools are not on PATH under launchd, so only BSD-safe flags.
+
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$SELF_DIR/.." && pwd)}"
+export DOTFILES_DIR
+
+# launchd's PATH is /usr/bin:/bin:/usr/sbin:/sbin. Homebrew goes first, but
+# only when mackup is not already resolvable, so an interactive shell (and a
+# test with a stub) keeps its own order.
+if ! command -v mackup >/dev/null 2>&1; then
+  PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+fi
+
+#############################################################################
+# Configuration (every path overridable so tests stay in a sandbox)
+#############################################################################
+
+CFG_SRC="${DOTFILES_APPS_CFG:-$DOTFILES_DIR/config/mackup/mackup.cfg}"
+PROCS_FILE="${DOTFILES_APPS_PROCS:-$(dirname "$CFG_SRC")/processes.list}"
+STORE="${DOTFILES_APPS_STORE:-$HOME/Library/Mobile Documents/com~apple~CloudDocs/Mackup}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/mackup"
+STAGE="$STATE/stage"
+RUN_CFG="$STATE/mackup.cfg"
+
+#############################################################################
+# Output
+#############################################################################
+
+say() { printf '%s\n' "$*"; }
+err() { printf 'dotfiles-apps: %s\n' "$*" >&2; }
+
+#############################################################################
+# Config, allowlist and what each app covers
+#############################################################################
+
+# The apps mackup may touch. An empty list would make mackup back up EVERY
+# supported app, so callers treat "no entries" as an error.
+allowlist() {
+  awk '/^\[/ { s = ($0 == "[applications_to_sync]"); next }
+       s && NF && $0 !~ /^[[:space:]]*[#;]/ { print $1 }' "$CFG_SRC"
+}
+
+# The runtime mackup config: the shipped one with [storage] path pointing at
+# the real staging directory, relative to $HOME (mackup refuses anything else).
+write_run_cfg() {
+  local rel
+  case "$STATE" in
+    "$HOME"/*) rel="${STAGE#"$HOME"/}" ;;
+    *)
+      err "state directory $STATE is not inside $HOME; mackup refuses paths outside it"
+      return 1
+      ;;
+  esac
+  [ -f "$CFG_SRC" ] || { err "no mackup config at $CFG_SRC"; return 1; }
+  # mackup (even `show`) refuses a storage path that does not exist.
+  mkdir -p "$STAGE" || return 1
+  awk -v rel="$rel" '
+    /^\[/ { s = ($0 == "[storage]") }
+    s && /^path[[:space:]]*=/ { print "path = " rel; next }
+    { print }
+  ' "$CFG_SRC" >"$RUN_CFG.tmp" && mv "$RUN_CFG.tmp" "$RUN_CFG"
+}
+
+run_mackup() { mackup -c "$RUN_CFG" "$@"; }
+
+# The home-relative paths an app covers, one per line. Fails for an unknown app.
+app_paths() {
+  local out
+  out=$(run_mackup show "$1" 2>&1) || return 1
+  printf '%s\n' "$out" | sed -n 's/^ - //p'
+}
+
+# Process names for an app, from processes.list (`app|process`).
+app_procs() {
+  [ -f "$PROCS_FILE" ] || return 0
+  awk -F'|' -v a="$1" '$1 == a && NF >= 2 { print $2 }' "$PROCS_FILE"
+}
+
+#############################################################################
+# Overlap guard: what the dotfiles own
+#############################################################################
+
+# What each apps/* directory installs, as name<TAB>home-relative target.
+# MAINTAINED BY HAND: install scripts compute these paths in shell variables,
+# so there is nothing safe to parse. `check` fails when apps/ gains a
+# directory that is not listed here, so a new target cannot slip past.
+app_targets() {
+  printf '%s\t%s\n' \
+    gitkraken ".gitkraken" \
+    terminal "Library/Preferences/com.apple.Terminal.plist" \
+    vlc "Library/Preferences/org.videolan.vlc" \
+    vscode "Library/Application Support/Code/User" \
+    warp ".warp" \
+    xcode "Library/Developer/Xcode/UserData/FontAndColorThemes" \
+    claude ".claude" \
+    codex ".codex"
+}
+
+# Every owned target as why<TAB>home-relative path.
+owned_targets() {
+  local e xdg rel name target domain flags
+  for e in "$DOTFILES_DIR"/runcom/* "$DOTFILES_DIR"/runcom/.[!.]*; do
+    [ -e "$e" ] || continue
+    e=$(basename "$e")
+    printf 'stowed from runcom/%s\t%s\n' "$e" "$e"
+  done
+  xdg="${XDG_CONFIG_HOME:-$HOME/.config}"
+  case "$xdg" in "$HOME"/*) rel="${xdg#"$HOME"/}" ;; *) rel=".config" ;; esac
+  for e in "$DOTFILES_DIR"/config/* "$DOTFILES_DIR"/config/.[!.]*; do
+    [ -e "$e" ] || continue
+    e=$(basename "$e")
+    printf 'stowed from config/%s\t%s/%s\n' "$e" "$rel" "$e"
+  done
+  app_targets | while IFS=$'\t' read -r name target; do
+    printf 'installed from %s/\t%s\n' "$name" "$target"
+  done
+  # Preferences domains macos/defaults*.sh write, via the same key extraction
+  # dotfiles-baseline uses. Domains under /Library are system-wide, not $HOME.
+  "$SELF_DIR/dotfiles-baseline" list 2>/dev/null | cut -f1,3 | sort -u |
+    while IFS=$'\t' read -r domain flags; do
+      case "$domain" in
+        /*) continue ;;
+        NSGlobalDomain) domain=".GlobalPreferences" ;;
+      esac
+      printf 'a domain macos/defaults*.sh writes (%s)\tLibrary/Preferences/%s\n' "$domain" "$domain"
+      printf 'a domain macos/defaults*.sh writes (%s)\tLibrary/Containers/%s\n' "$domain" "$domain"
+      [ "$flags" = "-currentHost" ] &&
+        printf 'a domain macos/defaults*.sh writes (%s)\tLibrary/Preferences/ByHost/%s\n' "$domain" "$domain"
+    done
+}
+
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# overlaps <path> <target>, both lowercased (APFS is case-insensitive). A
+# target ending in a name matches its children (T/), its plist and siblings
+# (T.), and a path that is an ancestor of it.
+overlaps() {
+  case "$1" in "$2" | "$2"/* | "$2".*) return 0 ;; esac
+  case "$2" in "$1"/*) return 0 ;; esac
+  return 1
+}
+
+# apps/* directories with no entry in app_targets.
+unmapped_apps() {
+  local d name known
+  known=$(app_targets | cut -f1)
+  for d in "$DOTFILES_DIR"/apps/*/; do
+    [ -d "$d" ] || continue
+    name=$(basename "$d")
+    printf '%s\n' "$known" | grep -Fxq -- "$name" || printf '%s\n' "$name"
+  done
+}
+
+cmd_check() {
+  local rc=0 apps app paths p pl why t tl targets u
+  apps=$(allowlist)
+  if [ -z "$apps" ]; then
+    err "the allowlist is empty; mackup would back up every supported app"
+    return 1
+  fi
+  write_run_cfg || return 1
+
+  for u in $(unmapped_apps); do
+    err "apps/$u has no entry in the owned-target list in bin/dotfiles-apps (app_targets); add it so the overlap guard knows what it installs"
+    rc=1
+  done
+
+  targets=$(owned_targets)
+  for app in $apps; do
+    if [ -z "$(app_procs "$app")" ]; then
+      err "$app has no process mapping in $PROCS_FILE; restore could not tell whether it is running"
+      rc=1
+    fi
+    if ! paths=$(app_paths "$app") || [ -z "$paths" ]; then
+      err "unknown app or no paths for '$app' (mackup show failed)"
+      rc=1
+      continue
+    fi
+    while IFS= read -r p; do
+      pl=$(lower "${p%/}")
+      while IFS=$'\t' read -r why t; do
+        [ -n "$t" ] || continue
+        tl=$(lower "$t")
+        if overlaps "$pl" "$tl"; then
+          err "OVERLAP: $app covers '$p', which the dotfiles own ($why: $t)"
+          rc=1
+        fi
+      done <<EOF
+$targets
+EOF
+    done <<EOF
+$paths
+EOF
+  done
+  return "$rc"
+}
+
+#############################################################################
+# Machine, storage and lock
+#############################################################################
+
+# This Mac's name, for the per-machine folder. DOTFILES_MACHINE_NAME wins, else
+# LocalHostName; anything outside [A-Za-z0-9-] becomes '-'. Task 7 may move
+# this to a shared scripts/lib/machine.sh (dotfiles_machine_name).
+machine_name() {
+  local n="${DOTFILES_MACHINE_NAME:-}"
+  [ -n "$n" ] || n=$(scutil --get LocalHostName 2>/dev/null)
+  n=$(printf '%s' "$n" | tr -c 'A-Za-z0-9-' '-')
+  [ -n "$n" ] || { err "cannot work out this Mac's name; set DOTFILES_MACHINE_NAME"; return 1; }
+  printf '%s' "$n"
+}
+
+# The store must already exist as iCloud Drive; it is never created for the
+# user (an absent iCloud Drive means signed out or disabled).
+store_ready() {
+  local create="${1:-create}" cloud="$HOME/Library/Mobile Documents/com~apple~CloudDocs"
+  if [ -z "${DOTFILES_APPS_STORE:-}" ] && [ ! -d "$cloud" ]; then
+    err "iCloud Drive is not available ($cloud is missing); sign in and turn on iCloud Drive"
+    return 1
+  fi
+  if [ "$create" = no_create ]; then
+    [ -d "$STORE" ] || { err "nothing to restore from: $STORE does not exist (has iCloud Drive synced?)"; return 1; }
+  else
+    mkdir -p "$STORE" || { err "cannot create $STORE"; return 1; }
+  fi
+}
+
+LOCK="$STATE/lock.d"
+LOCK_HELD=0
+
+release_lock() {
+  [ "$LOCK_HELD" -eq 1 ] || return 0
+  rm -rf "$LOCK"
+  LOCK_HELD=0
+}
+
+# One run at a time: mkdir is atomic. A lock older than an hour belongs to a
+# run that died without cleaning up.
+take_lock() {
+  mkdir -p "$STATE" || return 1
+  if ! mkdir "$LOCK" 2>/dev/null; then
+    if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+      err "removing a stale lock (older than 1 hour): $LOCK"
+      rm -rf "$LOCK"
+      mkdir "$LOCK" 2>/dev/null || { err "another run holds the lock: $LOCK"; return 1; }
+    else
+      err "another dotfiles-apps run holds the lock ($LOCK); if none is running it goes stale after 1 hour"
+      return 1
+    fi
+  fi
+  LOCK_HELD=1
+  printf '%s\n' "$$" >"$LOCK/pid"
+  trap release_lock EXIT
+  trap 'exit 130' INT TERM
+}
+
+#############################################################################
+# Validation: nothing reaches iCloud or $HOME unless it passes
+#############################################################################
+
+# plutil -lint also accepts plain text (a file holding the word "garbage"
+# parses as an old-style ASCII plist string), so also require what preference
+# files actually are: an XML plist or a binary one.
+plist_format_ok() {
+  case "$(head -c 6 "$1")" in bplist) return 0 ;; esac
+  grep -q '<plist' "$1"
+}
+
+# validate_symlinks <dir>: copy mode never stores or restores a symlink.
+validate_symlinks() {
+  local dir="$1" f rc=0
+  while IFS= read -r f; do
+    err "refusing: '${f#"$dir"/}' is a symlink; copy mode never stores or restores symlinks"
+    rc=1
+  done < <(find "$dir" -type l)
+  return "$rc"
+}
+
+# validate_plists <dir> [keep]: no zero-byte or invalid plists. With "keep"
+# they are only reported: a rescue copy must hold whatever is on disk now,
+# corrupt or not, because a corrupt local file is the usual reason to restore.
+validate_plists() {
+  local dir="$1" keep="${2:-}" f rc=0 what
+  while IFS= read -r f; do
+    what=""
+    if [ ! -s "$f" ]; then
+      what="a zero-byte plist"
+    elif ! plutil -lint "$f" >/dev/null 2>&1 || ! plist_format_ok "$f"; then
+      what="not a valid plist (plutil -lint failed)"
+    fi
+    [ -n "$what" ] || continue
+    if [ -n "$keep" ]; then
+      err "note: '${f#"$dir"/}' is $what; it is kept as it is in the rescue copy"
+    else
+      err "refusing: '${f#"$dir"/}' is $what"
+      rc=1
+    fi
+  done < <(find "$dir" -type f -name '*.plist')
+  return "$rc"
+}
+
+# validate_tree <dir>: both checks, reporting every problem before failing.
+validate_tree() {
+  local rc=0
+  validate_symlinks "$1" || rc=1
+  validate_plists "$1" || rc=1
+  return "$rc"
+}
+
+# 6.5: the old link mode leaves covered paths as symlinks into the storage
+# folder. Refuse to copy through them.
+guard_symlinks() {
+  local app p full l target rc=0
+  for app in $(allowlist); do
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      full="$HOME/${p%/}"
+      { [ -L "$full" ] || [ -e "$full" ]; } || continue
+      # find -type l on a symlink itself reports it; inside a directory it
+      # reports the links below it.
+      while IFS= read -r l; do
+        target=$(readlink "$l")
+        case "$target" in
+          "$STORE" | "$STORE"/* | "$STATE"/* | */Mackup | */Mackup/* | *com~apple~CloudDocs*)
+            err "SYMLINK: '$l' ($app) is a symlink into cloud storage ($target), left by mackup's old link mode. Replace it with a real copy: rm '$l' && cp -R '$target' '$l' -- then run again"
+            rc=1
+            ;;
+        esac
+      done < <(find "$full" -type l 2>/dev/null)
+    done <<EOF
+$(app_paths "$app")
+EOF
+  done
+  return "$rc"
+}
+
+#############################################################################
+# Stage, publish, rotate
+#############################################################################
+
+strip_ansi() { sed "s/$(printf '\033')\[[0-9;]*m//g"; }
+
+# Local files to a fresh staging tree with `mackup backup`, then validate.
+# `stage_local rescue` is lenient about the plists' contents (see
+# validate_plists) and still refuses symlinks and TCC denials.
+stage_local() {
+  local mode="${1:-}" out="$STATE/last-mackup.log" rc denials
+  write_run_cfg || return 1
+  case "$STAGE" in "$STATE"/*) ;; *) err "bad staging path"; return 1 ;; esac
+  rm -rf "$STAGE"
+  mkdir -p "$STAGE" || return 1
+
+  run_mackup -f -v backup 2>&1 | strip_ansi >"$out"
+  rc=${PIPESTATUS[0]}
+
+  # A TCC denial is not a mackup failure: it prints the error and carries on.
+  denials=$(awk '
+    /^--- .* ---$/ { app = $0; sub(/^--- /, "", app); sub(/ ---$/, "", app); next }
+    /Operation not permitted|permission issue|Permission denied/ { print (app == "" ? "?" : app) ": " $0 }
+  ' "$out")
+  if [ -n "$denials" ]; then
+    err "macOS denied access (TCC / permissions); grant the terminal Full Disk Access or drop the app from the allowlist:"
+    printf '%s\n' "$denials" | sed 's/^/  /' >&2
+    return 1
+  fi
+  if [ "$rc" -ne 0 ]; then
+    err "mackup backup failed (exit $rc); last output:"
+    tail -n 10 "$out" | sed 's/^/  /' >&2
+    return 1
+  fi
+  if [ -z "$(find "$STAGE" -type f | head -n 1)" ]; then
+    err "nothing to back up: none of the allowlisted apps has files on this Mac, so no snapshot was published"
+    return 3
+  fi
+  if [ "$mode" = rescue ]; then
+    validate_symlinks "$STAGE" && validate_plists "$STAGE" keep
+  else
+    validate_tree "$STAGE"
+  fi
+}
+
+# Snapshot directory names under <parent>, oldest first. Names are UTC
+# timestamps, so a plain sort is chronological; .tmp-* copies never match.
+snapshot_names() {
+  local d
+  for d in "$1"/[0-9]*; do
+    [ -d "$d" ] && basename "$d"
+  done | sort
+}
+
+# publish <parent> <keep>: copy STAGE to <parent>/<UTC timestamp> under a
+# temp name, rename when complete, then rotate. Echoes the snapshot name.
+publish() {
+  local parent="$1" keep="$2" ts name n=1 tmp count drop
+  ts=$(date -u +%Y%m%dT%H%M%SZ)
+  name="$ts"
+  mkdir -p "$parent" || { err "cannot create $parent"; return 1; }
+  while [ -e "$parent/$name" ]; do n=$((n + 1)); name="$ts-$n"; done
+  # Stale temp copies from a run that died; we hold the lock.
+  rm -rf "$parent"/.tmp-* 2>/dev/null
+  tmp="$parent/.tmp-$name"
+  if ! mkdir "$tmp" || ! cp -R "$STAGE/." "$tmp/" || ! diff -r "$STAGE" "$tmp" >/dev/null 2>&1; then
+    rm -rf "$tmp"
+    err "copying the snapshot to $parent failed or did not verify; nothing was published"
+    return 1
+  fi
+  mv "$tmp" "$parent/$name" || { rm -rf "$tmp"; return 1; }
+
+  count=$(snapshot_names "$parent" | grep -c .)
+  if [ "$count" -gt "$keep" ]; then
+    for drop in $(snapshot_names "$parent" | head -n "$((count - keep))"); do
+      rm -rf "${parent:?}/$drop"
+    done
+  fi
+  printf '%s' "$name"
+}
+
+#############################################################################
+# backup
+#############################################################################
+
+cmd_backup() {
+  local scheduled=0 machine snap arg logf
+  for arg in "$@"; do
+    case "$arg" in
+      --scheduled) scheduled=1 ;;
+      *) err "backup: unknown option '$arg'"; return 2 ;;
+    esac
+  done
+
+  if [ "$scheduled" -eq 1 ]; then
+    logf="$HOME/Library/Logs/dotfiles-apps.log"
+    mkdir -p "$(dirname "$logf")" && exec >>"$logf" 2>&1
+    printf '%s backup --scheduled\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
+
+  machine=$(machine_name) || return 1
+  store_ready || return 1
+  take_lock || return 1
+  cmd_check || return 1
+  guard_symlinks || return 1
+  stage_local || return 1
+  snap=$(publish "$STORE/$machine/snapshots" 14) || return 1
+  printf '%s\n' "$snap" >"$STORE/$machine/latest.tmp" && mv -f "$STORE/$machine/latest.tmp" "$STORE/$machine/latest" || return 1
+  if [ "$scheduled" -eq 1 ]; then
+    printf '%s ok: %s/%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$machine" "$snap"
+  else
+    say "backed up to $STORE/$machine/snapshots/$snap"
+  fi
+}
+
+#############################################################################
+# restore, undo, list
+#############################################################################
+
+RESCUE_ROOT="$STATE/Mackup/rescue"
+
+# Allowlisted apps whose processes are running, as "app (process)" lines.
+# macOS truncates process names, so a long name is also tried at 15 and 16
+# characters.
+running_apps() {
+  local app proc cand
+  for app in $(allowlist); do
+    while IFS= read -r proc; do
+      [ -n "$proc" ] || continue
+      for cand in "$proc" "${proc:0:16}" "${proc:0:15}"; do
+        if pgrep -x "$cand" >/dev/null 2>&1; then
+          printf '%s (%s)\n' "$app" "$proc"
+          break
+        fi
+      done
+    done <<EOF
+$(app_procs "$app")
+EOF
+  done
+}
+
+# 6.4: after a restore no covered path may be a symlink.
+restored_symlinks() {
+  local app p full l rc=0
+  for app in $(allowlist); do
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      full="$HOME/${p%/}"
+      { [ -L "$full" ] || [ -e "$full" ]; } || continue
+      while IFS= read -r l; do
+        err "SYMLINK after restore: '$l' ($app) is a symlink; run 'dotfiles apps undo' to put the previous files back"
+        rc=1
+      done < <(find "$full" -type l 2>/dev/null)
+    done <<EOF
+$(app_paths "$app")
+EOF
+  done
+  return "$rc"
+}
+
+# Ask iCloud for a snapshot and wait (DOTFILES_APPS_DL_WAIT seconds, default
+# 60) until no *.icloud placeholder remains under it.
+materialise() {
+  local dir="$1" wait="${DOTFILES_APPS_DL_WAIT:-60}" waited=0 left
+  command -v brctl >/dev/null 2>&1 && brctl download "$dir" >/dev/null 2>&1
+  while :; do
+    left=$(placeholders "$dir")
+    [ -z "$left" ] && return 0
+    [ "$waited" -ge "$wait" ] && break
+    sleep 2
+    waited=$((waited + 2))
+  done
+  err "iCloud has not finished downloading $dir; these placeholder(s) remain, so nothing was restored (try again shortly):"
+  printf '%s\n' "$left" | head -n 10 | sed 's/^/  /' >&2
+  return 1
+}
+
+# Placeholders for the snapshot: files under it, or the directory itself.
+placeholders() {
+  local dir="$1"
+  [ -e "$(dirname "$dir")/.$(basename "$dir").icloud" ] && printf '%s\n' "$(dirname "$dir")/.$(basename "$dir").icloud"
+  [ -d "$dir" ] && find "$dir" -name '*.icloud'
+  return 0
+}
+
+# apply_snapshot <dir> [rescue]: validate, refuse while apps run, rescue,
+# restore. <dir> holds the Mackup/ tree. Local files are only touched after
+# every check has passed and the rescue copy exists. A rescue copy being put
+# back (`undo`) is validated leniently, like the rescue that made it.
+apply_snapshot() {
+  local dir="$1" mode="${2:-}" running rc rescue
+  if [ "$mode" = rescue ]; then
+    validate_symlinks "$dir" && validate_plists "$dir" keep || return 1
+  else
+    validate_tree "$dir" || return 1
+  fi
+
+  running=$(running_apps)
+  if [ -n "$running" ]; then
+    err "quit these apps first (restoring under a running app is overwritten on quit):"
+    printf '%s\n' "$running" | sed 's/^/  /' >&2
+    return 1
+  fi
+
+  stage_local rescue
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    rescue=$(publish "$RESCUE_ROOT" 14) || return 1
+    say "rescue copy of the current settings: $RESCUE_ROOT/$rescue (undo with: dotfiles apps undo)"
+  elif [ "$rc" -eq 3 ]; then
+    say "nothing local to rescue (no covered files yet on this Mac)"
+  else
+    err "could not take a rescue copy of the current settings, so nothing was restored"
+    return 1
+  fi
+
+  rm -rf "$STAGE"
+  mkdir -p "$STAGE" || return 1
+  cp -R "$dir/." "$STAGE/" || { err "could not stage the snapshot"; return 1; }
+  if ! run_mackup -f restore >"$STATE/last-mackup.log" 2>&1; then
+    err "mackup restore failed; run 'dotfiles apps undo' to put the previous files back. Output:"
+    tail -n 10 "$STATE/last-mackup.log" | sed 's/^/  /' >&2
+    return 1
+  fi
+  restored_symlinks || return 1
+  # The preferences daemon caches plists; without this an app that starts now
+  # can still see, and later write back, the old values.
+  killall cfprefsd >/dev/null 2>&1 || true
+}
+
+# Common front of restore and undo: store, lock, guards.
+restore_preflight() {
+  store_ready no_create || return 1
+  take_lock || return 1
+  cmd_check || return 1
+  guard_symlinks || return 1
+}
+
+cmd_restore() {
+  local from="" snap="" machine dir
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --from)
+        [ $# -ge 2 ] || { err "restore: --from needs a machine name"; return 2; }
+        from="$2"
+        shift 2
+        ;;
+      -*) err "restore: unknown option '$1'"; return 2 ;;
+      *) snap="$1"; shift ;;
+    esac
+  done
+
+  machine="${from:-$(machine_name)}" || return 1
+  printf '%s' "$machine" | grep -Eq '^[A-Za-z0-9-]+$' || { err "invalid machine name '$machine'"; return 2; }
+  if [ -n "$snap" ]; then
+    printf '%s' "$snap" | grep -Eq '^[0-9]{8}T[0-9]{6}Z(-[0-9]+)?$' || { err "invalid snapshot name '$snap'"; return 2; }
+  fi
+
+  restore_preflight || return 1
+  [ -d "$STORE/$machine" ] || { err "no snapshots for '$machine' in $STORE (see: dotfiles apps list)"; return 1; }
+  if [ -z "$snap" ]; then
+    snap=$(tr -d '[:space:]' <"$STORE/$machine/latest" 2>/dev/null)
+    printf '%s' "$snap" | grep -Eq '^[0-9]{8}T[0-9]{6}Z(-[0-9]+)?$' || { err "no valid 'latest' for '$machine'; name a snapshot (see: dotfiles apps list)"; return 1; }
+  fi
+  dir="$STORE/$machine/snapshots/$snap"
+
+  materialise "$dir" || return 1
+  [ -d "$dir" ] || { err "no such snapshot: $machine/$snap (see: dotfiles apps list)"; return 1; }
+  apply_snapshot "$dir" || return 1
+  say "restored $machine/$snap"
+}
+
+cmd_undo() {
+  local last
+  restore_preflight || return 1
+  last=$(snapshot_names "$RESCUE_ROOT" | tail -n 1)
+  [ -n "$last" ] || { err "no rescue copy to go back to (a restore takes one first)"; return 1; }
+  apply_snapshot "$RESCUE_ROOT/$last" rescue || return 1
+  say "put back the rescue copy $last"
+}
+
+cmd_list() {
+  local m d latest found=0
+  if [ -d "$STORE" ]; then
+    for m in "$STORE"/*/; do
+      [ -d "$m/snapshots" ] || continue
+      m=$(basename "$m")
+      latest=$(tr -d '[:space:]' <"$STORE/$m/latest" 2>/dev/null)
+      for d in $(snapshot_names "$STORE/$m/snapshots"); do
+        found=1
+        if [ "$d" = "$latest" ]; then
+          printf '%-24s %s  (latest)\n' "$m" "$d"
+        else
+          printf '%-24s %s\n' "$m" "$d"
+        fi
+      done
+    done
+  fi
+  for d in $(snapshot_names "$RESCUE_ROOT"); do
+    found=1
+    printf '%-24s %s\n' "rescue (local)" "$d"
+  done
+  [ "$found" -eq 1 ] || say "no snapshots yet (dotfiles apps backup)"
+}
+
+#############################################################################
+# Dispatch
+#############################################################################
+
+usage() {
+  sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+}
+
+main() {
+  local cmd="${1:-}"
+  [ $# -gt 0 ] && shift
+  case "$cmd" in
+    check) cmd_check "$@" ;;
+    backup) cmd_backup "$@" ;;
+    restore) cmd_restore "$@" ;;
+    undo) cmd_undo "$@" ;;
+    list) cmd_list "$@" ;;
+    "" | -h | --help | help) usage ;;
+    *)
+      err "unknown command '$cmd'"
+      usage >&2
+      return 2
+      ;;
+  esac
+}
+
+main "$@"
