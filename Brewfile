@@ -154,6 +154,7 @@ cask "claude"                       # Claude desktop
 cask "adobe-creative-cloud"
 cask "figma"
 cask "autodesk-fusion"
+cask "blender"                      # 3D; the blender MCP needs 5.1+ (add-on by hand, docs/agents/new-mac.md)
 cask "prusaslicer"
 cask "bambu-studio"                 # Bambu Lab slicer
 
@@ -167,7 +168,19 @@ cask "proton-mail"
 cask "proton-mail-bridge"
 
 # Utilities
-cask "raycast"                      # Spotlight replacement
+# Launcher: exactly one, chosen per Mac (scripts/lib/machine.sh:
+# dotfiles_launcher). `dotfiles install --packages` exports the choice as
+# HOMEBREW_DOTFILES_LAUNCHER: brew bundle hides every environment variable
+# that does not start with HOMEBREW_ from this file. Unset, or any value but
+# "raycast", means Tinycast, so CI's `brew bundle list` works; a bare
+# `brew bundle` on a Raycast Mac needs the variable set by hand. The Tinycast
+# tap is indented on purpose: sub_install_packages trusts it only for Tinycast.
+if ENV["HOMEBREW_DOTFILES_LAUNCHER"] == "raycast"
+  cask "raycast"                    # Spotlight replacement
+else
+  tap "abue-ammar/tinycast"         # Tinycast (third-party tap; no core cask)
+  cask "abue-ammar/tinycast/tinycast" # Spotlight replacement, Raycast-compatible
+end
 cask "karabiner-elements"           # Keyboard customization
 cask "keka"                         # Archive utility
 cask "keycastr"                     # Keystroke visualizer

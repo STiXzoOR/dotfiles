@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Machine identity: what kind of Mac this is and what it is called.
+# Machine identity: what kind of Mac this is, what it is called, its launcher.
 #
-# Sourced by macos/defaults.sh, bin/dotfiles-apps and bin/dotfiles-sync. No
+# Sourced by macos/defaults.sh, bin/dotfiles, bin/dotfiles-apps and bin/dotfiles-sync. No
 # side effects on load. Both helpers use only tools the BSD userland has, so
 # they work under launchd and `bash script.sh`.
 
@@ -49,4 +49,30 @@ dotfiles_machine_name() {
     return 1
   fi
   printf '%s' "$n"
+}
+
+# tinycast | raycast: which launcher this Mac uses.
+#
+# DOTFILES_LAUNCHER from the environment, else from macos/machine.local.sh
+# (per Mac, gitignored, never synced), else from macos/local.sh (shared through
+# the private repo), else tinycast. Any other value warns once and becomes
+# tinycast, which is also what the Brewfile does with an unknown value.
+# Takes the dotfiles dir as $1, else DOTFILES_DIR, else ~/.dotfiles. The files
+# are read in a subshell, so nothing they set leaks into the caller.
+dotfiles_launcher() {
+  local dir="${1:-${DOTFILES_DIR:-$HOME/.dotfiles}}" v="${DOTFILES_LAUNCHER:-}" f
+  for f in machine.local.sh local.sh; do
+    [ -n "$v" ] && break
+    [ -f "$dir/macos/$f" ] || continue
+    # shellcheck disable=SC1090
+    v=$(unset DOTFILES_LAUNCHER; . "$dir/macos/$f" >/dev/null 2>&1; printf '%s' "${DOTFILES_LAUNCHER:-}")
+  done
+  case "$v" in
+    tinycast | raycast) printf '%s\n' "$v" ;;
+    "") printf 'tinycast\n' ;;
+    *)
+      printf 'warning: ignoring DOTFILES_LAUNCHER=%s (use tinycast or raycast); using tinycast\n' "$v" >&2
+      printf 'tinycast\n'
+      ;;
+  esac
 }

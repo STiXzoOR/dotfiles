@@ -540,7 +540,7 @@ sub_install_packages() {
   # Nothing below may end the step early. A failure is recorded in rc and the
   # next part still runs, so one bad cask cannot skip the VS Code extensions
   # and the summary always says what actually happened.
-  local rc=0 file tap brewfiles="Brewfile"
+  local rc=0 file tap brewfiles="Brewfile" launcher
   # Brewfile.local is the gitignored companion for packages that should not
   # be in a public repo; it is bundled after the public one.
   [[ -f Brewfile.local ]] && brewfiles="Brewfile Brewfile.local"
@@ -550,6 +550,21 @@ sub_install_packages() {
   # so a fresh bootstrap fails outright at bundle time until every
   # declared tap is trusted. `brew tap` alone no longer suffices.
   action "trusting third-party taps declared in the Brewfile"
+  # The launcher is chosen per Mac (macos/machine.local.sh). The Brewfile reads
+  # it from HOMEBREW_DOTFILES_LAUNCHER, and only a Tinycast Mac trusts the Tinycast tap:
+  # its entry is indented in the Brewfile, so the loop below does not see it.
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/scripts/lib/machine.sh"
+  launcher=$(dotfiles_launcher "$ROOT_DIR")
+  # brew bundle hides variables that do not start with HOMEBREW_ from the Brewfile.
+  export HOMEBREW_DOTFILES_LAUNCHER="$launcher"
+  if [[ "$launcher" == tinycast ]]; then
+    if brew tap abue-ammar/tinycast; then
+      brew trust --tap abue-ammar/tinycast || warn "could not trust tap abue-ammar/tinycast"
+    else
+      warn "could not tap abue-ammar/tinycast"
+    fi
+  fi
   for file in $brewfiles; do
     while IFS= read -r tap; do
       [[ -n "$tap" ]] || continue
