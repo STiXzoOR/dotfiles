@@ -36,6 +36,9 @@ else
   action() { printf '\n%s\n' "$1"; }
 fi
 
+# shellcheck source=/dev/null
+source "$ROOT_DIR/scripts/lib/lists.sh"
+
 DRIFT=0
 
 note_drift() {
@@ -112,12 +115,44 @@ diff_settings() {
   done
 }
 
+# Every server in claude/mcp.list (and mcp.local.list) should be registered at
+# user scope. Read from ~/.claude.json rather than `claude mcp get`, which
+# health-checks each server and is not the cheap read this command promises.
+diff_mcp() {
+  local config line name
+  if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+    config="$CLAUDE_CONFIG_DIR/.claude.json"
+  else
+    config="$HOME/.claude.json"
+  fi
+
+  if [ ! -f "$config" ]; then
+    warn "no $config yet; skipping the MCP server comparison"
+    return 0
+  fi
+  if ! command -v jq > /dev/null 2>&1; then
+    warn "jq not installed; skipping the MCP server comparison"
+    return 0
+  fi
+
+  while IFS= read -r line; do
+    [ -n "${line// /}" ] || continue
+    name="${line%%[[:space:]]*}"
+    if jq -e --arg n "$name" '(.mcpServers // {}) | has($n)' "$config" > /dev/null 2>&1; then
+      ok "MCP server $name"
+    else
+      note_drift "MCP server $name is in mcp.list but not registered (run 'dotfiles install --claude')"
+    fi
+  done < <(read_list "$CLAUDE_DIR" mcp)
+}
+
 cmd_diff() {
   action "Comparing $CLAUDE_DIR against $CLAUDE_HOME"
   diff_tree "$CLAUDE_DIR/hooks" "$CLAUDE_HOME/hooks" "hooks"
   diff_tree "$CLAUDE_DIR/rules" "$CLAUDE_HOME/rules" "rules"
   diff_file "$CLAUDE_DIR/statusline.sh" "$CLAUDE_HOME/statusline.sh" "statusline.sh"
   diff_settings
+  diff_mcp
 
   echo ""
   if [ "$DRIFT" -ne 0 ]; then

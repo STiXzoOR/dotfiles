@@ -502,9 +502,11 @@ test_claude_bootstrap() {
     fail "File missing: claude/vault-templates/top-of-mind.md"
   fi
 
-  # Test install script registers QMD MCP server via 'claude mcp add'
-  if grep -q 'claude mcp add.*qmd' "$DOTFILES_DIR/scripts/install_claude.sh" 2>/dev/null; then
-    pass "install_claude.sh: QMD MCP registration via 'claude mcp add'"
+  # Test install script registers the QMD MCP server (listed in claude/mcp.list)
+  # via 'claude mcp add'
+  if grep -q 'claude mcp add' "$DOTFILES_DIR/scripts/install_claude.sh" 2>/dev/null &&
+    grep -q '^qmd ' "$DOTFILES_DIR/claude/mcp.list" 2>/dev/null; then
+    pass "install_claude.sh: QMD MCP registration via 'claude mcp add' (claude/mcp.list)"
   else
     fail "install_claude.sh: QMD MCP registration missing"
   fi

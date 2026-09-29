@@ -24,5 +24,13 @@ https://github.com/EveryInc/compound-engineering-plugin.git
 # dropping this marketplace leaves the QMD/vault bootstrap half-wired.
 ArtemXTech/personal-os-skills
 
+# Safety Net -- blocks destructive git and filesystem commands before they run.
+# The marketplace id is "cc-marketplace".
+kenryu42/cc-marketplace
+
+# Warp -- Warp terminal integration (notifications, session status).
+# The marketplace id is "claude-code-warp".
+warpdotdev/claude-code-warp
+
 # Private/work marketplaces belong in claude/marketplaces.local.list
 # (gitignored) -- this repo is public.

@@ -119,9 +119,18 @@ cd ~/.dotfiles
 
 It installs the Claude Code native binary and verifies it against Anthropic's
 signed release manifest, registers the marketplaces in `claude/marketplaces.list`,
-installs the plugins in `claude/plugins.list`, copies the hooks, rules and
-status line from `claude/` into `~/.claude/`, merges `claude/settings.template.json`
-into `~/.claude/settings.json`, and sets up QMD over the Obsidian vault.
+installs the plugins in `claude/plugins.list`, registers the MCP servers in
+`claude/mcp.list` (QMD and Blender), installs the skills in `claude/skills.list`
+(`find-docs`), copies the hooks, rules and status line from `claude/` into
+`~/.claude/`, merges `claude/settings.template.json` into `~/.claude/settings.json`,
+and sets up QMD over the Obsidian vault. The vault is a plain folder you copy
+over by hand first; if it is missing the script says so and skips it.
+
+`./bin/dotfiles install --codex` does the same for Codex: it seeds
+`~/.codex/config.toml` (only when absent), registers the marketplaces in
+`codex/marketplaces.list`, installs the plugins in `codex/plugins.list` (the same
+ones as Claude wherever a Codex version exists) and registers the same MCP
+servers. Plugin hooks need a one-time trust: run `/hooks` in Codex and press `t`.
 
 Two read-only checks come with it:
 
@@ -135,9 +144,8 @@ directory, branch, elapsed time and plan limits entirely from the JSON payload
 Claude Code writes to its stdin. It reads no credentials and makes no network
 calls.
 
-Private or work marketplaces and plugins belong in
-`claude/marketplaces.local.list` and `claude/plugins.local.list`, which are
-gitignored.
+Private or work marketplaces, plugins, MCP servers and skills belong in the
+matching `claude/*.local.list` (and `codex/*.local.list`), which are gitignored.
 
 ## Restoring Dotfiles
 

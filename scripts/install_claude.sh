@@ -15,6 +15,20 @@ VAULT_DIR="${VAULT_DIR:-$HOME/Vault}"
 CLAUDE_INSTALL_LOG="$HOME/.cache/dotfiles/claude-install.log"
 FAILURES=()
 
+# The native installer puts `claude` in ~/.local/bin, which is not on PATH
+# under `bash install_claude.sh`. Without this every `claude plugin ...` call
+# failed with "command not found" and the signature check was skipped.
+#
+# The mise shims (node, npx, uv, qmd ...) are missing from that PATH too.
+for _dir in "$HOME/.local/share/mise/shims" "$HOME/.local/bin"; do
+  case ":$PATH:" in
+    *":$_dir:"*) ;;
+    *) PATH="$_dir:$PATH" ;;
+  esac
+done
+unset _dir
+export PATH
+
 # Release verification. Anthropic publishes a per-release manifest.json and a
 # detached manifest.json.sig, signed by "Anthropic Claude Code Release Signing
 # <security@anthropic.com>". Signatures exist from 2.1.89 onward.
@@ -27,6 +41,7 @@ CLAUDE_RELEASE_KEY_FINGERPRINT="31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE" #gitle
 source "$ROOT_DIR/scripts/echos.sh"
 source "$ROOT_DIR/scripts/requirers.sh"
 source "$ROOT_DIR/scripts/lib/lists.sh"
+source "$ROOT_DIR/scripts/lib/mcp.sh"
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,6 +65,31 @@ install_file() { # install_file <src> <dest>
     cp "$dest" "$dest.bak.$(date +%s)" || return 1
   fi
   cp "$src" "$dest"
+}
+
+# GNU timeout is not on a default macOS PATH, and `bash script.sh` never gets
+# the interactive GNU PATH, so a bare `timeout` was "command not found": qmd
+# was never run and the output blamed a timeout. Resolve it the way
+# claude/hooks/index-sessions.sh does, and run unbounded when there is none.
+resolve_timeout_bin() {
+  local candidate
+  TIMEOUT_BIN=""
+  for candidate in \
+    "$(command -v gtimeout 2>/dev/null)" \
+    /opt/homebrew/bin/gtimeout \
+    /opt/homebrew/opt/coreutils/libexec/gnubin/timeout \
+    "$(command -v timeout 2>/dev/null)"; do
+    [[ -n "$candidate" && -x "$candidate" ]] && TIMEOUT_BIN="$candidate" && break
+  done
+  return 0
+}
+TIMEOUT_BIN=""
+resolve_timeout_bin
+
+run_bounded() { # run_bounded <seconds> <cmd...>
+  local secs="$1"
+  shift
+  if [[ -n "$TIMEOUT_BIN" ]]; then "$TIMEOUT_BIN" "$secs" "$@"; else "$@"; fi
 }
 
 report_failures() {
@@ -78,6 +118,10 @@ install_claude_binary() {
 
   if curl -fsSL --proto '=https' --tlsv1.2 https://claude.ai/install.sh -o "$tmpfile"; then
     if bash "$tmpfile"; then
+      if ! command -v claude &>/dev/null; then
+        error "the installer ran but no claude binary is on PATH (expected in ~/.local/bin)"
+        return 1
+      fi
       ok "Claude Code installed"
     else
       error "Claude Code installer failed"
@@ -169,7 +213,10 @@ verify_claude_binary() {
 
 verify_claude_install() {
   local version binary
-  command -v claude >/dev/null 2>&1 || return 0
+  if ! command -v claude >/dev/null 2>&1; then
+    error "claude is not installed, so the release cannot be verified"
+    return 1
+  fi
 
   version=$(claude --version 2>/dev/null | awk '{print $1}')
   if [[ -z "$version" ]]; then
@@ -249,6 +296,119 @@ install_plugins() {
   if [[ $skipped -gt 0 ]]; then
     ok "$skipped plugins already installed, skipped"
   fi
+}
+
+# ─── 3b. MCP servers ─────────────────────────────────────────────────────────
+
+# Register every server in mcp.list (plus the gitignored mcp.local.list) at
+# user scope, skipping any that already exist. `claude mcp get` succeeding is
+# the existence check, so a re-run neither duplicates nor overwrites a server
+# the user has edited by hand.
+register_mcp_servers() {
+  local line count=0 rc failed=0
+  if [[ ! -f "$CLAUDE_DIR/mcp.list" && ! -f "$CLAUDE_DIR/mcp.local.list" ]]; then
+    warn "No mcp.list found, skipping"
+    return 0
+  fi
+  if ! command -v claude >/dev/null 2>&1; then
+    error "claude is not installed, so MCP servers cannot be registered"
+    return 1
+  fi
+
+  action "Registering Claude Code MCP servers"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "${line// /}" ]] && continue
+    if ! parse_mcp_entry "$line"; then
+      warn "mcp.list: ignoring '$line' (expected: name command [args...])"
+      continue
+    fi
+    count=$((count + 1))
+
+    if claude mcp get "$MCP_NAME" >>"$CLAUDE_INSTALL_LOG" 2>&1; then
+      ok "MCP server $MCP_NAME already registered"
+      continue
+    fi
+
+    local name="$MCP_NAME"
+    local -a cmd=("${MCP_CMD[@]}")
+    prepare_mcp_server "$name"
+    rc=$?
+    if [[ "$rc" -eq 1 ]]; then
+      continue
+    elif [[ "$rc" -ne 0 ]]; then
+      FAILURES+=("mcp server: $name")
+      failed=$((failed + 1))
+      continue
+    fi
+
+    if claude mcp add --scope user "$name" -- "${cmd[@]}" >>"$CLAUDE_INSTALL_LOG" 2>&1; then
+      ok "MCP server $name registered (user scope)"
+    else
+      warn "failed to register MCP server $name"
+      FAILURES+=("mcp server: $name")
+      failed=$((failed + 1))
+    fi
+  done < <(read_list "$CLAUDE_DIR" mcp)
+
+  [[ "$failed" -eq 0 ]]
+}
+
+# ─── 3c. Skills ──────────────────────────────────────────────────────────────
+
+# Install each "<source> <skill>" entry from skills.list with the skills CLI.
+# The CLI keeps a canonical copy in ~/.agents/skills and symlinks it into the
+# agent directories, so an existing symlink means "already installed". A real
+# directory (a hand-placed copy) would make the CLI refuse or clobber it, so it
+# is moved aside to <skill>.bak.<epoch>, the repo's backup convention.
+install_skills() {
+  local line source skill dest failed=0
+  if [[ ! -f "$CLAUDE_DIR/skills.list" && ! -f "$CLAUDE_DIR/skills.local.list" ]]; then
+    return 0
+  fi
+
+  action "Installing Claude Code skills"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "${line// /}" ]] && continue
+    # shellcheck disable=SC2086
+    set -- $line
+    source="${1:-}" skill="${2:-}"
+    if [[ -z "$source" || -z "$skill" ]]; then
+      warn "skills.list: ignoring '$line' (expected: source skill)"
+      continue
+    fi
+
+    dest="$CLAUDE_HOME/skills/$skill"
+    if [[ -L "$dest" ]]; then
+      ok "skill $skill already installed"
+      continue
+    fi
+    if ! command -v npx >/dev/null 2>&1; then
+      error "npx not found: cannot install skill $skill (mise provides node; run 'dotfiles install --node')"
+      FAILURES+=("skill: $skill")
+      failed=$((failed + 1))
+      continue
+    fi
+    if [[ -e "$dest" ]]; then
+      if ! mv "$dest" "$dest.bak.$(date +%s)"; then
+        warn "could not move $dest aside"
+        FAILURES+=("skill: $skill")
+        failed=$((failed + 1))
+        continue
+      fi
+      ok "moved the existing $skill aside to $skill.bak.<epoch>"
+    fi
+
+    running "skill $skill"
+    if npx -y skills add "$source" --skill "$skill" -g -a claude-code -a codex -y >>"$CLAUDE_INSTALL_LOG" 2>&1; then
+      ok "skill $skill installed"
+    else
+      warn "failed to install skill $skill"
+      FAILURES+=("skill: $skill")
+      failed=$((failed + 1))
+    fi
+  done < <(read_list "$CLAUDE_DIR" skills)
+
+  [[ "$failed" -eq 0 ]]
 }
 
 # ─── 4. Copy rules and hooks ─────────────────────────────────────────────────
@@ -520,6 +680,14 @@ merge_settings() {
 # ─── 6. Setup Obsidian vault ─────────────────────────────────────────────────
 
 setup_vault() {
+  # The vault is a plain local folder the owner copies over by hand. Creating
+  # it here made an empty tree that QMD then indexed, and a later copy landed
+  # on top of a half-scaffolded directory.
+  if [[ ! -d "$VAULT_DIR" ]]; then
+    warn "no vault at $VAULT_DIR: copy your vault there first, then re-run 'dotfiles install --claude'"
+    return 0
+  fi
+
   action "Setting up Obsidian vault structure"
   mkdir -p "$VAULT_DIR"/{Claude-Sessions,Resources,Inbox,Projects,Daily,Polaris}
   ok "vault directories ready"
@@ -565,6 +733,17 @@ setup_qmd() {
     fi
   fi
 
+  if [[ -d "$VAULT_DIR" ]]; then
+    setup_qmd_index
+  else
+    warn "no vault at $VAULT_DIR: skipping QMD collections and indexing"
+  fi
+}
+
+# Collections, index and embeddings. Only runs against a vault that exists:
+# registering collections on a tree the owner has not copied in yet indexes
+# nothing and leaves qmd pointing at an empty scaffold.
+setup_qmd_index() {
   # Register collections (idempotent — qmd ignores duplicates)
   action "Configuring QMD collections"
 
@@ -593,7 +772,7 @@ setup_qmd() {
 
   # Update index (fast — only processes changed files)
   action "Updating QMD index"
-  if timeout 60 qmd update 2>>"$CLAUDE_INSTALL_LOG"; then
+  if run_bounded 60 qmd update 2>>"$CLAUDE_INSTALL_LOG"; then
     ok "QMD index updated"
   else
     warn "QMD update timed out or failed (run 'qmd update' manually)"
@@ -601,21 +780,12 @@ setup_qmd() {
 
   # Run embedding if models are available (first run downloads ~2GB)
   action "Building QMD embeddings (may take a moment on first run)"
-  if timeout 120 qmd embed 2>>"$CLAUDE_INSTALL_LOG"; then
+  if run_bounded 120 qmd embed 2>>"$CLAUDE_INSTALL_LOG"; then
     ok "QMD embeddings ready"
   else
     warn "QMD embed timed out or failed (run 'qmd embed' manually)"
   fi
 
-  # Register QMD MCP server with Claude Code (stored in ~/.claude.json)
-  if command -v claude &>/dev/null; then
-    action "Registering QMD MCP server"
-    if claude mcp add --transport stdio --scope user qmd -- qmd mcp 2>>"$CLAUDE_INSTALL_LOG"; then
-      ok "QMD MCP server registered (user scope)"
-    else
-      warn "QMD MCP registration failed (run 'claude mcp add --transport stdio --scope user qmd -- qmd mcp' manually)"
-    fi
-  fi
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -637,6 +807,8 @@ main() {
   try_or_track "release verification" verify_claude_install
   register_marketplaces
   install_plugins
+  register_mcp_servers
+  install_skills
   copy_claude_files "$CLAUDE_DIR/rules" "$CLAUDE_HOME/rules" "rules"
   try_or_track "rule imports" link_rule_imports
   copy_claude_files "$CLAUDE_DIR/hooks" "$CLAUDE_HOME/hooks" "hooks" "true"

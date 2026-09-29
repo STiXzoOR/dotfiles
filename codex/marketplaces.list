@@ -1,0 +1,15 @@
+# Codex plugin marketplaces
+# Format: owner/repo (or a git URL); one per line.
+# Used by: scripts/install_codex.sh  (dotfiles install --codex)
+#
+# The built-in openai-curated marketplace (superpowers) needs no entry.
+# Private entries go in codex/marketplaces.local.list (gitignored).
+
+# compound-engineering -- the ce-* workflow. Marketplace id: compound-engineering-plugin.
+EveryInc/compound-engineering-plugin
+
+# Warp terminal integration. Marketplace id: codex-warp.
+warpdotdev/codex-warp
+
+# Safety Net (also on Claude). Marketplace id: cc-marketplace.
+kenryu42/cc-marketplace

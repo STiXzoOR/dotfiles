@@ -26,6 +26,9 @@ Brewfile.lock.json
 # Private/work Claude marketplaces + plugins (repo is public)
 claude/*.local.list
 
+# Private/work Codex marketplaces + plugins (repo is public)
+codex/*.local.list
+
 # Machine-local git identity (this repo is public)
 config/git/config.local
 
