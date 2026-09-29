@@ -8,8 +8,15 @@
 set -u
 
 # rand <count> <tr character class>
+# Bounded: never `tr </dev/urandom | head`, which never exits where SIGPIPE is
+# ignored (see rand_chars in tests/lib.sh; this file cannot source it).
 rand() {
-  LC_ALL=C tr -dc "$2" < /dev/urandom 2>/dev/null | head -c "$1"
+  local out="" rounds=0
+  while [ "${#out}" -lt "$1" ]; do
+    rounds=$((rounds + 1)); [ "$rounds" -le 1000 ] || return 1
+    out="$out$(head -c 4096 /dev/urandom | LC_ALL=C tr -dc "$2")"
+  done
+  printf '%s' "${out:0:$1}"
 }
 
 UPPER='A-Z0-9'

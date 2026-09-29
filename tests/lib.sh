@@ -88,6 +88,19 @@ timeout() {
   _timeout_fallback "$@"
 }
 
+# rand_chars <n> <tr-class> -- exactly <n> random characters from <tr-class>.
+# Bounded on purpose: each round reads 4096 bytes and stops by itself. An
+# endless `tr … </dev/urandom | head -c` never exits where SIGPIPE is ignored
+# (GitHub's macOS runner), because BSD tr loops on EPIPE.
+rand_chars() {
+  local n=$1 set=$2 out="" rounds=0
+  while [ "${#out}" -lt "$n" ]; do
+    rounds=$((rounds + 1)); [ "$rounds" -le 1000 ] || return 1
+    out="$out$(head -c 4096 /dev/urandom | LC_ALL=C tr -dc "$set")"
+  done
+  printf '%s' "${out:0:n}"
+}
+
 # A throwaway directory under $TMPDIR, removed by finish. Never under $HOME.
 sandbox() {
   local d

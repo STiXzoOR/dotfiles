@@ -19,6 +19,59 @@ t "H.5" "run.sh runs every suite except lib.sh and itself, and fails if one fail
   printf "#!/usr/bin/env bash\necho BAD; exit 1\n" > "$W/tests/bad.sh"
   out=$(bash "$W/tests/run.sh" 2>&1); rc=$?
   [ "$rc" -eq 1 ] && echo "$out" | grep -q GOOD && echo "$out" | grep -q "suites=2 failed_suites=1" && [ "$(printf "%s" "$out" | grep -c "=== tests/lib.sh")" -eq 0 ]'
+t "H.6" "rand_chars prints exactly n characters of the class, and ends with SIGPIPE ignored" '
+  out=$(/bin/bash -c "trap \"\" PIPE; source tests/lib.sh; rand_chars 36 A-Za-z0-9; rand_chars 200 0-9" 2>&1 </dev/null)
+  [ "${#out}" -eq 236 ] && [ "$(printf "%s" "${out:0:36}" | LC_ALL=C tr -dc A-Za-z0-9 | wc -c)" -eq 36 ] &&
+  [ "$(printf "%s" "${out:36}" | LC_ALL=C tr -dc 0-9 | wc -c)" -eq 200 ]'
+
+# The device names are split so the scan below does not flag these fixtures.
+_ur="/dev/u""random"; _zr="/dev/ze""ro"
+
+# _run_fixture <secs> -- run.sh over a sandbox tests/ dir holding one good suite
+# and one that hangs under ignored SIGPIPE (BSD tr never exits on EPIPE).
+_run_fixture() {
+  local W; W=$(sandbox); mkdir -p "$W/tests"; cp tests/lib.sh tests/run.sh "$W/tests/"
+  printf "#!/usr/bin/env bash\necho GOOD\n" > "$W/tests/a_good.sh"
+  printf "#!/usr/bin/env bash\nLC_ALL=C /usr/bin/tr -dc a <%s | /usr/bin/head -c 4\necho TOOFAR\n" "$_ur" > "$W/tests/b_hang.sh"
+  printf "#!/usr/bin/env bash\necho LAST\n" > "$W/tests/c_last.sh"
+  TEST_SUITE_TIMEOUT="$1" /bin/bash "$W/tests/run.sh" 2>&1
+}
+t "H.7" "run.sh kills a suite that hangs under ignored SIGPIPE, names it, and runs the next suite" '
+  out=$(_run_fixture 3); rc=$?
+  [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "^GOOD$")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "^LAST$")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "TIMEOUT.*b_hang.sh")" -ge 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "suites=3 failed_suites=1")" -eq 1 ]'
+t "H.8" "run.sh defaults the per-suite limit to 600 s and honours TEST_SUITE_TIMEOUT" \
+  '[ "$(code_of tests/run.sh | grep -c "TEST_SUITE_TIMEOUT:-600")" -ge 1 ]'
+t "H.9" "run.sh ignores SIGPIPE before the suite loop" \
+  '[ "$(_first_line "trap \"\" PIPE" tests/run.sh)" -gt 0 ] && [ "$(_first_line "trap \"\" PIPE" tests/run.sh)" -lt "$(_first_line "for f in" tests/run.sh)" ]'
+
+# _unbounded_producers <files...> -- print file:line for every command that
+# reads an endless source (/dev/urandom, /dev/zero, yes) with no bound on the
+# same line: `head -c N` or dd count= before the device, or a bounded stage.
+# Names are split so this file does not trip its own scan.
+_unbounded_producers() {
+  local dev="/dev/u""random|/dev/ze""ro" f
+  for f in "$@"; do
+    code_of "$f" | awk -v f="$f" -v dev="$dev" -v yes="(^|[|;&(][[:space:]]*)y""es([[:space:]]|$)" '
+      $0 ~ dev && $0 !~ ("head -c [0-9]+ [^|]*(" dev ")") && $0 !~ /dd .*count=/ { print f ":" NR; next }
+      $0 ~ yes { print f ":" NR }'
+  done
+}
+t "H.10" "the unbounded-producer scan flags an endless read and passes a bounded one" '
+  W=$(sandbox)
+  printf "tr -dc a <$_ur | head -c 4\ncat $_zr | head -c 4\nyes | head -n 2\n" >"$W/bad.sh"
+  printf "head -c 4096 $_ur | tr -dc a\ndd if=$_zr bs=1 count=4\n# yes | head\necho yes\n" >"$W/ok.sh"
+  [ "$(_unbounded_producers "$W/bad.sh" | wc -l | tr -d " ")" -eq 3 ] && [ -z "$(_unbounded_producers "$W/ok.sh")" ]'
+_shell_files() { # every tracked shell script under tests/, bin/, scripts/
+  local f
+  git ls-files tests bin scripts | while read -r f; do
+    if [ "${f%.sh}" != "$f" ] || head -1 "$f" | grep -q "^#!.*sh"; then echo "$f"; fi
+  done
+}
+t "H.11" "no tracked shell script under tests/, bin/ or scripts/ reads an endless source unbounded" '
+  hits=$(_unbounded_producers $(_shell_files)); [ -z "$hits" ]'
 
 #############################################################################
 section "R -- submodules that no longer earn their weight are gone"

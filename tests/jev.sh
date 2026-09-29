@@ -22,7 +22,7 @@ if [ -n "${JEV_ONLY:-}" ]; then
 fi
 
 # rand <count> <tr class>: run-time random text (see tests/fixtures/make-secrets.sh)
-rand() { LC_ALL=C tr -dc "$2" </dev/urandom 2>/dev/null | head -c "$1"; }
+rand() { rand_chars "$@"; }
 
 # mkenv <W>: sandbox HOME/state/private dir, stubs (fake curl, keychain stub,
 # scutil) and an empty repo tree standing in for DOTFILES_DIR.

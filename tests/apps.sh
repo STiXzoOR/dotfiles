@@ -588,7 +588,7 @@ section "K -- the staging tree is scanned for credentials before it is published
 #############################################################################
 
 t "K1" "a credential in an app setting keeps the snapshot local: refused, reported, nothing published" \
-  'W=$(newenv); tok="ghp_$(LC_ALL=C tr -dc "A-Za-z0-9" </dev/urandom | head -c 36)"
+  'W=$(newenv); tok="ghp_$(rand_chars 36 A-Za-z0-9)"
    printf "{\"a\":1,\"token\":\"%s\"}\n" "$tok" >"$W/home/Library/Application Support/Beta/settings.json"
    out=$(run_apps backup 2>&1); rc=$?
    [ "$rc" -ne 0 ] && [ "$(nsnaps)" -eq 0 ] && [ ! -e "$W/icloud/macA/latest" ] &&
