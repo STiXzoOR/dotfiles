@@ -131,15 +131,24 @@ t "B5.10" "magnet links open without asking too (live setting)" \
 #############################################################################
 section "B6 -- LaunchAgents"
 #############################################################################
-PLIST=launchagents/disabled/com.stixzoor.mackup-auto.plist
-t "B6.1" "plist does not log into world-writable /tmp" \
-  '! grep -q "/tmp/mackup" "$PLIST"'
-t "B6.2" "plist logs under ~/Library/Logs" \
-  'grep -q "Library/Logs" "$PLIST"'
+PLIST=launchagents/com.stixzoor.dotfiles-apps-backup.plist
+t "B6.1" "the app-settings agent is enabled: a top-level plist, the old one is gone" \
+  '[ -f "$PLIST" ] && [ ! -e launchagents/disabled/com.stixzoor.mackup-auto.plist ]'
+t "B6.2" "the plist is valid and logs nowhere in /tmp (the script logs itself under ~/Library/Logs)" \
+  '[ "$(grep -c "/tmp" "$PLIST")" -eq 0 ] && [ "$(grep -c "<key>StandardOutPath</key>" "$PLIST")" -eq 0 ] &&
+   grep -q "Library/Logs" bin/dotfiles-apps &&
+   { ! command -v plutil >/dev/null 2>&1 || plutil -lint "$PLIST" >/dev/null; }'
 t "B6.3" "README records mackup's real maintenance status" \
   'grep -q "0.11.2" launchagents/disabled/README.md'
 t "B6.4" "README says to copy a plist rather than symlink it" \
   '[ "$(grep -ci "symlink" launchagents/disabled/README.md)" -ge 1 ] && grep -qi "copy" launchagents/disabled/README.md'
+t "B6.5" "the agent runs dotfiles-apps backup --scheduled through bash -c, daily at 12:30, not at load" \
+  'body=$(command cat "$PLIST")
+   printf "%s\n" "$body" | grep -qF "exec \"\$HOME/.dotfiles/bin/dotfiles-apps\" backup --scheduled" &&
+   printf "%s\n" "$body" | grep -A1 "<key>Hour</key>" | grep -q "<integer>12</integer>" &&
+   printf "%s\n" "$body" | grep -A1 "<key>Minute</key>" | grep -q "<integer>30</integer>" &&
+   printf "%s\n" "$body" | grep -A1 "<key>RunAtLoad</key>" | grep -q "<false/>" &&
+   printf "%s\n" "$body" | grep -A1 "<key>ProcessType</key>" | grep -q "<string>Background</string>"'
 
 #############################################################################
 section "B7 -- pre-macOS-27 baseline"

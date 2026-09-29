@@ -405,6 +405,8 @@ t "C4" "install --all does not back up or restore app settings (restore is delib
   'body=$(sed -n "/^sub_install_all()/,/^}/p" <(code_of bin/dotfiles)); [ "$(printf "%s\n" "$body" | grep -c "apps")" -eq 0 ]'
 t "C5" "the install summary points at apps restore" \
   'body=$(sed -n "/^sub_install()/,/^}/p" <(code_of bin/dotfiles)); printf "%s\n" "$body" | grep -q "apps restore"'
+t "C6" "the daily agent is a top-level plist (installed by --launchagents), the old hourly one is gone" \
+  '[ -f launchagents/com.stixzoor.dotfiles-apps-backup.plist ] && [ ! -e launchagents/disabled/com.stixzoor.mackup-auto.plist ]'
 t "C10" "no tracked mackup config remains at runcom/.mackup.cfg" \
   '[ ! -e runcom/.mackup.cfg ]'
 t "C11" "the wrapper sets its own PATH for launchd (/opt/homebrew/bin first)" \

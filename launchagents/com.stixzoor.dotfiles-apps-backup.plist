@@ -3,33 +3,35 @@
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>com.stixzoor.mackup-auto</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-      <key>PATH</key>
-      <string>/opt/homebrew/bin:/usr/bin:/bin</string>
-    </dict>
+    <string>com.stixzoor.dotfiles-apps-backup</string>
 
     <!--
-      Logging is redirected inside the shell command rather than through
-      StandardOutPath / StandardErrorPath. launchd expands neither ~ nor $HOME
-      in those keys, so they would need an absolute /Users path, which does not
-      belong in a public repo. The previous values pointed at /tmp, which is
-      world-writable: any local process can pre-create or symlink a file there
-      and have this agent append to it.
+      Daily copy-mode backup of app settings (bin/dotfiles-apps, see
+      docs/agents/app-settings.md). There is no StandardOutPath: launchd
+      expands neither ~ nor $HOME there, and the script logs itself to
+      ~/Library/Logs/dotfiles-apps.log. It also sets its own PATH, because
+      launchd's is /usr/bin:/bin:/usr/sbin:/sbin and mackup lives in
+      /opt/homebrew/bin.
     -->
     <key>ProgramArguments</key>
     <array>
       <string>/bin/bash</string>
       <string>-c</string>
-      <string>mkdir -p "$HOME/Library/Logs" &amp;&amp; exec /opt/homebrew/bin/mackup backup --force &gt;&gt;"$HOME/Library/Logs/mackup-auto.log" 2&gt;&amp;1</string>
+      <string>exec "$HOME/.dotfiles/bin/dotfiles-apps" backup --scheduled</string>
     </array>
 
-    <key>StartInterval</key>
-    <integer>3600</integer>
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key>
+      <integer>12</integer>
+      <key>Minute</key>
+      <integer>30</integer>
+    </dict>
 
     <key>RunAtLoad</key>
-    <true/>
+    <false/>
+
+    <key>ProcessType</key>
+    <string>Background</string>
   </dict>
 </plist>
