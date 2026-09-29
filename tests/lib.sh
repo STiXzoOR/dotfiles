@@ -54,6 +54,9 @@ _first_line() {
 # timeout <secs> <command...> -- a harness-level timeout for tests. A stock
 # macOS PATH and the CI runner have no GNU `timeout`, so: `timeout`, then
 # `gtimeout`, then a portable bash 3.2 fallback. All return 124 on expiry.
+# Limitation: the fallback signals only the command and its direct children, so
+# a grandchild that hangs may be orphaned. GNU timeout / gtimeout (what CI has,
+# via coreutils) signals the whole process group.
 # _TEST_FORCE_TIMEOUT_FALLBACK=1 skips the binaries (used to prove the
 # fallback under a PATH that does have one).
 _timeout_fallback() {

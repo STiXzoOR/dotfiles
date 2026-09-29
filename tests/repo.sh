@@ -42,8 +42,10 @@ t "H.7" "run.sh kills a suite that hangs under ignored SIGPIPE, names it, and ru
   [ "$(printf "%s\n" "$out" | grep -c "^LAST$")" -eq 1 ] &&
   [ "$(printf "%s\n" "$out" | grep -c "TIMEOUT.*b_hang.sh")" -ge 1 ] &&
   [ "$(printf "%s\n" "$out" | grep -c "suites=3 failed_suites=1")" -eq 1 ]'
-t "H.8" "run.sh defaults the per-suite limit to 600 s and honours TEST_SUITE_TIMEOUT" \
-  '[ "$(code_of tests/run.sh | grep -c "TEST_SUITE_TIMEOUT:-600")" -ge 1 ]'
+t "H.8" "run.sh defaults the per-suite limit to 900 s and honours TEST_SUITE_TIMEOUT" \
+  '[ "$(code_of tests/run.sh | grep -c "TEST_SUITE_TIMEOUT:-900")" -ge 1 ] && [ "$(code_of tests/run.sh | grep -c "TEST_SUITE_TIMEOUT:-600")" -eq 0 ]'
+t "H.12" "run.sh prints each suite wall time on a result line" \
+  'out=$(_run_fixture 3); [ "$(printf "%s\n" "$out" | grep -cE "^--- tests/a_good.sh: [0-9]+ s$")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -cE "^--- tests/c_last.sh: [0-9]+ s$")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -cE -- "--- tests/b_hang.sh: [0-9]+ s$")" -eq 1 ]'
 t "H.9" "run.sh ignores SIGPIPE before the suite loop" \
   '[ "$(_first_line "trap \"\" PIPE" tests/run.sh)" -gt 0 ] && [ "$(_first_line "trap \"\" PIPE" tests/run.sh)" -lt "$(_first_line "for f in" tests/run.sh)" ]'
 

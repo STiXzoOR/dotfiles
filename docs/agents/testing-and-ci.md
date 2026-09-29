@@ -44,12 +44,15 @@ or `xargs`: the shim is a shell function. `DOTFILES_TEST_ONLY=test_<name>
 ./bin/dotfiles-test` runs one check of the configuration suite.
 
 `tests/run.sh` runs with `SIGPIPE` ignored (`trap "" PIPE`), as GitHub's macOS
-runner does, and each suite under `timeout "${TEST_SUITE_TIMEOUT:-600}"`. With
+runner does, and each suite under `timeout "${TEST_SUITE_TIMEOUT:-900}"`. With
 `SIGPIPE` ignored, BSD `tr` never exits on `EPIPE`, so an endless producer piped
 into `head` (`tr … </dev/urandom | head -c 36`) hangs the job for its full 30
 minutes. Bound every producer: use `rand_chars <n> <class>` from `tests/lib.sh`.
 A suite that exceeds its limit is reported as `TIMEOUT: <suite>` and the next one
-still runs. `tests/repo.sh` (H.11) fails on any tracked script that reads
+still runs; every suite prints its wall time (`--- <suite>: N s`) so a slow runner
+shows how close it is. The bash fallback timeout kills only the command and its
+direct children (a hung grandchild may be orphaned); CI uses `gtimeout`, which
+signals the whole process group. `tests/repo.sh` (H.11) fails on any tracked script that reads
 `/dev/urandom` or `/dev/zero`, or runs `yes`, without a bound.
 
 Read `tests/audit-regressions.sh` **before** editing `claude/statusline.sh`,

@@ -185,7 +185,7 @@ t "A8.3" "non-arm64 exits early with a message" '
 t "A8.3b" "the arch guard exits non-zero" '
   W=$(sandbox); mkdir -p "$W/bin"; printf "#!/bin/bash\necho x86_64\n" > "$W/bin/uname"; chmod +x "$W/bin/uname"
   ! (PATH="$W/bin:$PATH" bash bin/dotfiles help >/dev/null 2>&1)'
-t "A8.3c" "arm64 is not blocked" 'bash bin/dotfiles help 2>&1 | grep -q "Usage:"'
+t "A8.3c" "arm64 is not blocked" 'out=$(bash bin/dotfiles help 2>&1); [ "$(printf "%s\n" "$out" | grep -c "Usage:")" -ge 1 ]'
 t "A8.3d" "remote-install.sh guards the architecture too" \
   'grep -q "Apple silicon only" <(code_of remote-install.sh)'
 t "A8.4" "print_result is defined" \
