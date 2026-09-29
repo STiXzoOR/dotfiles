@@ -78,6 +78,15 @@ running "Enable remote login"
 sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
 print_result $?
 
+# Like the firewall, systemsetup can print success and change nothing without
+# Full Disk Access, so read the state back.
+running "Verify Remote Login is really on"
+if sudo systemsetup -getremotelogin 2>/dev/null | grep -q "On"; then
+  ok
+else
+  error "Remote Login is still off: grant Full Disk Access to this terminal and run again"
+fi
+
 # Power. Apple silicon ignores `standbydelay` (it reads back absent), so it is
 # not written.
 running "Restart automatically after a power failure"

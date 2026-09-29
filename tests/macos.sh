@@ -267,7 +267,16 @@ _g_env() {
     _stub "$W/bin" "$n"
   done
   _stub "$W/bin" sudo 'exec "$@"'
-  _stub "$W/bin" systemsetup 'exit ${SYSTEMSETUP_RC:-0}'
+  # Remote Login: the setter only takes effect when RL_TAKES is set (without
+  # Full Disk Access systemsetup prints success and changes nothing).
+  _stub "$W/bin" systemsetup '
+case "$1" in
+  -setremotelogin) [ -n "${RL_TAKES:-}" ] && [ "${SYSTEMSETUP_RC:-0}" -eq 0 ] && echo "${3:-$2}" >"$FW_STATE/rl" ;;
+  -getremotelogin)
+    if [ "$(cat "$FW_STATE/rl" 2>/dev/null)" = on ]; then echo "Remote Login: On"; else echo "Remote Login: Off"; fi
+    exit 0 ;;
+esac
+exit ${SYSTEMSETUP_RC:-0}'
   _stub "$W/bin" xattr 'exit 1'
   _stub "$W/bin" sleep ''
   _stub "$W/bin" sysctl 'echo 8'
@@ -437,7 +446,7 @@ t "G2.10" "activateSettings is guarded by an executable test" \
 #############################################################################
 section "G3 -- security and power"
 #############################################################################
-FWOK=$(_g_env); _g_run "$FWOK" defaults.sh FW_TAKES=1
+FWOK=$(_g_env); _g_run "$FWOK" defaults.sh FW_TAKES=1 RL_TAKES=1
 # DEF ran without FW_TAKES: the firewall setters exit 0 and change nothing.
 t "G3.1" "firewall setters carry the declared values" '
   _logged "$FWOK" "socketfilterfw --setglobalstate on" && _logged "$FWOK" "socketfilterfw --setstealthmode on" &&
@@ -460,6 +469,12 @@ t "G3.7" "Remote Login is turned on, without the confirmation prompt" \
 t "G3.8" "a failing systemsetup is reported as an error" '
   W=$(_g_env) && _g_run "$W" defaults.sh SYSTEMSETUP_RC=1 &&
   grep -A0 "remote login" "$W/out" | grep -q "error"'
+t "G3.8b" "Remote Login is read back after it is set" \
+  '_logged "$FWOK" "systemsetup -getremotelogin"'
+t "G3.8c" "Remote Login that took effect prints no Full Disk Access error" \
+  '[ "$(grep -c "error.*Remote Login" "$FWOK/out")" -eq 0 ]'
+t "G3.8d" "Remote Login left off is an error naming Full Disk Access" \
+  'grep -qE "error.*Remote Login.*Full Disk Access" "$DEF/out"'
 t "G3.9" "power settings: restart after power loss, no powernap, no disk sleep, no wake-on-LAN" '
   _logged "$DEF" "sudo pmset -a autorestart 1" && _logged "$DEF" "sudo pmset -a powernap 0" &&
   _logged "$DEF" "sudo pmset -a disksleep 0" && _logged "$DEF" "sudo pmset -a womp 0"'
