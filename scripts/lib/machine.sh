@@ -8,16 +8,21 @@
 
 # desktop | laptop.
 #
-# A Mac with no internal battery is a desktop: `pmset -g batt` lists an
-# InternalBattery line only on a laptop. DOTFILES_MACHINE_ROLE=desktop|laptop
-# overrides it (any other value is ignored). When pmset cannot answer the
-# result is `laptop`: that is the role whose settings are never forced, so a
-# failed probe cannot switch on Remote Login or change power settings.
+# `desktop` needs a positive marker: pmset -g batt must say `AC Power` or `Now
+# drawing from` and must not list an InternalBattery. Anything else (empty or
+# garbled output, pmset missing or failing) is `laptop`, the role whose
+# settings are never forced, so a failed probe cannot switch on Remote Login
+# or change power settings. DOTFILES_MACHINE_ROLE=desktop|laptop overrides;
+# any other value warns once and detection runs.
 dotfiles_machine_role() {
   case "${DOTFILES_MACHINE_ROLE:-}" in
     desktop | laptop)
       printf '%s\n' "$DOTFILES_MACHINE_ROLE"
       return 0
+      ;;
+    "") ;;
+    *)
+      printf 'warning: ignoring DOTFILES_MACHINE_ROLE=%s (use desktop or laptop); detecting the role\n' "$DOTFILES_MACHINE_ROLE" >&2
       ;;
   esac
 
@@ -28,7 +33,8 @@ dotfiles_machine_role() {
   fi
   case "$batt" in
     *InternalBattery*) printf 'laptop\n' ;;
-    *) printf 'desktop\n' ;;
+    *"AC Power"* | *"Now drawing from"*) printf 'desktop\n' ;;
+    *) printf 'laptop\n' ;;
   esac
 }
 

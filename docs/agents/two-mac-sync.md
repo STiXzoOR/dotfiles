@@ -18,12 +18,13 @@ cannot be synced safely are left manual on purpose.
 
 ## Roles
 
-`scripts/lib/machine.sh` gives `dotfiles_machine_role` (`desktop` when
-`pmset -g batt` shows no `InternalBattery`, otherwise `laptop`; `laptop` too when
-pmset cannot answer, so a failed probe never forces anything) and
+`scripts/lib/machine.sh` gives `dotfiles_machine_role` (`desktop` only when
+`pmset -g batt` says `AC Power` or `Now drawing from` and lists no `InternalBattery`;
+anything else, including empty or garbled output or a failing pmset, is `laptop`, so a
+failed probe never forces anything) and
 `dotfiles_machine_name` (`DOTFILES_MACHINE_NAME`, or the sanitised
 `LocalHostName`; the app-settings snapshots use it too). Set
-`DOTFILES_MACHINE_ROLE=desktop|laptop` to override.
+`DOTFILES_MACHINE_ROLE=desktop|laptop` to override (another value warns and is ignored).
 
 `dotfiles configure --defaults` uses the role: Remote Login and the power
 settings (`autorestart`, `powernap`, `disksleep`, plus `sleep 0` and `displaysleep 10` on
@@ -56,7 +57,7 @@ secrets.age     the encrypted secrets export
 | `dotfiles private clone` | On the second Mac: clone it (`DOTFILES_PRIVATE_REMOTE`, else the default SSH URL, then `gh repo clone` when `gh` is logged in). On failure it says what to set up (an SSH key on GitHub, or `gh auth login`) and returns non-zero. |
 | `dotfiles private link`  | Symlink each private file to its path here. A different real file in the way is moved to `<name>.bak.<epoch>`; a correct link is left alone. Only the paths above are ever linked. `ssh/config` becomes `~/.ssh/config.private`, and `~/.ssh/config` gets `Include ~/.ssh/config.private` once, at the top (the public `Host *` defaults stay in `~/.ssh/config`). |
 | `dotfiles private status`| Ahead/behind/uncommitted for the private repo, and any gitignored file here that is a real file, not a link: a local change that will not reach the other Mac. |
-| `dotfiles install --private` | `clone` then `link`. It runs right before `link` in `install --all`; a failed clone is named in the summary and does not stop the run. |
+| `dotfiles install --private` | `clone` then `link`. It runs right before `link` in `install --all`; when the repo or GitHub access is not set up yet the clone is a skip that prints what to do (exit 0); a real error still fails the step. Git and ssh run non-interactively and accept a first-seen GitHub host key. |
 
 `dotfiles secrets export` with no file argument writes `secrets.age` into the
 private repo when it exists (the one git working tree export accepts). The file

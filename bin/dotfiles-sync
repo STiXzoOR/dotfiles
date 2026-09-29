@@ -436,7 +436,7 @@ setup_scheduled() {
   # Nothing may wait at a prompt: no credential prompt, no ssh passphrase
   # prompt, and Homebrew must not update itself for a read-only query.
   export GIT_TERMINAL_PROMPT=0
-  export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}"
+  export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes}"
   export HOMEBREW_NO_AUTO_UPDATE=1
   unset DOTFILES_YES
 }
@@ -455,6 +455,8 @@ main() {
       ;;
   esac
   [ "$SCHEDULED" -eq 1 ] && setup_scheduled
+  # A first-seen GitHub host key must not stop a fetch at a prompt.
+  export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}"
 
   if [ -d "$DOTFILES_DIR/.git" ]; then
     repo_sync public "$DOTFILES_DIR"

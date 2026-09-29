@@ -56,6 +56,16 @@ t "M1.4" "an override that is neither desktop nor laptop is ignored" \
   '[ "$(role_of "$BATT" DOTFILES_MACHINE_ROLE=server)" = laptop ]'
 t "M1.5" "pmset missing: the conservative answer (laptop) so nothing power-related is forced" \
   '[ "$(role_of -)" = laptop ]'
+t "M1.7" "pmset exiting 0 with empty output is a laptop (no positive desktop marker)" \
+  '[ "$(role_of "")" = laptop ]'
+t "M1.8" "garbled pmset output is a laptop" \
+  '[ "$(role_of "garbage ?? 42")" = laptop ]'
+t "M1.9" "Now drawing from without an InternalBattery is a desktop; with one it is a laptop" \
+  '[ "$(role_of "Now drawing from Something")" = desktop ] && [ "$(role_of "Now drawing from Battery Power
+ -InternalBattery-0")" = laptop ]'
+t "M1.10" "an invalid DOTFILES_MACHINE_ROLE warns once and falls back to detection" \
+  'o=$(role_of "$AC" DOTFILES_MACHINE_ROLE=Desktop 2>&1); [ "$(printf "%s\n" "$o" | grep -c "DOTFILES_MACHINE_ROLE")" -eq 1 ] && [ "$(printf "%s\n" "$o" | tail -1)" = desktop ] &&
+   o=$(role_of "$BATT" DOTFILES_MACHINE_ROLE=Desktop 2>&1) && [ "$(printf "%s\n" "$o" | tail -1)" = laptop ]'
 t "M1.6" "the role is asked of pmset -g batt" \
   'W=$(sandbox); mkdir -p "$W/bin"; : >"$W/log"; stub "$W/bin" pmset "echo AC"
    env -i HOME="$W" PATH="$W/bin:/usr/bin:/bin" STUB_LOG="$W/log" /bin/bash -c "source scripts/lib/machine.sh; dotfiles_machine_role" >/dev/null
@@ -245,6 +255,11 @@ node = \"1\""
   syn --scheduled >/dev/null 2>&1; [ "$a" -eq 1 ] && [ "$(_calls "^osascript")" -eq 0 ]'
 t "S5.10" "scheduled never waits at a git or ssh prompt" \
   '[ "$(code_of bin/dotfiles-sync | grep -c "GIT_TERMINAL_PROMPT=0")" -ge 1 ] && [ "$(code_of bin/dotfiles-sync | grep -c "BatchMode=yes")" -ge 1 ]'
+t "S5.12" "the fetches use an ssh that accepts a first-seen host key (scheduled adds BatchMode)" '
+  W=$(senv); stub "$W/bin" git '"'"'echo "GSC=${GIT_SSH_COMMAND:-}" >>"$STUB_LOG"; exec /usr/bin/git "$@"'"'"'
+  syn >/dev/null 2>&1; a=$(grep "^GSC=" "$W/log" | grep -c "StrictHostKeyChecking=accept-new"); : >"$W/log"
+  syn --scheduled >/dev/null 2>&1; b=$(grep "^GSC=" "$W/log" | grep -c "StrictHostKeyChecking=accept-new.*BatchMode=yes")
+  [ "$a" -ge 2 ] && [ "$b" -ge 2 ]'
 t "S5.11" "scheduled sets its own PATH: Homebrew when brew is not resolvable, then the mise shims" \
   '[ "$(code_of bin/dotfiles-sync | grep -c "/opt/homebrew/bin")" -ge 1 ] && [ "$(code_of bin/dotfiles-sync | grep -c "mise/shims")" -ge 1 ]'
 

@@ -31,6 +31,11 @@ PUBLIC_DIR="${DOTFILES_DIR:-$(cd "$SELF_DIR/.." && pwd)}"
 PRIVATE_DIR="${DOTFILES_PRIVATE_DIR:-$HOME/.dotfiles-private}"
 REMOTE="${DOTFILES_PRIVATE_REMOTE:-git@github.com:STiXzoOR/dotfiles-private.git}"
 
+# Never stop at an ssh prompt: a first-seen GitHub host key is accepted, and a
+# key that needs a passphrase fails instead of waiting. An ssh command the
+# owner already set is respected.
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes}"
+
 # shellcheck source=../scripts/lib/ssh.sh
 source "$SELF_DIR/../scripts/lib/ssh.sh"
 
@@ -164,11 +169,14 @@ cmd_clone() {
     fi
   fi
 
-  warn "could not clone the private repo ($REMOTE)"
-  warn "  - add an SSH key to your GitHub account (dotfiles install --ssh makes one), or run: gh auth login"
-  warn "  - if the repo does not exist yet, create it from the other Mac: dotfiles private init"
+  # Not set up yet: the repo does not exist, there is no GitHub auth, or the
+  # SSH key is not on GitHub. Exit 3 tells `install` this is a skip, not a fault.
+  warn "could not clone the private repo ($REMOTE); it is probably not set up yet"
+  warn "  - if the repo does not exist yet, on the Mac that has the files run: dotfiles private init,"
+  warn "    then: gh repo create ${slug:-<owner>/dotfiles-private} --private --source \"$PRIVATE_DIR\" --push"
+  warn "  - otherwise add an SSH key to your GitHub account (dotfiles install --ssh makes one), or run: gh auth login"
   warn "  - then run: dotfiles private clone"
-  return 1
+  return 3
 }
 
 #############################################################################
@@ -258,7 +266,13 @@ EOF
 #############################################################################
 
 cmd_install() {
-  cmd_clone || return 1
+  local rc=0
+  cmd_clone || rc=$?
+  if [ "$rc" -eq 3 ]; then
+    say "skipped: the private repo is not reachable yet (see above); nothing was linked"
+    return 0
+  fi
+  [ "$rc" -eq 0 ] || return "$rc"
   cmd_link
 }
 

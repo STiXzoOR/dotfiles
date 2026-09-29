@@ -200,8 +200,26 @@ section "P5 -- install and the ssh helper"
 t "P5.1" "install runs clone then link" '
   W=$(penv); seeded; command rm -rf "$W/priv" "$W/pub/profiles/local.zsh"
   priv install >/dev/null 2>&1 && [ -f "$W/priv/profiles/local.zsh" ] && [ -L "$W/pub/profiles/local.zsh" ]'
-t "P5.2" "install with a failing clone fails without linking" '
-  W=$(penv); ! with_env "DOTFILES_PRIVATE_REMOTE=$W/nowhere.git STUB_GH_AUTH=no" priv install >/dev/null 2>&1'
+t "P5.2" "install with a clone that cannot succeed yet is a skip (exit 0), says what to do, and links nothing" '
+  W=$(penv); E="DOTFILES_PRIVATE_REMOTE=$W/nowhere.git STUB_GH_AUTH=no"
+  out=$(with_env "$E" priv install 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -q "gh repo create" && printf "%s\n" "$out" | grep -q "SSH key" &&
+  printf "%s\n" "$out" | grep -qi "skipp" && [ ! -L "$W/pub/profiles/local.zsh" ]'
+t "P5.2b" "install with a real error (a non-git directory in the way) still fails" '
+  W=$(penv); mkdir -p "$W/priv"; printf "x\n" >"$W/priv/f"; ! priv install >/dev/null 2>&1'
+t "P5.2c" "clone on its own still returns non-zero when the repo is not there yet" '
+  W=$(penv); with_env "DOTFILES_PRIVATE_REMOTE=$W/nowhere.git STUB_GH_AUTH=no" priv clone >/dev/null 2>&1; [ "$?" -ne 0 ]'
+# A stub git in front of the real one records the ssh command git was given.
+_gitspy() { stub "$W/bin" git 'echo "GSC=${GIT_SSH_COMMAND:-}" >>"$STUB_LOG"; exec /usr/bin/git "$@"'; }
+t "P2.6" "clone gets a non-interactive ssh that accepts a first-seen host key" '
+  W=$(penv); seeded; _gitspy; : >"$W/log"; command rm -r -f "$W/priv"; priv clone >/dev/null 2>&1
+  grep -q "^GSC=.*StrictHostKeyChecking=accept-new.*BatchMode=yes" "$W/log"'
+t "P2.7" "status fetches with the same ssh options" '
+  W=$(penv); seeded; _gitspy; : >"$W/log"; priv status >/dev/null 2>&1
+  grep -q "^GSC=.*StrictHostKeyChecking=accept-new.*BatchMode=yes" "$W/log"'
+t "P2.8" "a GIT_SSH_COMMAND the owner already set is respected" '
+  W=$(penv); seeded; _gitspy; : >"$W/log"; with_env "GIT_SSH_COMMAND=myssh" priv status >/dev/null 2>&1
+  grep -q "^GSC=myssh$" "$W/log"'
 t "P5.3" "an unknown subcommand is a usage error" \
   'W=$(penv); refused "Usage" frobnicate'
 t "P5.4" "the ssh helper keeps the public Host * defaults in scripts/lib/ssh.sh" \

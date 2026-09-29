@@ -267,6 +267,8 @@ _g_env() {
     _stub "$W/bin" "$n"
   done
   _stub "$W/bin" sudo 'exec "$@"'
+  # A desktop unless a test says otherwise: a positive AC Power marker.
+  _stub "$W/bin" pmset 'case "$*" in "-g batt") printf "%s\n" "Now drawing from '"'"'AC Power'"'"'" ;; esac'
   _stub "$W/bin" systemsetup 'exit ${SYSTEMSETUP_RC:-0}'
   _stub "$W/bin" xattr 'exit 1'
   _stub "$W/bin" sleep ''
@@ -632,6 +634,9 @@ t "G6.10" "laptop: sleep and displaysleep are left alone, by override and by bat
 t "G6.11" "the sleep settings are set for AC power only (-c), never for every power source" \
   '[ "$(_logcount "$DSK" "pmset -a sleep")" -eq 0 ] && [ "$(_logcount "$DSK" "pmset -a displaysleep")" -eq 0 ] &&
    [ "$(_logcount "$DSK" "pmset -b ")" -eq 0 ]'
+t "G6.12" "a pmset that says nothing is a laptop: Remote Login and the power settings are not forced" '
+  W=$(_g_env); _stub "$W/bin" pmset ":"; _g_run "$W" defaults.sh
+  [ "$(_g_touched "$W")" -eq 0 ] && [ "$(_logcount "$W" "pmset -a autorestart")" -eq 0 ] && [ "$(_logcount "$W" "pmset -c sleep")" -eq 0 ]'
 t "G6.8" "nothing in defaults.sh ever turns Remote Login off" \
   '[ "$(code_of macos/defaults.sh | grep -c -- "-setremotelogin.* off")" -eq 0 ]'
 
