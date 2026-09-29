@@ -402,6 +402,15 @@ check_git_config() {
     else
       warn "Git user.email not configured"
     fi
+
+    # The gitleaks pre-commit hook is repo-local; without this a commit is unscanned.
+    local hooks_path
+    hooks_path="$(git -C "$DOTFILES_DIR" config --get core.hooksPath 2>/dev/null)"
+    if [[ -n "$hooks_path" ]]; then
+      ok "Git hooks path: $hooks_path"
+    else
+      warn "Git hooks are not enabled for this repo, so commits skip the secret scan (run: dotfiles hooks)"
+    fi
   else
     warn "Command Line Tools not installed; skipping the git identity check (run: xcode-select --install)"
   fi

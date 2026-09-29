@@ -151,6 +151,9 @@ sub_install() {
   # end in a success banner. mise (install --node) is not here: it needs
   # `link` to have run first, so it is one of the follow-up commands.
   DOTFILES_FAILED_STEPS=""
+  # The pre-commit hook (gitleaks) is repo-local now, so a fresh clone has none
+  # until this runs. It needs git, hence after the Command Line Tools.
+  dotfiles_run_step hooks sub_hooks
   dotfiles_run_step homebrew sub_install_homebrew
   action "installing stow..."
   dotfiles_run_step stow require_brew stow
@@ -230,7 +233,11 @@ sub_install_homebrew() {
   running "checking homebrew..."
   if ! command-exists brew; then
     action "installing homebrew"
-    if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+    # Unattended (install --all, DOTFILES_YES): sudo is already cached, so the
+    # installer must not stop to ask for a keypress.
+    local brew_env=()
+    [[ "${DOTFILES_YES:-0}" == "1" ]] && brew_env=(NONINTERACTIVE=1)
+    if ! env ${brew_env[@]+"${brew_env[@]}"} /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
       error "unable to install homebrew, script $0 abort!"
       return 1
     fi
@@ -814,6 +821,10 @@ GITLOCAL
   stow --restow -t "$HOME" runcom || rc=1
   stow --restow -t "$XDG_CONFIG_HOME" config || rc=1
   popd >/dev/null 2>&1 || true
+
+  # Files the repo ignores (gh's hosts.yml login) went into the backup with
+  # the directory stow replaced; put them back where the new link exposes them.
+  dotfiles_restore_ignored_from_backup "$ROOT_DIR" config "$backup_dir/.config"
 
   mkdir -p "$HOME/.local/runtime"
   chmod 700 "$HOME/.local/runtime"
