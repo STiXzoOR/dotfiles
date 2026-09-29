@@ -321,4 +321,38 @@ t "M4.4" "doctor does not report the by-design mise findings as problems" \
 t "M4.5" "the lockfile is tracked beside the config" \
   '[ -f config/mise/mise.lock ]'
 
+# Every `aube = { path = "..." }` in mise.lock points at a sidecar under
+# config/mise/. `mise install` fails for every npm tool on a fresh clone when
+# one is missing ("dependency sidecar ...: No such file or directory; run
+# `mise lock`"), so the sidecar tree has to be tracked, not ignored.
+# _lock_missing <lockfile> -- how many aube paths do not exist beside it.
+_lock_missing() {
+  local base n=0 p
+  base=$(dirname "$1")
+  while IFS= read -r p; do
+    [ -e "$base/$p" ] || n=$((n + 1))
+  done < <(sed -nE 's/^aube = \{ path = "([^"]+)".*/\1/p' "$1")
+  printf '%s' "$n"
+}
+
+t "M4.6" "mise.lock carries aube entries to check" \
+  '[ "$(grep -c "^aube = { path" config/mise/mise.lock)" -gt 0 ]'
+
+t "M4.7" "every aube sidecar path in mise.lock exists in the repo" \
+  '[ "$(_lock_missing config/mise/mise.lock)" -eq 0 ]'
+
+t "M4.8" "the check notices a deleted sidecar (mutation, in a sandbox copy)" \
+  'W=$(sandbox) && mkdir -p "$W/mise" &&
+   cp -R config/mise/locks "$W/mise/locks" && cp config/mise/mise.lock "$W/mise/" &&
+   [ "$(_lock_missing "$W/mise/mise.lock")" -eq 0 ] &&
+   rm -rf "$W/mise/locks/npm-svgo" &&
+   [ "$(_lock_missing "$W/mise/mise.lock")" -gt 0 ]'
+
+# The tree used to be ignored, which is what left a fresh clone without it.
+t "M4.9" "config/mise/locks is not gitignored" \
+  '! git check-ignore -q config/mise/locks/npm-svgo/x'
+
+t "M4.10" "the sidecar tree is tracked" \
+  '[ "$(git ls-files config/mise/locks | grep -c .)" -gt 0 ]'
+
 finish

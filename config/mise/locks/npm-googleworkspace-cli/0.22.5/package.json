@@ -1,0 +1,7 @@
+{
+  "name": "mise-npm-install",
+  "private": true,
+  "dependencies": {
+    "@googleworkspace/cli": "0.22.5"
+  }
+}

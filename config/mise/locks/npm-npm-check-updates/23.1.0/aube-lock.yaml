@@ -1,0 +1,24 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      npm-check-updates:
+        specifier: 23.1.0
+        version: 23.1.0
+
+packages:
+
+  npm-check-updates@23.1.0:
+    resolution: {integrity: sha512-u6Odx/JDpDXNqXp5pPsVN0RhuWkNrBe4Sz26J7yWJcEadopKhQgcB+bFq2PK35iJY6vc6h1PbnXmnwfiOFQl/w==}
+    engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0, npm: '>=10.0.0'}
+    hasBin: true
+
+snapshots:
+
+  npm-check-updates@23.1.0: {}
