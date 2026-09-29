@@ -652,4 +652,26 @@ t "P4.5" "a shell that gets no Starship never writes the cache" \
   'H=$(_zsh_sandbox) && ZSHRUN_TERM_HOST=warp ZSHRUN_HOME="$H" zshrun true &&
    [ ! -e "$H/.cache/starship-init.zsh" ]'
 
+section "P5 — pay-respects' init is cached"
+# The stub goes in $HOME/.local/bin, which system/.path puts ahead of Homebrew:
+# .pay-respects is sourced from .profile, before .local/bin/env has put .stubs
+# first, so a real pay-respects in /opt/homebrew/bin would otherwise win.
+_pr_sandbox() {
+  local h
+  h=$(_zsh_sandbox) || return 1
+  printf '#!/bin/sh\necho "pay-respects $*" >> "%s/stub.log"\necho "alias fix=true"\n' "$h" >"$h/.local/bin/pay-respects"
+  chmod +x "$h/.local/bin/pay-respects"
+  printf '%s' "$h"
+}
+t "P5.1" "the second shell makes no pay-respects call, and fix is still an alias" \
+  'H=$(_pr_sandbox) && L="$H/stub.log" &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "whence -w fix")" = "fix: alias" ] &&
+   [ "$(_calls "$L" "pay-respects zsh --alias fix")" -eq 1 ] &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "whence -w fix")" = "fix: alias" ] &&
+   [ "$(_calls "$L" "pay-respects")" -eq 1 ]'
+t "P5.2" "a newer pay-respects binary regenerates the cache" \
+  'H=$(_pr_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_HOME="$H" zshrun true && touch -t 203501010000 "$H/.local/bin/pay-respects" &&
+   ZSHRUN_HOME="$H" zshrun true && [ "$(_calls "$L" "pay-respects")" -eq 2 ]'
+
 finish
