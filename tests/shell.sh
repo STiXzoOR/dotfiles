@@ -697,4 +697,34 @@ t "P7.1" "a shell whose Prezto submodule is not initialised starts silently" \
 t "P7.2" "with Prezto present the dotfiles and pnpm completions are still registered" \
   '[ "$(zshrun "print -r -- \"\${_comps[dotfiles]}|\${_comps[pnpm]}\"")" = "_dotfiles_completions|_pnpm_completion" ]'
 
+section "P8 — the completion dump is rebuilt in the background, never in the foreground"
+# _age_dump <file> <hours> -- set mtime and atime <hours> in the past (perl:
+# GNU and BSD touch have no common relative-time flag).
+_age_dump() { perl -e 'my $t = time - $ARGV[1] * 3600; utime $t, $t, $ARGV[0]' "$1" "$2"; }
+# _dump_sandbox <hours> -- a sandbox whose dump exists (one login shell made it)
+# and is <hours> old. Prezto only regenerates it in the foreground after 20.
+_dump_sandbox() {
+  local h
+  h=$(_zsh_sandbox) || return 1
+  ZSHRUN_HOME="$h" zshrun true || return 1
+  sleep 2  # the first shell's own background zcompile
+  [ -s "$h/.cache/prezto/zcompdump" ] || return 1
+  _age_dump "$h/.cache/prezto/zcompdump" "$1"
+  printf '%s' "$h"
+}
+# _wait_newer <file> <marker> -- true once <file> is newer than <marker>, for up
+# to 20 s.
+_wait_newer() { local i=0; while [ "$i" -lt 40 ]; do [ "$1" -nt "$2" ] && return 0; sleep 0.5; i=$((i + 1)); done; return 1; }
+t "P8.1" "a dump 12 h old is rebuilt in the background, compiled, and leaves no temp file" \
+  'H=$(_dump_sandbox 12) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 11 &&
+   ZSHRUN_HOME="$H" zshrun true && _wait_newer "$D" "$H/marker" &&
+   [ "$(grep -c "^#files:" "$D")" -eq 1 ] && _wait_newer "$D.zwc" "$H/marker" &&
+   [ "$(ls "$H/.cache/prezto" | grep -c "zcompdump[.].*tmp")" -eq 0 ]'
+t "P8.2" "a dump 2 h old is left alone" \
+  'H=$(_dump_sandbox 2) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 1 &&
+   ZSHRUN_HOME="$H" zshrun true && sleep 4 && [ ! "$D" -nt "$H/marker" ]'
+t "P8.3" "the rebuild is a detached zsh -f, and never a bare compinit -C" \
+  '[ "$(code_of runcom/.zlogin | grep -c "zsh -f")" -ge 1 ] &&
+   [ "$(code_of runcom/.zlogin | grep -cE "compinit -C|zsh-defer")" -eq 0 ]'
+
 finish
