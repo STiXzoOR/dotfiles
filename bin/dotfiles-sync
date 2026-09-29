@@ -452,12 +452,16 @@ scan_vault_daily() {
   fi
   mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "$today" >"$VAULT_SCAN_STAMP" 2>/dev/null
   # FOUND is a definite hit, WARN an ambiguous one; both are file:line.
-  hits=$(printf '%s\n' "$out" | sed -n -E 's/^(FOUND|WARN)[[:space:]]+([^:]+:[0-9]+):.*/\2/p')
+  hits=$(printf '%s\n' "$out" | sed -n -E 's/^(FOUND|WARN)[[:space:]]+(.+:[0-9]+): .*/\2/p')
   n=$(printf '%s\n' "$hits" | grep -c .)
   if [ "$n" -gt 0 ]; then
     first=$(printf '%s\n' "$hits" | sed -n '1,3p' | paste -sd, - | sed 's/,/, /g')
     [ "$n" -gt 3 ] && first="$first (+$((n - 3)) more)"
     attn "vault scan: $n possible credential(s) in Claude-Sessions: $first (dotfiles jev scan-vault)"
+  fi
+  # The scan's own exit status is the truth: never let an unparsed line hide a hit.
+  if [ "$n" -eq 0 ] && [ "$rc" -eq 1 ]; then
+    attn "vault scan: possible credential(s) in the vault, see the sync log (dotfiles jev scan-vault)"
   fi
 }
 

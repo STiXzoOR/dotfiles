@@ -300,6 +300,22 @@ t "P6.10" "clone and link install the hook too" '
 t "P6.11" "the hook command with no private repo says what to run and fails" \
   'W=$(penv); refused "no private repo" hook'
 
+t "P6.12" "a core.hooksPath (repo-local or global) means git ignores the hook: warn loudly, fail, install nowhere" '
+  W=$(penv); guard_pub; seeded; command rm -f "$(PHOOK)"; git -C "$W/priv" config core.hooksPath "$W/foreign"
+  out=$(priv hook 2>&1); rc=$?
+  bad=; [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "core.hooksPath.*$W/foreign")" -ge 1 ] && [ "$(printf "%s\n" "$out" | grep -c "NOT active")" -ge 1 ] &&
+  [ ! -e "$(PHOOK)" ] && [ ! -e "$W/foreign/pre-commit" ] || bad=1
+  priv link >/dev/null 2>&1; l=$?
+  git -C "$W/priv" config --unset core.hooksPath
+  out2=$(with_env "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/elsewhere" priv hook 2>&1); rc2=$?
+  [ -z "$bad" ] && [ "$l" -ne 0 ] && [ "$rc2" -ne 0 ] && [ "$(printf "%s\n" "$out2" | grep -c "NOT active")" -ge 1 ]'
+t "P6.13" "without gitleaks the private guard says that layer is skipped; with it, no warning" '
+  W=$(penv); guard_pub; seeded; printf "brew \"jq\"\n" >>"$W/priv/Brewfile.local"; git -C "$W/priv" add -A
+  out=$(pcommit "no gitleaks" 2>&1); rc=$?
+  stub "$W/bin" gitleaks ":"; printf "brew \"fd\"\n" >>"$W/priv/Brewfile.local"; git -C "$W/priv" add -A
+  out2=$(pcommit "with gitleaks" 2>&1); rc2=$?
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "gitleaks is not installed")" -eq 1 ] && [ "$rc2" -eq 0 ] && [ "$(printf "%s\n" "$out2" | grep -c "gitleaks")" -eq 0 ]'
+
 #############################################################################
 section "P7 -- clone failures: only 'not set up yet' is a skip (Task 12.4)"
 #############################################################################

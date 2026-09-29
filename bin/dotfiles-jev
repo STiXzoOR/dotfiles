@@ -101,6 +101,9 @@ consult() {
   [ "$mode" = off ] && return 0
   sf=$(mktemp "${TMPDIR:-/tmp}/jev-state.XXXXXX") || { CONSULT_RC=1; return 0; }
   printf '%s\n' "$state" >"$sf"
+  # jev_ask runs in a command substitution, so a load inside it would be lost
+  # and repeated per question: load here, in the main shell, once per process.
+  jev_load_secrets
   ans=$(jev_ask "$point" "$sf" "$qjson")
   CONSULT_RC=$?
   rm -f "$sf"
@@ -330,7 +333,12 @@ cmd_guard_staged() {
     # The public hook has already run gitleaks over the staged diff; the
     # private repo's hook has not, so it is one of this guard's layers.
     gl=0
-    [ "$GUARD_KIND" = private ] && gl=1
+    if [ "$GUARD_KIND" = private ]; then
+      gl=1
+      if [ "${JEV_GITLEAKS:-1}" != 0 ] && ! command -v gitleaks >/dev/null 2>&1; then
+        warn "secrets: gitleaks is not installed, so that layer of the private repo's guard is skipped (brew install gitleaks)"
+      fi
+    fi
     JEV_GITLEAKS="${JEV_GITLEAKS:-$gl}" jev_scan "$tmp/all.txt" |
       awk -F'\t' 'NR == FNR { f[FNR] = $1; l[FNR] = $2; next }
                   { print f[$1] ":" l[$1] "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8 }' "$tmp/map.tsv" - >"$tmp/scan.tsv"

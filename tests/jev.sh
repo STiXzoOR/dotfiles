@@ -871,4 +871,11 @@ t "J10" "a plutil-dependent test is skipped visibly, not passed, when plutil is 
   o=$(PATH=/nonexistent; tp J10-in "needs plutil" false); [ "$(printf "%s\n" "$o" | grep -c "SKIP.*J10-in")" -eq 1 ] &&
   o2=$(tp J10-in "runs when present" true); [ "$(printf "%s\n" "$o2" | grep -c "✓.*runs when present")" -eq 1 ]'
 
+t "J11" "every consult path loads the owners secrets once, in the main shell: two hunks, one keychain read" '
+  newrepo; redact_env "$W"; command cp "$W/repo/profiles/local.zsh" "$W/r/profiles/local.zsh"
+  gstage "$W" .githooks/pre-commit "an ordinary line of prose in the first exempt file"
+  gstage "$W" tests/fixtures/make-secrets.sh "an ordinary line of prose in the second exempt file"
+  JENV="TYPESAFE_API_KEY=k1" guard >/dev/null 2>&1
+  [ "$(calls)" -eq 2 ] && [ "$(grep -c "dotfiles.openai_api_key" "$W/sec/calls.log")" -eq 1 ]'
+
 finish

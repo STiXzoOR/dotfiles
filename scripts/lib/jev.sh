@@ -451,8 +451,9 @@ jev_ask() {
   tries="${JEV_TRIES:-2}"
   max="${JEV_MAX_REQUESTS:-20}"
 
-  # Once per run, here: jev_redact runs in a pipeline, and a load inside it
-  # would be repeated (a keychain read per item) for every request.
+  # jev_redact runs in a pipeline (a subshell whose load is discarded), so load
+  # here. That is once per process only when jev_ask itself runs in the main
+  # shell; callers that wrap it in $(...) load first (bin/dotfiles-jev consult).
   jev_load_secrets
   body="$JEV_RUN_DIR/body.$$.$RANDOM"
   resp="$JEV_RUN_DIR/resp.$$.$RANDOM"

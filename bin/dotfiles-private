@@ -225,7 +225,7 @@ EOF
 cmd_clone() {
   local rc=0
   clone_repo || rc=$?
-  [ "$rc" -eq 0 ] && install_hook
+  if [ "$rc" -eq 0 ]; then install_hook || rc=1; fi
   return "$rc"
 }
 
@@ -260,8 +260,16 @@ EOF
 # install_hook: idempotent. A hook that is already ours is rewritten only when
 # it differs; a different hook is moved to pre-commit.bak.<epoch> first.
 install_hook() {
-  local gitdir hooks hook new bak
+  local gitdir hooks hook new bak hp
   need_private || return 1
+  # git ignores .git/hooks when core.hooksPath is set (here or globally), which
+  # would leave the guard silently inactive: say so and install nowhere.
+  hp=$(git -C "$PRIVATE_DIR" config --get core.hooksPath 2>/dev/null)
+  if [ -n "$hp" ]; then
+    err "core.hooksPath is set ($hp), so git will not run the private repo's own hooks: the secrets guard is NOT active."
+    err "  Unset it for this repo (git -C \"$PRIVATE_DIR\" config --unset core.hooksPath) or add the guard to that hooks directory yourself, then run: dotfiles private hook"
+    return 1
+  fi
   gitdir=$(git -C "$PRIVATE_DIR" rev-parse --absolute-git-dir 2>/dev/null) || { err "could not find the git dir of $PRIVATE_DIR"; return 1; }
   hooks="$gitdir/hooks"
   hook="$hooks/pre-commit"
@@ -375,7 +383,9 @@ EOF
 
 cmd_install() {
   local rc=0
-  cmd_clone || rc=$?
+  # clone_repo, not cmd_clone: link installs the hook itself, and a hook
+  # problem must not stop the files from being linked.
+  clone_repo || rc=$?
   if [ "$rc" -eq 3 ]; then
     say "skipped: the private repo is not reachable yet (see above); nothing was linked"
     return 0

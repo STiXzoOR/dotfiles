@@ -352,6 +352,15 @@ FOUND d.md:9: flagged by gitleaks"
   E=$(JEVSTUB_ENV "$W"); SYNENV="$E" syn --scheduled >/dev/null 2>&1; n=$(grep "^osascript" "$W/log")
   [ "$(_calls "^osascript")" -eq 1 ] && printf "%s\n" "$n" | grep -q "4 possible credential" && printf "%s\n" "$n" | grep -q "a.md:2" &&
   printf "%s\n" "$n" | grep -q "c.md:7" && printf "%s\n" "$n" | grep -q "+1 more" && [ "$(printf "%s\n" "$n" | grep -c "d.md:9")" -eq 0 ]'
+t "S8.10" "a note whose name holds a colon is still reported, by its whole path" '
+  W=$(senv); d=$(vault_of "$W"); tok="ghp_$(rand_chars 36 A-Za-z0-9)"
+  printf "x=%s\n" "$tok" >"$d/Session 12:30 x.md"
+  syn --scheduled >/dev/null 2>&1; n=$(grep "^osascript" "$W/log")
+  [ "$(_calls "^osascript")" -eq 1 ] && printf "%s\n" "$n" | grep -q "1 possible credential" && printf "%s\n" "$n" | grep -q "Session 12:30 x.md:1" &&
+  [ "$(printf "%s\n" "$n" | grep -c "$tok")" -eq 0 ]'
+t "S8.11" "a scan that exits 1 always notifies, even when no hit line can be parsed" '
+  W=$(senv); d=$(vault_of "$W"); jevstub "$W" 1 "something unexpected"; E=$(JEVSTUB_ENV "$W"); SYNENV="$E" syn --scheduled >/dev/null 2>&1
+  [ "$(_calls "^osascript")" -eq 1 ] && grep "^osascript" "$W/log" | grep -q "possible credential(s) in the vault" && grep "^osascript" "$W/log" | grep -q "log"'
 t "S8.9" "the scan is report-only: it never edits, deletes or moves anything in the vault" '
   W=$(senv); d=$(vault_of "$W"); tok="ghp_$(rand_chars 36 A-Za-z0-9)"; printf "x=%s\n" "$tok" >"$d/s.md"
   a=$(shasum "$d/s.md"); syn --scheduled >/dev/null 2>&1; [ "$(shasum "$d/s.md")" = "$a" ] && [ "$(ls "$d" | wc -l | tr -d " ")" -eq 1 ]'
