@@ -224,7 +224,10 @@ cmd_check() {
   done
 
   owned_sources_ok || return 1
-  targets=$(owned_targets)
+  # Lowercase once, in one awk each, not with a fork per path and target: the
+  # owned list has hundreds of entries, and a tr per pair made every check
+  # take seconds.
+  targets=$(owned_targets | awk -F'\t' 'NF >= 2 { printf "%s\t%s\t%s\n", $1, $2, tolower($2) }')
   for app in $apps; do
     if [ -z "$(app_procs "$app")" ]; then
       err "$app has no process mapping in $PROCS_FILE; restore could not tell whether it is running"
@@ -235,11 +238,10 @@ cmd_check() {
       rc=1
       continue
     fi
-    while IFS= read -r p; do
-      pl=$(lower "${p%/}")
-      while IFS=$'\t' read -r why t; do
+    while IFS=$'\t' read -r p pl; do
+      [ -n "$p" ] || continue
+      while IFS=$'\t' read -r why t tl; do
         [ -n "$t" ] || continue
-        tl=$(lower "$t")
         if overlaps "$pl" "$tl"; then
           err "OVERLAP: $app covers '$p', which the dotfiles own ($why: $t)"
           rc=1
@@ -248,7 +250,7 @@ cmd_check() {
 $targets
 EOF
     done <<EOF
-$paths
+$(printf '%s\n' "$paths" | awk '{ l = tolower($0); sub(/\/$/, "", l); printf "%s\t%s\n", $0, l }')
 EOF
   done
   return "$rc"
@@ -593,15 +595,16 @@ EOF
 }
 
 # Ask iCloud for a snapshot and wait (DOTFILES_APPS_DL_WAIT seconds, default
-# 60) until no *.icloud placeholder remains under it.
+# 60) until no *.icloud placeholder remains under it, polling every
+# DOTFILES_APPS_DL_POLL seconds (default 2). Tests set both to 0.
 materialise() {
-  local dir="$1" wait="${DOTFILES_APPS_DL_WAIT:-60}" waited=0 left
+  local dir="$1" wait="${DOTFILES_APPS_DL_WAIT:-60}" poll="${DOTFILES_APPS_DL_POLL:-2}" waited=0 left
   command -v brctl >/dev/null 2>&1 && brctl download "$dir" >/dev/null 2>&1
   while :; do
     left=$(placeholders "$dir")
     [ -z "$left" ] && return 0
     [ "$waited" -ge "$wait" ] && break
-    sleep 2
+    sleep "$poll"
     waited=$((waited + 2))
   done
   err "iCloud has not finished downloading $dir; these placeholder(s) remain, so nothing was restored (try again shortly):"

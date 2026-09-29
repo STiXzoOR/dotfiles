@@ -25,13 +25,34 @@ APPS=bin/dotfiles-apps
 HAVE_PLUTIL=0
 [ -x /usr/bin/plutil ] && HAVE_PLUTIL=1
 [ "$HAVE_PLUTIL" -eq 1 ] || printf '%sSKIP%s H26 needs the real /usr/bin/plutil\n' "$RED" "$RESET"
+# The real mackup is slow to start (Python) and reads a real install, so tests
+# that run it are opt-in: DOTFILES_TEST_REAL_MACKUP=1.
 HAVE_MACKUP=0
-if [ -x /opt/homebrew/bin/mackup ]; then
+if [ "${DOTFILES_TEST_REAL_MACKUP:-}" != 1 ]; then
+  printf '%sSKIP%s tests that run the real mackup (G2.16, C12): set DOTFILES_TEST_REAL_MACKUP=1 to include them\n' "$RED" "$RESET"
+elif [ -x /opt/homebrew/bin/mackup ]; then
   HAVE_MACKUP=1
 else
   printf '%sSKIP%s tests that need a real mackup (G2.16, C12): /opt/homebrew/bin/mackup is not installed\n' "$RED" "$RESET"
 fi
 PLIST_OK='<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>k</key><string>v</string></dict></plist>'
+
+# shared_stubs: the stub binaries, written once per run into $SHARED_STUBS and
+# symlinked into every sandbox. macOS scans an executable the first time it is
+# run, about a second each; a fresh copy of six stubs per test made this suite
+# take over ten minutes. A symlink to an already-run file is not scanned again.
+SHARED_STUBS="$_sandbox_root/shared-stubs"
+shared_stubs() {
+  [ -x "$SHARED_STUBS/plutil" ] && return 0
+  mkdir -p "$SHARED_STUBS" || return 1
+  cp tests/fixtures/mackup-stub "$SHARED_STUBS/mackup"
+  printf '#!/bin/sh\necho "pgrep $*" >>"$STUB_LOG"\n[ "$1" = "-x" ] && [ -f "$STUB_RUNNING" ] && grep -Fxq -- "$2" "$STUB_RUNNING"\n' >"$SHARED_STUBS/pgrep"
+  printf '#!/bin/sh\necho "killall $*" >>"$STUB_LOG"\n' >"$SHARED_STUBS/killall"
+  printf '#!/bin/sh\necho "brctl $*" >>"$STUB_LOG"\n[ "${STUB_BRCTL_MATERIALIZE:-}" = 1 ] && find "$2" -name "*.icloud" -exec rm -f {} + 2>/dev/null\nexit 0\n' >"$SHARED_STUBS/brctl"
+  printf '#!/bin/sh\nprintf "%%s\\n" "${STUB_HOSTNAME:-My Mac_mini.local}"\n' >"$SHARED_STUBS/scutil"
+  printf '#!/bin/sh\necho "plutil $*" >>"$STUB_LOG"\n[ -n "${STUB_PLUTIL_LAX:-}" ] && [ -s "$2" ] && exit 0\n[ -s "$2" ] && grep -q "<plist" "$2"\n' >"$SHARED_STUBS/plutil"
+  chmod +x "$SHARED_STUBS/"*
+}
 
 # mkenv <W>: a sandbox HOME, stubs, fixture app definitions and a fixture
 # allowlist (alpha, beta). Everything the tool reads or writes lives under W.
@@ -41,13 +62,9 @@ mkenv() {
     "$h/.config" "$w/stubs" "$w/defs" "$w/cfg" "$w/icloud"
   printf '%s\n' "$PLIST_OK" >"$h/Library/Preferences/com.example.alpha.plist"
   printf '{"a":1}\n' >"$h/Library/Application Support/Beta/settings.json"
-  cp tests/fixtures/mackup-stub "$w/stubs/mackup"
-  printf '#!/bin/sh\necho "pgrep $*" >>"$STUB_LOG"\n[ "$1" = "-x" ] && [ -f "$STUB_RUNNING" ] && grep -Fxq -- "$2" "$STUB_RUNNING"\n' >"$w/stubs/pgrep"
-  printf '#!/bin/sh\necho "killall $*" >>"$STUB_LOG"\n' >"$w/stubs/killall"
-  printf '#!/bin/sh\necho "brctl $*" >>"$STUB_LOG"\n[ "${STUB_BRCTL_MATERIALIZE:-}" = 1 ] && find "$2" -name "*.icloud" -exec rm -f {} + 2>/dev/null\nexit 0\n' >"$w/stubs/brctl"
-  printf '#!/bin/sh\nprintf "%%s\\n" "${STUB_HOSTNAME:-My Mac_mini.local}"\n' >"$w/stubs/scutil"
-  printf '#!/bin/sh\necho "plutil $*" >>"$STUB_LOG"\n[ -n "${STUB_PLUTIL_LAX:-}" ] && [ -s "$2" ] && exit 0\n[ -s "$2" ] && grep -q "<plist" "$2"\n' >"$w/stubs/plutil"
-  chmod +x "$w/stubs/"*
+  local n
+  shared_stubs
+  for n in mackup pgrep killall brctl scutil plutil; do ln -s "$SHARED_STUBS/$n" "$w/stubs/$n"; done
   add_app "$w" alpha "Library/Preferences/com.example.alpha.plist"
   add_app "$w" beta "Library/Application Support/Beta"
   set_allow "$w" alpha beta
@@ -74,7 +91,7 @@ run_apps() {
   env -i HOME="$W/home" XDG_CONFIG_HOME="$W/home/.config" PATH="$W/stubs:/usr/bin:/bin" \
     DOTFILES_DIR="${APPS_DF:-$ROOT_DIR}" DOTFILES_APPS_STORE="$W/icloud" \
     DOTFILES_MACHINE_NAME=macA DOTFILES_APPS_CFG="$W/cfg/mackup.cfg" \
-    DOTFILES_APPS_DL_WAIT=0 STUB_LOG="$W/log" STUB_DEFS="$W/defs" STUB_RUNNING="$W/running" \
+    DOTFILES_APPS_DL_WAIT=0 DOTFILES_APPS_DL_POLL=0 STUB_LOG="$W/log" STUB_DEFS="$W/defs" STUB_RUNNING="$W/running" \
     ${APPS_ENV:-} bash "$ROOT_DIR/$APPS" "$@"
 }
 
