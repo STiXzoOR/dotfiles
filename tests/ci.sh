@@ -232,4 +232,23 @@ t "F4.24" "the environment step loads the chain, not system/.env on its own" '
     && [ "$(code_of bin/dotfiles-test | grep -c "expected nvim or vim")" -ge 1 ]'
 
 
+#############################################################################
+section "F5 — workflow hygiene"
+#############################################################################
+
+t "F5.1" "every job in every workflow sets timeout-minutes" '
+  (n=0; for f in .github/workflows/*.yml; do
+    jobs=$(code_of "$f" | grep -cE "^    runs-on:")
+    tm=$(code_of "$f" | grep -cE "^    timeout-minutes: [0-9]+$")
+    [ "$jobs" -ge 1 ] && [ "$jobs" -eq "$tm" ] || exit 1
+    n=$((n + 1))
+  done; [ "$n" -ge 1 ])'
+t "F5.2" "the workflow runs the bash suites through tests/run.sh" \
+  '[ "$(code_of .github/workflows/ci.yml | grep -c "bash tests/run.sh")" -ge 1 ]'
+t "F5.3" "run.sh skips only lib.sh and itself, so codex.sh and apps.sh are picked up" '
+  [ -f tests/codex.sh ] && [ -f tests/apps.sh ] && [ -f tests/mise.sh ] &&
+  [ "$(code_of tests/run.sh | grep -c "lib.sh | run.sh) continue")" -eq 1 ] &&
+  [ "$(code_of tests/run.sh | grep -c "for f in tests/\*.sh")" -eq 1 ]'
+
+
 finish

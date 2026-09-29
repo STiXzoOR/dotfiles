@@ -18,7 +18,7 @@ any suite failed. Arguments are passed through to each suite.
 
 | File                       | Covers                                                        |
 | -------------------------- | ------------------------------------------------------------- |
-| `tests/lib.sh`             | The shared harness: `t`, `section`, `code_of`, `sandbox`, `finish` |
+| `tests/lib.sh`             | The shared harness: `t`, `section`, `code_of`, `sandbox`, `finish`, and a `timeout` shim |
 | `tests/run.sh`             | The runner                                                     |
 | `tests/audit-regressions.sh` | Every regression the earlier audits found, by id (S2.*, S5.*, CB.*, SL.*, S7.*) |
 | `tests/repo.sh`            | Repository hygiene — gitignore, submodules, attributes         |
@@ -27,8 +27,18 @@ any suite failed. Arguments are passed through to each suite.
 | `tests/shell.sh`           | `runcom/`, `system/`, `profiles/`, completions                 |
 | `tests/packages.sh`        | `Brewfile`, `packages/`, `config/`                             |
 | `tests/claude.sh`          | The Claude Code bootstrap, hooks, status line, rules and docs  |
+| `tests/codex.sh`           | The Codex bootstrap (`scripts/install_codex.sh`, `codex/`)     |
+| `tests/apps.sh`            | `dotfiles apps`, app-settings backup and restore (mackup, copy mode) |
+| `tests/mise.sh`            | mise config, the lockfile and `config/mise/locks/`             |
 | `tests/ci.sh`              | The workflows and git hooks                                    |
 | `tests/secrets.sh`         | `bin/dotfiles-secrets`                                         |
+
+`tests/lib.sh` defines a `timeout <secs> <cmd...>` function for the suites. A
+stock macOS `PATH` and the CI runner have no GNU `timeout`, so it uses `timeout`,
+then `gtimeout`, then a bash 3.2 fallback (background process plus `kill`) that
+returns 124 on expiry like GNU. Never call a bare `timeout` binary through `env`
+or `xargs`: the shim is a shell function. `DOTFILES_TEST_ONLY=test_<name>
+./bin/dotfiles-test` runs one check of the configuration suite.
 
 Read `tests/audit-regressions.sh` **before** editing `claude/statusline.sh`,
 `claude/settings.template.json` or anything under `claude/hooks/`. It encodes
@@ -54,7 +64,7 @@ Two traps the harness documents and that have already bitten:
 Tests must be side-effect free on the real machine: no writes under `$HOME`
 except through `sandbox`, no keychain, no network.
 
-### Install-flow tests (`tests/cli.sh`, sections N1-N11)
+### Install-flow tests (`tests/cli.sh`, sections N1-N11, W1-W3)
 
 These run the real code against stub binaries on a sandbox `PATH`, in a sandbox
 `HOME`, and assert on argv, exit status and output. Patterns to reuse:
@@ -91,9 +101,14 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push and pull request:
 4. The `tests/run.sh` regression suites
 5. Brewfile validation
 
+Every job sets `timeout-minutes` (`tests/ci.sh`, F5). `bin/dotfiles-test` exports
+`DOTFILES_DIR`, because the runner has no `~/.dotfiles` and the tools it runs
+would otherwise fall back to it.
+
 ## Git Hooks
 
-Install with `./bin/dotfiles hooks`. Pre-commit runs bash and zsh syntax
+`core.hooksPath` is repo-local (`.githooks`), set by `dotfiles install` (or
+`./bin/dotfiles hooks`); `dotfiles doctor` warns when it is not set. Pre-commit runs bash and zsh syntax
 validation, shellcheck, and a credential scan with gitleaks (falling back to
 built-in patterns when gitleaks is absent).
 

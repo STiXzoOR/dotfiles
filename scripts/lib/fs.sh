@@ -168,6 +168,40 @@ EOF
   return 0
 }
 
+# usage: dotfiles_restore_ignored_from_backup <repo-dir> <package> <backup-bucket>
+#
+# Stow replaces a real ~/.config/gh with a symlink into the repo, and the old
+# directory goes to the backup. Files the repo deliberately ignores (gh's
+# hosts.yml holds the login) are then no longer at the live path. Copy each
+# such file from <backup-bucket> into <repo-dir>/<package>/, where the symlink
+# shows it at the live path again. Only files git ignores, and never over a
+# file that is already there.
+dotfiles_restore_ignored_from_backup() {
+  _dfi_repo="$1"
+  _dfi_pkg="$2"
+  _dfi_bucket="$3"
+  [ -d "$_dfi_bucket" ] || { unset _dfi_repo _dfi_pkg _dfi_bucket; return 0; }
+
+  while IFS= read -r _dfi_file; do
+    [ -n "$_dfi_file" ] || continue
+    _dfi_rel=${_dfi_file#"$_dfi_bucket"/}
+    _dfi_dest="$_dfi_repo/$_dfi_pkg/$_dfi_rel"
+    if [ -e "$_dfi_dest" ] || [ -L "$_dfi_dest" ]; then
+      continue
+    fi
+    git -C "$_dfi_repo" check-ignore -q "$_dfi_pkg/$_dfi_rel" 2>/dev/null || continue
+    mkdir -p "$(dirname "$_dfi_dest")" || continue
+    if cp -p "$_dfi_file" "$_dfi_dest"; then
+      echo "restored ignored file $_dfi_pkg/$_dfi_rel from the backup"
+    fi
+  done << EOF
+$(find "$_dfi_bucket" -type f 2>/dev/null)
+EOF
+
+  unset _dfi_repo _dfi_pkg _dfi_bucket _dfi_file _dfi_rel _dfi_dest
+  return 0
+}
+
 #############################################################################
 # Hosts file
 #############################################################################

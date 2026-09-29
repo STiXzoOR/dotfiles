@@ -51,6 +51,43 @@ _first_line() {
   code_of "$2" | awk -v p="$1" 'index($0, p) && !n { n = NR } END { print n + 0 }'
 }
 
+# timeout <secs> <command...> -- a harness-level timeout for tests. A stock
+# macOS PATH and the CI runner have no GNU `timeout`, so: `timeout`, then
+# `gtimeout`, then a portable bash 3.2 fallback. All return 124 on expiry.
+# _TEST_FORCE_TIMEOUT_FALLBACK=1 skips the binaries (used to prove the
+# fallback under a PATH that does have one).
+_timeout_fallback() {
+  local secs=$1 flag pid wpid rc
+  shift
+  flag=$(mktemp "${TMPDIR:-/tmp}/dftimeout.XXXXXX") || return 125
+  rm -f "$flag"
+  "$@" <&0 &
+  pid=$!
+  (
+    sleep "$secs"
+    : >"$flag"
+    pkill -TERM -P "$pid" 2>/dev/null
+    kill -TERM "$pid" 2>/dev/null
+  ) >/dev/null 2>&1 &
+  wpid=$!
+  wait "$pid" 2>/dev/null
+  rc=$?
+  kill "$wpid" 2>/dev/null
+  pkill -P "$wpid" 2>/dev/null
+  wait "$wpid" 2>/dev/null
+  if [ -e "$flag" ]; then rm -f "$flag"; return 124; fi
+  return "$rc"
+}
+
+timeout() {
+  local bin
+  if [ -z "${_TEST_FORCE_TIMEOUT_FALLBACK:-}" ]; then
+    bin=$(type -P timeout) || bin=$(type -P gtimeout) || bin=
+    if [ -n "$bin" ]; then "$bin" "$@"; return; fi
+  fi
+  _timeout_fallback "$@"
+}
+
 # A throwaway directory under $TMPDIR, removed by finish. Never under $HOME.
 sandbox() {
   local d

@@ -33,7 +33,7 @@ default and diffs a later capture against it.
 ## install flags
 
 ```
-install                 # Bootstrap: sudo keep-alive, Command Line Tools, Homebrew, stow, SSH key
+install                 # Bootstrap: sudo keep-alive, Command Line Tools, git hooks, Homebrew, stow, SSH key
 install --all           # The steps below in order: prezto, link, node, packages, fonts,
                         #   launchagents, claude, codex, configure, hosts (last)
 install --claude        # Claude Code: binary, marketplaces, plugins, hooks, rules, settings, QMD
@@ -55,6 +55,12 @@ Behaviours worth knowing:
   exit status. The success banner appears only when nothing failed. A failed
   Command Line Tools install aborts `install` immediately, since nothing after it
   can work.
+- **Unattended runs.** With `DOTFILES_YES=1` (`install --all`) the Homebrew
+  installer runs with `NONINTERACTIVE=1`; sudo is already cached.
+- **`link` keeps ignored files.** Stow swaps a real `~/.config/gh` for a symlink
+  into the repo. Files the repo git-ignores (`gh/hosts.yml`, the login) are copied
+  from the backup into `config/` so they stay live; existing files are never
+  overwritten.
 - **`--node` refuses to run before `link`.** mise reads `~/.config/mise`, which must
   resolve to `config/mise` in this checkout; pointing `MISE_GLOBAL_CONFIG_FILE` at
   the repo instead makes mise rewrite the paths in `mise.lock`. It also installs

@@ -893,7 +893,7 @@ _mk_repo() { # _mk_repo <W> <step>... -- steps listed are NOT stubbed
     echo 'require_brew() { _log "brew:$*"; }'
     local s keep
     for s in install_clt install_homebrew install_ssh install_prezto install_node install_packages install_fonts \
-      install_launchagents install_claude install_codex install_hosts link configure; do
+      install_launchagents install_claude install_codex install_hosts link configure hooks; do
       keep=0; for k in "$@"; do [ "$k" = "$s" ] && keep=1; done
       [ "$keep" = 1 ] && continue
       echo "sub_$s() { _log ${s#install_}; case \",\${FAIL:-},\" in *,${s#install_},*) return 1 ;; esac; return 0; }"
@@ -910,7 +910,7 @@ _log_line() { tr '\n' ' ' < "$1" | sed -E 's/ +$//'; }
 
 t "N4.1" "plain install runs keep-alive, CLT, Homebrew, stow, then SSH, and no node" '
   W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install >/dev/null 2>&1
-  [ "$(_log_line "$W/log")" = "keepalive clt homebrew brew:stow ssh" ]'
+  [ "$(_log_line "$W/log")" = "keepalive clt hooks homebrew brew:stow ssh" ]'
 t "N4.2" "plain install with every step green prints the banner and the complementary commands" '
   W=$(sandbox); _mk_repo "$W"; out=$(_run_repo "$W" install 2>&1); rc=$?
   [ "$rc" -eq 0 ] && case "$out" in *"All done"*"install --node"*"install --codex"*"install --all"*) true ;; *) false ;; esac'
@@ -922,7 +922,7 @@ t "N4.4" "a failed SSH step is named, there is no success banner, and the status
   [ "$rc" -ne 0 ] && case "$out" in *"All done"*) false ;; *ssh*) true ;; *) false ;; esac'
 t "N4.5" "a failed Homebrew step does not stop stow and SSH from being tried" '
   W=$(sandbox); _mk_repo "$W"; out=$(FAIL=homebrew _run_repo "$W" install 2>&1); rc=$?
-  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive clt homebrew brew:stow ssh" ] &&
+  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive clt hooks homebrew brew:stow ssh" ] &&
   case "$out" in *"All done"*) false ;; *homebrew*) true ;; *) false ;; esac'
 t "N4.6" "install --all runs the steps in the documented order with hosts last" '
   W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install --all >/dev/null 2>&1; rc=$?
@@ -1059,7 +1059,7 @@ cd "$PWD" || exit 1
 . scripts/echos.sh; . scripts/requirers.sh; . "$W/fn.sh"
 sub_install_packages
 RUN
-  env SW="$W" "$@" timeout 30 bash "$W/run.sh" </dev/null
+  timeout 30 env SW="$W" "$@" bash "$W/run.sh" </dev/null
 }
 t "N6.1" "each tap is tapped and then trusted" '
   W=$(sandbox); _pk_setup "$W"; _pk_run "$W" >/dev/null 2>&1
@@ -1264,12 +1264,12 @@ _doc_setup() { # _doc_setup <W> <clt: yes|no>
   ln -s "$W/df/runcom/.zshrc" "$W/h/.zshrc"; ln -s "$W/df/runcom/.zprofile" "$W/h/.zprofile"
   ln -s "$W/df/config/mise" "$W/h/.config/mise"
   if [ "$clt" = yes ]; then stub "$W/bin" xcode-select 'echo /Library/Developer/CommandLineTools'; else stub "$W/bin" xcode-select 'exit 1'; fi
-  stub "$W/bin" git 'echo "git $*" >> "$SW/log"; exit 0'
+  stub "$W/bin" git 'echo "git $*" >> "$SW/log"; case "$*" in *core.hooksPath*) [ -n "${HP:-}" ] && echo "$HP" ;; esac; exit 0'
   stub "$W/bin" brew 'case "$1" in --version) echo "Homebrew 7.0.0" ;; esac; exit 0'
 }
 _doc_run() { # _doc_run <W> [doctor args...]
   local W="$1"; shift
-  env SW="$W" HOME="$W/h" XDG_CONFIG_HOME="$W/h/.config" DOTFILES_DIR="$W/df" PATH="$W/bin:/usr/bin:/bin" SHELL=/bin/zsh XDG_CACHE_HOME="$W/cache" TERM=dumb \
+  env SW="$W" HP="${HP:-}" HOME="$W/h" XDG_CONFIG_HOME="$W/h/.config" DOTFILES_DIR="$W/df" PATH="$W/bin:/usr/bin:/bin" SHELL=/bin/zsh XDG_CACHE_HOME="$W/cache" TERM=dumb \
     zsh bin/dotfiles-doctor "$@" </dev/null
 }
 t "N10.1" "no phantom submodules: prezto-contrib and stevenblack-hosts are never mentioned" '
@@ -1355,5 +1355,150 @@ t "N11.5" "a declined link is not reported as linked" '
 t "N11.6" "a failed link is not reported as linked" '
   W=$(sandbox); _wiz_setup "$W" yes; out=$(LINK_RC=1 _wiz_run "$W" "$_wiz_yes_link" 2>&1)
   case "$out" in *"Configuration linked"*) false ;; *"Setup Complete"*) true ;; *) false ;; esac'
+
+#############################################################################
+section "W1 — the harness timeout works without GNU timeout"
+#############################################################################
+
+t "W1.1" "the fallback returns 124 when the command outlives the limit, and quickly" '
+  s=$SECONDS
+  bash -c "source tests/lib.sh; _timeout_fallback 1 sleep 8" >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 124 ] && [ $((SECONDS - s)) -lt 6 ]'
+t "W1.2" "the fallback passes the command exit status through" '
+  bash -c "source tests/lib.sh; _timeout_fallback 5 bash -c \"exit 7\"" >/dev/null 2>&1; [ $? -eq 7 ]'
+t "W1.3" "the fallback passes stdout and stdin through" '
+  out=$(printf hello | bash -c "source tests/lib.sh; _timeout_fallback 5 cat" 2>/dev/null); [ "$out" = hello ]'
+t "W1.4" "the fallback returns promptly when the command finishes early" '
+  s=$SECONDS; bash -c "source tests/lib.sh; _timeout_fallback 30 true" >/dev/null 2>&1
+  [ $((SECONDS - s)) -lt 10 ]'
+t "W1.5" "timeout works under a stock PATH with no GNU timeout" '
+  s=$SECONDS
+  env PATH=/usr/bin:/bin _TEST_FORCE_TIMEOUT_FALLBACK=1 bash -c "source tests/lib.sh; timeout 1 sleep 8" >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 124 ] && [ $((SECONDS - s)) -lt 6 ]'
+t "W1.6" "timeout runs a shell function-free command normally under a stock PATH" '
+  out=$(env PATH=/usr/bin:/bin bash -c "source tests/lib.sh; timeout 5 echo ok" 2>/dev/null); [ "$out" = ok ]'
+
+#############################################################################
+section "W2 — dotfiles-test hands its repo path to the tools it runs"
+#############################################################################
+
+# CI has no ~/.dotfiles: the runner checks the repo out elsewhere. Without an
+# exported DOTFILES_DIR, dotfiles-baseline fell back to $HOME/.dotfiles, listed
+# 0 keys and failed, and set -e then skipped tests/run.sh.
+t "W2.1" "the baseline check passes with an empty HOME and the repo elsewhere" '
+  W=$(sandbox); mkdir -p "$W/h"
+  out=$(env -u DOTFILES_DIR HOME="$W/h" DOTFILES_TEST_ONLY=test_defaults_baseline "$PWD/bin/dotfiles-test" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && case "$out" in *"Captures all"*) true ;; *) false ;; esac'
+t "W2.2" "DOTFILES_TEST_ONLY refuses a name that is not a test function" '
+  W=$(sandbox); mkdir -p "$W/h"
+  ! env HOME="$W/h" DOTFILES_TEST_ONLY=rm "$PWD/bin/dotfiles-test" >/dev/null 2>&1 &&
+  ! env HOME="$W/h" DOTFILES_TEST_ONLY=test_nonesuch "$PWD/bin/dotfiles-test" >/dev/null 2>&1'
+
+#############################################################################
+section "W3 — hooks, unattended Homebrew, ignored files kept across link"
+#############################################################################
+
+t "W3.1" "install sets the repo-local git hooks after the Command Line Tools and before Homebrew" '
+  W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install >/dev/null 2>&1
+  [ "$(_first_line clt "$W/log")" -lt "$(_first_line hooks "$W/log")" ] &&
+  [ "$(_first_line hooks "$W/log")" -lt "$(_first_line homebrew "$W/log")" ]'
+t "W3.2" "a failed hooks step is reported and does not stop the rest" '
+  W=$(sandbox); _mk_repo "$W"; out=$(FAIL=hooks _run_repo "$W" install 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive clt hooks homebrew brew:stow ssh" ]'
+t "W3.3" "sub_hooks sets a repo-local core.hooksPath, twice without harm, and never a global one" '
+  W=$(sandbox); mkdir -p "$W/repo" "$W/h"; git init -q "$W/repo"
+  fn_of sub_hooks > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+export HOME="$W/h" GIT_CONFIG_GLOBAL="$W/h/gitconfig" GIT_CONFIG_NOSYSTEM=1
+DOTFILES_DIR="$W/repo"
+cd "$PWD" || exit 1
+. scripts/echos.sh; . "$W/fn.sh"
+sub_hooks && sub_hooks
+RUN
+  bash "$W/run.sh" </dev/null >/dev/null 2>&1 &&
+  [ "$(git -C "$W/repo" config --local core.hooksPath)" = .githooks ] &&
+  [ ! -s "$W/h/gitconfig" ]'
+t "W3.4" "the doctor warns when core.hooksPath is not set for the repo" '
+  W=$(sandbox); _doc_setup "$W" yes; out=$(HP="" _doc_run "$W" 2>&1)
+  _has "$out" "Git hooks are not enabled"'
+t "W3.5" "the doctor is quiet about hooks when core.hooksPath is set" '
+  W=$(sandbox); _doc_setup "$W" yes; out=$(HP=.githooks _doc_run "$W" 2>&1)
+  ! _has "$out" "Git hooks are not enabled" && _has "$out" "Git hooks path: .githooks"'
+
+_hb_run() { # _hb_run <W> <yes|no> -- sub_install_homebrew with a curl stub that records NONINTERACTIVE
+  local W="$1" yes="$2"
+  mkdir -p "$W/h"
+  stub "$W/bin" curl "echo \"echo \\\"NI=\\\${NONINTERACTIVE:-}\\\" > \\\"\$SW/ni\\\"\""
+  fn_of sub_install_homebrew > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="$W/bin:/usr/bin:/bin"; HOME="$W/h"; HOMEBREW_PREFIX="$W"; export SW="$W"
+[ "$yes" = yes ] && export DOTFILES_YES=1
+cd "$PWD" || exit 1
+. scripts/echos.sh; . scripts/requirers.sh; . "$W/fn.sh"
+sub_install_homebrew
+RUN
+  timeout 20 bash "$W/run.sh" </dev/null
+}
+t "W3.6" "with DOTFILES_YES=1 the Homebrew installer runs with NONINTERACTIVE=1" '
+  W=$(sandbox); _hb_run "$W" yes >/dev/null 2>&1; [ "$(cat "$W/ni")" = "NI=1" ]'
+t "W3.7" "without DOTFILES_YES the Homebrew installer is not forced non-interactive" '
+  W=$(sandbox); _hb_run "$W" no >/dev/null 2>&1; [ "$(cat "$W/ni")" = "NI=" ]'
+
+# A sandbox repo (real git, for check-ignore) whose config/ has one tracked
+# file and one ignored file, plus a backup bucket holding what link moved aside.
+_ig_repo() { # _ig_repo <W>
+  local W="$1"
+  mkdir -p "$W/repo/config/gh" "$W/backup/.config/gh" "$W/backup/.config/atuin"
+  git init -q "$W/repo"
+  printf 'config/gh/hosts.yml\nconfig/atuin/*.db\n' > "$W/repo/.gitignore"
+  printf 'tracked\n' > "$W/repo/config/gh/config.yml"
+  printf 'user: me\nprotocol: ssh\n' > "$W/backup/.config/gh/hosts.yml"
+  printf 'old\n' > "$W/backup/.config/gh/config.yml"
+}
+_ig_call() { # _ig_call <W> -- run the restore helper
+  (source scripts/echos.sh; source scripts/lib/fs.sh; dotfiles_restore_ignored_from_backup "$1/repo" config "$1/backup/.config")
+}
+t "W3.8" "an ignored file missing from the repo is copied in from the backup, and reported" '
+  W=$(sandbox); _ig_repo "$W"; out=$(_ig_call "$W" 2>&1)
+  [ "$(cat "$W/repo/config/gh/hosts.yml")" = "$(printf "user: me\nprotocol: ssh")" ] &&
+  _has "$out" "hosts.yml"'
+t "W3.9" "a tracked file is left as the repo has it" '
+  W=$(sandbox); _ig_repo "$W"; _ig_call "$W" >/dev/null 2>&1
+  [ "$(cat "$W/repo/config/gh/config.yml")" = tracked ]'
+t "W3.10" "an existing ignored file in the repo is never overwritten" '
+  W=$(sandbox); _ig_repo "$W"; printf "keep\n" > "$W/repo/config/gh/hosts.yml"; _ig_call "$W" >/dev/null 2>&1
+  [ "$(cat "$W/repo/config/gh/hosts.yml")" = keep ]'
+t "W3.11" "an unignored file the repo does not have is not copied in" '
+  W=$(sandbox); _ig_repo "$W"; printf "x\n" > "$W/backup/.config/gh/stray.txt"; _ig_call "$W" >/dev/null 2>&1
+  [ ! -e "$W/repo/config/gh/stray.txt" ]'
+t "W3.12" "files in a directory the repo has not got yet are restored too (atuin)" '
+  W=$(sandbox); _ig_repo "$W"; mkdir -p "$W/repo/config/atuin"; printf "d\n" > "$W/backup/.config/atuin/history.db"
+  _ig_call "$W" >/dev/null 2>&1; [ "$(cat "$W/repo/config/atuin/history.db")" = d ]'
+t "W3.13" "no backup bucket is a no-op that succeeds" '
+  W=$(sandbox); _ig_repo "$W"; (source scripts/echos.sh; source scripts/lib/fs.sh; dotfiles_restore_ignored_from_backup "$W/repo" config "$W/nonesuch")'
+t "W3.14" "sub_link restores gh/hosts.yml so it is live at ~/.config/gh through the stow link" '
+  W=$(sandbox); mkdir -p "$W/h/.config/gh" "$W/bin" "$W/repo/runcom" "$W/repo/config/git" "$W/repo/config/gh"
+  git init -q "$W/repo"; printf "config/gh/hosts.yml\n" > "$W/repo/.gitignore"
+  : > "$W/repo/config/git/config.local"; printf "tracked\n" > "$W/repo/config/gh/config.yml"
+  printf "user: me\n" > "$W/h/.config/gh/hosts.yml"; printf "old\n" > "$W/h/.config/gh/config.yml"
+  # a stow stand-in: link every directory of the package into the target
+  cat > "$W/bin/stow" <<STOW
+#!/bin/bash
+while [ \$# -gt 0 ]; do case "\$1" in -t) t=\$2; shift ;; --restow) ;; *) pkg=\$1 ;; esac; shift; done
+for d in "\$PWD/\$pkg"/*; do [ -d "\$d" ] && ln -sfn "\$d" "\$t/\$(basename "\$d")"; done
+exit 0
+STOW
+  chmod +x "$W/bin/stow"
+  fn_of sub_link > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="$W/bin:\$PATH"; HOME="$W/h"; XDG_CONFIG_HOME="$W/h/.config"; ROOT_DIR="$W/repo"; DOTFILES_YES=1
+cd "$PWD" || exit 1
+. scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
+sub_link
+RUN
+  bash "$W/run.sh" </dev/null >"$W/out" 2>&1 &&
+  [ -L "$W/h/.config/gh" ] &&
+  [ "$(cat "$W/h/.config/gh/hosts.yml")" = "user: me" ] &&
+  [ "$(cat "$W/h/.config/gh/config.yml")" = tracked ]'
 
 finish

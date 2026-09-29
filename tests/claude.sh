@@ -177,6 +177,7 @@ STUB
 echo "claude $*" >> "$STUBLOG"
 case "$*" in
   "--version") echo "9.9.9 (Claude Code)" ;;
+  "plugin list"*) cat "$STUBDIR/plugin-list" 2>/dev/null ;;
   "mcp get "*) grep -qx "$3" "$STUBDIR/have-mcp" 2>/dev/null; exit $? ;;
 esac
 exit 0
@@ -335,18 +336,40 @@ t "N6.1" "skills.list names the find-docs skill and its source" 'grep -qx "upsta
 t "N6.2" "the skill is installed with the skills CLI for claude-code and codex" '
   W=$(sandbox); _stubs "$W"; _full_run "$W"
   [ "$(grep -c "^npx -y skills add upstash/context7 --skill find-docs -g -a claude-code -a codex -y$" "$W/log")" -eq 1 ]'
-t "N6.3" "a hand-placed real directory is moved aside to find-docs.bak.<epoch>" '
+t "N6.3" "a hand-placed real directory is moved out of the skills tree to backups/skills/find-docs.<epoch>" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/.claude/skills/find-docs"; printf old >| "$W/home/.claude/skills/find-docs/SKILL.md"
   _full_run "$W"
-  [ "$(ls "$W/home/.claude/skills" | grep -c "^find-docs\.bak\.[0-9]*$")" -eq 1 ] &&
+  [ "$(ls "$W/home/.claude/backups/skills" | grep -c "^find-docs\.[0-9]*$")" -eq 1 ] &&
+  [ "$(cat "$W"/home/.claude/backups/skills/find-docs.*/SKILL.md)" = old ] &&
+  [ "$(ls "$W/home/.claude/skills" | grep -c "find-docs")" -eq 0 ] &&
   [ "$(grep -c "^npx -y skills add" "$W/log")" -eq 1 ]'
 t "N6.4" "an already-installed (symlinked) skill is left alone" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/.claude/skills" "$W/home/.agents/skills/find-docs"
   ln -s ../../.agents/skills/find-docs "$W/home/.claude/skills/find-docs"
   _full_run "$W"; [ "$(grep -c "^npx" "$W/log")" -eq 0 ] &&
   [ "$(ls "$W/home/.claude/skills" | grep -c "\.bak\.")" -eq 0 ]'
+t "N6.6" "a dangling skill symlink is not installed: it is removed and the skill reinstalled" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/.claude/skills"
+  ln -s ../../.agents/skills/find-docs "$W/home/.claude/skills/find-docs"
+  _full_run "$W"; [ "$(grep -c "^npx -y skills add" "$W/log")" -eq 1 ] &&
+  [ ! -L "$W/home/.claude/skills/find-docs" ]'
 t "N6.5" "a failing skills install fails the run and names the skill" '
   W=$(sandbox); _stubs "$W"; ! _full_run "$W" STUB_FAIL_npx=1 &&
   [ "$(grep -c -- "- skill: find-docs" "$W/out")" -eq 1 ]'
+
+section "N12 — two Safety Net plugins (legacy and renamed)"
+_sn_json() { printf '[{"id":"%s@cc-marketplace"}]\n' "$2" >> "$1/plugin-list"; }
+t "N12.1" "both installed: a warning names the exact uninstall command for the legacy one" '
+  W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; _sn_json "$W" cc-safety-net; _full_run "$W"
+  [ "$(grep -c "claude plugin uninstall safety-net@cc-marketplace" "$W/out")" -ge 1 ]'
+t "N12.2" "the installer never uninstalls anything itself" '
+  W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; _sn_json "$W" cc-safety-net; _full_run "$W"
+  [ "$(grep -c "^claude plugin uninstall" "$W/log")" -eq 0 ]'
+t "N12.3" "only the renamed plugin installed: no warning" '
+  W=$(sandbox); _stubs "$W"; _sn_json "$W" cc-safety-net; _full_run "$W"
+  [ "$(grep -c "claude plugin uninstall" "$W/out")" -eq 0 ]'
+t "N12.4" "only the legacy plugin installed: no duplicate warning" '
+  W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; _full_run "$W"
+  [ "$(grep -c "claude plugin uninstall" "$W/out")" -eq 0 ]'
 
 finish
