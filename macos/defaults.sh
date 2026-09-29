@@ -11,8 +11,16 @@ SCREENSHOTS_FOLDER="${HOME}/Desktop/Screenshots"
 # (space-separated), DOTFILES_LOCALE, DOTFILES_MEASUREMENT_UNITS and
 # DOTFILES_TIMEZONE. A block whose variable is unset is skipped, so a machine
 # without a local file keeps whatever it already has.
+# macos/machine.local.sh holds per-Mac choices (DOTFILES_LAUNCHER); it is read
+# by dotfiles_launcher below, not sourced here. local.sh may set the launcher
+# too, so the caller's value is put back after sourcing it: the environment
+# outranks both files, and a value leaked from local.sh would outrank the
+# per-Mac file.
+_launcher_env="${DOTFILES_LAUNCHER:-}"
 # shellcheck disable=SC1091
 [ -f "$DOTFILES_DIR/macos/local.sh" ] && source "$DOTFILES_DIR/macos/local.sh"
+unset DOTFILES_LAUNCHER
+[ -z "$_launcher_env" ] || DOTFILES_LAUNCHER="$_launcher_env"
 
 # Absolute-path binaries, overridable so the tests can stub them.
 FIREWALL_CTL="${DOTFILES_SOCKETFILTERFW:-/usr/libexec/ApplicationFirewall/socketfilterfw}"
@@ -379,9 +387,9 @@ defaults write NSGlobalDomain InitialKeyRepeat -int 15
 ok
 
 # Symbolic hotkeys. Disabled because other apps take these over: Spotlight
-# (64, Cmd-Space) and Finder search (65) by Raycast, the built-in screenshot
-# shortcuts (28-31) by Shottr. Raycast's own hotkey is set inside Raycast, not
-# here. Arguments per key: id, ascii code, key code, modifier mask.
+# (64, Cmd-Space) and Finder search (65) by the launcher (Tinycast or Raycast),
+# the built-in screenshot shortcuts (28-31) by Shottr. Raycast's own hotkey is
+# set inside Raycast, not here; Tinycast's is written by the launcher block below. Arguments per key: id, ascii code, key code, modifier mask.
 _disable_hotkey() {
   defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add "$1" \
     "<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>$2</integer><integer>$3</integer><integer>$4</integer></array><key>type</key><string>standard</string></dict></dict>"
@@ -399,6 +407,42 @@ if [ -x "$ACTIVATE_SETTINGS" ]; then
   "$ACTIVATE_SETTINGS" -u
 fi
 ok
+
+# The launcher (scripts/lib/machine.sh: dotfiles_launcher). Spotlight's Cmd-Space
+# is disabled above either way; on a Tinycast Mac Tinycast takes the key. The
+# hotkey and the settings-file switch are UserDefaults keys of Tinycast
+# (docs/features/hotkeys.md and settings-file.md upstream). The hotkey's JSON is
+# documented as not a stable format, so it is read back and a mismatch is
+# reported; the GUI (Settings > General) is the fallback. Tinycast caches its
+# defaults, so it is written only while the app is not running.
+DOTFILES_LAUNCHER=$(dotfiles_launcher "$DOTFILES_DIR")
+TINYCAST_HOTKEY='{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}'
+RAYCAST_APP="${DOTFILES_RAYCAST_APP:-/Applications/Raycast.app}"
+if [ "$DOTFILES_LAUNCHER" = tinycast ]; then
+  running "Tinycast: Cmd-Space as the summon hotkey, settings file on"
+  if pgrep -x Tinycast >/dev/null 2>&1; then
+    osascript -e 'quit app "Tinycast"' >/dev/null 2>&1
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      pgrep -x Tinycast >/dev/null 2>&1 || break
+      sleep 0.5
+    done
+  fi
+  if pgrep -x Tinycast >/dev/null 2>&1; then
+    warn "Tinycast is still running, so its hotkey was not set; quit it and re-run configure, or set Cmd-Space in Tinycast > Settings > General"
+  else
+    defaults write com.tinycast.app hotkey.togglePalette "$TINYCAST_HOTKEY"
+    defaults write com.tinycast.app settingsFileEnabled -bool true
+    got=$(defaults read com.tinycast.app hotkey.togglePalette 2>/dev/null)
+    if [ "$got" = "$TINYCAST_HOTKEY" ]; then
+      ok
+    else
+      error "Tinycast hotkey read back as '$got', expected '$TINYCAST_HOTKEY'; set Cmd-Space in Tinycast > Settings > General"
+    fi
+  fi
+  if [ -d "$RAYCAST_APP" ]; then
+    warn "Raycast is still installed and may claim Cmd-Space; remove it with: brew uninstall --cask raycast"
+  fi
+fi
 
 # Note: BezelServices keyboard illumination settings removed - deprecated in modern macOS
 # Keyboard backlight is now managed automatically by the system
