@@ -123,6 +123,37 @@ app_targets() {
     codex ".codex"
 }
 
+# The defaults-domain listing the guard trusts. DOTFILES_APPS_BASELINE
+# overrides the tool (tests).
+baseline_list() { "${DOTFILES_APPS_BASELINE:-$SELF_DIR/dotfiles-baseline}" list; }
+
+# The guard must fail CLOSED: an owned set that came back empty because a
+# source is missing or broken would let every path through, and `check` gates
+# the unattended daily backup. Sets BASELINE_OUT for owned_targets.
+BASELINE_OUT=""
+owned_sources_ok() {
+  local rc=0 e n
+  for e in runcom config; do
+    n=0
+    for f in "$DOTFILES_DIR/$e"/* "$DOTFILES_DIR/$e"/.[!.]*; do
+      [ -e "$f" ] && n=$((n + 1))
+    done
+    if [ "$n" -eq 0 ]; then
+      err "$e/ has no entries under $DOTFILES_DIR, so the guard would not know what it stows; refusing"
+      rc=1
+    fi
+  done
+  if ! BASELINE_OUT=$(baseline_list 2>&1); then
+    err "dotfiles-baseline failed, so the defaults domains are unknown; refusing: $(printf '%s' "$BASELINE_OUT" | head -n 3 | tr '\n' ' ')"
+    BASELINE_OUT=""
+    rc=1
+  elif [ -z "$(printf '%s\n' "$BASELINE_OUT" | awk -F'\t' 'NF >= 2')" ]; then
+    err "dotfiles-baseline found no defaults domains (is macos/defaults*.sh missing?); refusing"
+    rc=1
+  fi
+  return "$rc"
+}
+
 # Every owned target as why<TAB>home-relative path.
 owned_targets() {
   local e xdg rel name target domain flags
@@ -143,7 +174,7 @@ owned_targets() {
   done
   # Preferences domains macos/defaults*.sh write, via the same key extraction
   # dotfiles-baseline uses. Domains under /Library are system-wide, not $HOME.
-  "$SELF_DIR/dotfiles-baseline" list 2>/dev/null | cut -f1,3 | sort -u |
+  printf '%s\n' "$BASELINE_OUT" | cut -f1,3 | sort -u |
     while IFS=$'\t' read -r domain flags; do
       case "$domain" in
         /*) continue ;;
@@ -192,6 +223,7 @@ cmd_check() {
     rc=1
   done
 
+  owned_sources_ok || return 1
   targets=$(owned_targets)
   for app in $apps; do
     if [ -z "$(app_procs "$app")" ]; then
@@ -415,6 +447,44 @@ snapshot_names() {
   done | sort
 }
 
+# Manifest: one line per file, "sha256<TAB>size<TAB>relative path", covering
+# everything under <dir>/Mackup. iCloud can leave a file under its real name
+# but not downloaded, so restore checks every byte against it.
+sha_of() { shasum -a 256 "$1" | cut -d' ' -f1; }
+write_manifest() { # write_manifest <tree> <out>
+  local f
+  : >"$2" || return 1
+  while IFS= read -r f; do
+    printf '%s\t%s\t%s\n' "$(sha_of "$1/$f")" "$(wc -c <"$1/$f" | tr -d ' ')" "$f" >>"$2" || return 1
+  done < <(cd "$1" && find . -type f ! -name MANIFEST | sed 's|^\./||' | sort)
+}
+verify_manifest() { # verify_manifest <snapshot dir>
+  local dir="$1" sum size f rc=0 n=0
+  if [ ! -f "$dir/MANIFEST" ]; then
+    err "no MANIFEST in $dir (a snapshot from before manifests, or not fully downloaded); refusing"
+    return 1
+  fi
+  while IFS=$'\t' read -r sum size f; do
+    [ -n "$f" ] || continue
+    n=$((n + 1))
+    if [ ! -f "$dir/$f" ]; then
+      err "manifest: '$f' is missing from the snapshot"
+      rc=1
+    elif [ "$(wc -c <"$dir/$f" | tr -d ' ')" != "$size" ]; then
+      err "manifest: '$f' has the wrong size (not fully downloaded?)"
+      rc=1
+    elif [ "$(sha_of "$dir/$f")" != "$sum" ]; then
+      err "manifest: '$f' does not match its SHA-256"
+      rc=1
+    fi
+  done <"$dir/MANIFEST"
+  if [ "$n" -eq 0 ]; then
+    err "manifest: $dir/MANIFEST lists no files; refusing"
+    rc=1
+  fi
+  return "$rc"
+}
+
 # publish <parent> <keep>: copy STAGE to <parent>/<UTC timestamp> under a
 # temp name, rename when complete, then rotate. Echoes the snapshot name.
 publish() {
@@ -426,7 +496,8 @@ publish() {
   # Stale temp copies from a run that died; we hold the lock.
   rm -rf "$parent"/.tmp-* 2>/dev/null
   tmp="$parent/.tmp-$name"
-  if ! mkdir "$tmp" || ! cp -R "$STAGE/." "$tmp/" || ! diff -r "$STAGE" "$tmp" >/dev/null 2>&1; then
+  if ! mkdir "$tmp" || ! cp -R "$STAGE/." "$tmp/" || ! diff -r "$STAGE" "$tmp" >/dev/null 2>&1 ||
+    ! write_manifest "$STAGE" "$tmp/MANIFEST" || ! verify_manifest "$tmp"; then
     rm -rf "$tmp"
     err "copying the snapshot to $parent failed or did not verify; nothing was published"
     return 1
@@ -558,6 +629,8 @@ apply_snapshot() {
     validate_tree "$dir" || return 1
   fi
 
+  verify_manifest "$dir" || return 1
+
   running=$(running_apps)
   if [ -n "$running" ]; then
     err "quit these apps first (restoring under a running app is overwritten on quit):"
@@ -580,15 +653,22 @@ apply_snapshot() {
   rm -rf "$STAGE"
   mkdir -p "$STAGE" || return 1
   cp -R "$dir/." "$STAGE/" || { err "could not stage the snapshot"; return 1; }
-  if ! run_mackup -f restore >"$STATE/last-mackup.log" 2>&1; then
-    err "mackup restore failed; run 'dotfiles apps undo' to put the previous files back. Output:"
+  # From here local files may have changed, so the preferences daemon must be
+  # flushed on EVERY path: it caches plists, and an app that starts now could
+  # otherwise see, and later write back, the old values.
+  local mrc=0 srcrc=0
+  run_mackup -f restore >"$STATE/last-mackup.log" 2>&1 || mrc=$?
+  restored_symlinks || srcrc=1
+  killall cfprefsd >/dev/null 2>&1 || true
+  if [ "$mrc" -ne 0 ]; then
+    err "mackup restore failed (exit $mrc) after files may have changed; cfprefsd was flushed anyway. Run 'dotfiles apps undo' to put the previous files back. Output:"
     tail -n 10 "$STATE/last-mackup.log" | sed 's/^/  /' >&2
     return 1
   fi
-  restored_symlinks || return 1
-  # The preferences daemon caches plists; without this an app that starts now
-  # can still see, and later write back, the old values.
-  killall cfprefsd >/dev/null 2>&1 || true
+  if [ "$srcrc" -ne 0 ]; then
+    err "cfprefsd was flushed; run 'dotfiles apps undo' to put the previous files back"
+    return 1
+  fi
 }
 
 # Common front of restore and undo: store, lock, guards.
@@ -620,7 +700,7 @@ cmd_restore() {
   fi
 
   restore_preflight || return 1
-  [ -d "$STORE/$machine" ] || { err "no snapshots for '$machine' in $STORE (see: dotfiles apps list)"; return 1; }
+  machine_dirs | grep -Fxq -- "$machine" || { err "no snapshots for '$machine' in $STORE (see: dotfiles apps list)"; return 1; }
   if [ -z "$snap" ]; then
     snap=$(tr -d '[:space:]' <"$STORE/$machine/latest" 2>/dev/null)
     printf '%s' "$snap" | grep -Eq '^[0-9]{8}T[0-9]{6}Z(-[0-9]+)?$' || { err "no valid 'latest' for '$machine'; name a snapshot (see: dotfiles apps list)"; return 1; }
@@ -642,12 +722,22 @@ cmd_undo() {
   say "put back the rescue copy $last"
 }
 
+# Machine folders in the store: a name in [A-Za-z0-9-] holding snapshots/.
+# The store may also hold the old link-mode layout (.gitkraken, Library, ...);
+# those are never machines and are never read, moved or deleted.
+machine_dirs() {
+  local d m
+  for d in "$STORE"/*/; do
+    [ -d "$d/snapshots" ] || continue
+    m=$(basename "$d")
+    printf '%s' "$m" | grep -Eq '^[A-Za-z0-9-]+$' && printf '%s\n' "$m"
+  done
+}
+
 cmd_list() {
   local m d latest found=0
   if [ -d "$STORE" ]; then
-    for m in "$STORE"/*/; do
-      [ -d "$m/snapshots" ] || continue
-      m=$(basename "$m")
+    for m in $(machine_dirs); do
       latest=$(tr -d '[:space:]' <"$STORE/$m/latest" 2>/dev/null)
       for d in $(snapshot_names "$STORE/$m/snapshots"); do
         found=1

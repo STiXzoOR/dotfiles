@@ -9,7 +9,8 @@
 # files "fail with Operation not permitted" the way a TCC denial does.
 # $STUB_PLANT_LINK makes backup leave a symlink in the store, and
 # $STUB_RESTORE_LINK makes restore leave one in $HOME, so the wrapper's
-# symlink refusals can be exercised.
+# symlink refusals can be exercised. $STUB_RESTORE_FAIL makes restore exit 1
+# after it has already changed files.
 set -u
 printf '%s\n' "$*" >>"${STUB_LOG:-/dev/null}"
 
@@ -74,6 +75,7 @@ case "$cmd" in
     [ "$cmd" = backup ] && [ -n "${STUB_PLANT_LINK:-}" ] && ln -s /etc/hosts "$store/planted"
     [ "$cmd" = restore ] && [ -n "${STUB_RESTORE_LINK:-}" ] &&
       { command rm -f "$HOME/Library/Preferences/com.example.alpha.plist"; ln -s /etc/hosts "$HOME/Library/Preferences/com.example.alpha.plist"; }
+    [ "$cmd" = restore ] && [ -n "${STUB_RESTORE_FAIL:-}" ] && { echo "Error: stub restore failed" >&2; exit 1; }
     exit 0
     ;;
   *)

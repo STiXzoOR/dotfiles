@@ -29,7 +29,9 @@ dotfiles apps undo                        put back the latest rescue copy
   container) of a domain the defaults scripts write. Domains come from the same
   key extraction `dotfiles-baseline` uses. `backup` and `restore` run it first
   and refuse on overlap.
-- `check` also fails on an empty allowlist (an empty list makes mackup back up
+- `check` fails closed: it also refuses when `dotfiles-baseline` fails or finds no
+  domains, or when `runcom/` or `config/` hold nothing (an empty owned set would let
+  everything through). It also fails on an empty allowlist (an empty list makes mackup back up
   every supported app), on an unknown app, on an allowlisted app with no entry
   in `config/mackup/processes.list`, and when `apps/` gains a directory that is
   not in the maintained target list (`app_targets` in `bin/dotfiles-apps`; the
@@ -82,7 +84,8 @@ custom definition if the built-in one misses a path, then run
    file that just says `garbage`), when mackup reports a TCC denial (reported per app), or when
    nothing was staged at all. The previous snapshot is untouched in every case.
 5. Copy the staging tree to `<store>/<machine>/snapshots/<UTC timestamp>` under a
-   `.tmp-` name, verify it with `diff -r`, rename it, write the snapshot name to
+   `.tmp-` name, verify it with `diff -r`, write a `MANIFEST` (SHA-256, size, path
+   per file) and verify the copy against it, rename it, write the snapshot name to
    `<store>/<machine>/latest` (a plain text file, no symlinks in iCloud), and keep
    the newest 14 snapshots per machine.
 
@@ -109,12 +112,16 @@ dotfiles apps restore --from macbook 20260929T123000Z
 
 In order: refuse on overlap or a symlink into storage; `brctl download` the
 snapshot and refuse while any `*.icloud` placeholder remains; validate the
-snapshot; refuse while an allowlisted app is running (it lists them; quit them
+snapshot and verify every file against its `MANIFEST` (iCloud can leave a
+not-yet-downloaded file under its real name; a snapshot without a manifest is
+refused); refuse while an allowlisted app is running (it lists them; quit them
 first); take a rescue copy of the current local files (same stage and validate
 path, except that a corrupt local plist is kept as it is instead of blocking the
 restore, since that is often why you are restoring; stored locally under `~/.local/state/dotfiles/mackup/Mackup/rescue/`, never in
 iCloud); `mackup restore -f`; confirm no restored path is a symlink; then
-`killall cfprefsd` so the preferences daemon rereads from disk.
+`killall cfprefsd` so the preferences daemon rereads from disk. The flush happens
+on every path after local files may have changed, including a failed
+`mackup restore`; the message then points at `dotfiles apps undo`.
 
 `dotfiles apps undo` restores the latest rescue copy. It takes a rescue copy of
 what it replaces, so running it twice toggles between the two states and never
@@ -142,6 +149,11 @@ and publishes nothing. Grant the terminal (or `/bin/bash` for the agent) Full Di
 Access, or take the app off the allowlist.
 
 ## Leftovers
+
+The store may still hold the old link-mode layout (`Mackup/.gitkraken`,
+`Mackup/Library`, ...). Only directories named `[A-Za-z0-9-]` that contain a
+`snapshots/` folder count as machines; the legacy entries are never read, moved
+or deleted.
 
 `~/.mackup.cfg` on a machine from the old setup may be a dangling symlink into a
 `runcom/.mackup.cfg` that no longer exists. mackup treats a dangling link as

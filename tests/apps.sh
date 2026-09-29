@@ -392,6 +392,78 @@ t "R24" "restore never calls mackup link and passes -c" \
   'W=$(newenv); run_apps backup && run_apps restore && [ "$(grep -c "link" "$W/log")" -eq 0 ] && grep -q "^-c .* -f restore\$" "$W/log"'
 
 #############################################################################
+section "F -- fix round 1: guard fails closed, legacy store, manifest, flush"
+#############################################################################
+# mkdf <W> <empty>: a DOTFILES_DIR fixture whose runcom/config/macos are the
+# real ones except the named one, which is an empty directory.
+mkdf() {
+  local w="$1" x d
+  mkdir -p "$w/df/apps"
+  for d in gitkraken terminal vlc vscode warp xcode; do mkdir -p "$w/df/apps/$d"; done
+  for x in runcom config macos claude codex; do
+    if [ "$x" = "$2" ]; then mkdir -p "$w/df/$x"; else ln -s "$ROOT_DIR/$x" "$w/df/$x"; fi
+  done
+}
+t "F1" "check fails when dotfiles-baseline exits non-zero" \
+  'W=$(newenv); printf "#!/bin/sh\necho boom >&2\nexit 1\n" >"$W/badbase"; chmod +x "$W/badbase"
+   APPS_ENV="DOTFILES_APPS_BASELINE=$W/badbase" refused "baseline failed" check'
+t "F2" "check fails when dotfiles-baseline yields no domains" \
+  'W=$(newenv); printf "#!/bin/sh\nexit 0\n" >"$W/emptybase"; chmod +x "$W/emptybase"
+   APPS_ENV="DOTFILES_APPS_BASELINE=$W/emptybase" refused "no defaults domains" check'
+t "F3" "check fails with an empty macos/ (real baseline finds nothing)" \
+  'W=$(newenv); mkdf "$W" macos; APPS_DF="$W/df" refused "defaults domains" check'
+t "F4" "check fails when runcom/ owns nothing" \
+  'W=$(newenv); mkdf "$W" runcom; APPS_DF="$W/df" refused "runcom" check'
+t "F5" "check fails when config/ owns nothing" \
+  'W=$(newenv); mkdf "$W" config; APPS_DF="$W/df" refused "config" check'
+t "F5b" "control: the fixture with nothing emptied passes" \
+  'W=$(newenv); mkdf "$W" none; APPS_DF="$W/df" run_apps check'
+t "F5c" "backup is gated by the same failure (no snapshot)" \
+  'W=$(newenv); mkdf "$W" macos; APPS_DF="$W/df" refused "defaults domains" backup && [ "$(nsnaps)" -eq 0 ]'
+
+legacy() { mkdir -p "$W/icloud/.gitkraken" "$W/icloud/.gnupg" "$W/icloud/.ngrok" "$W/icloud/Library/Preferences" "$W/icloud/bad name/snapshots/20200101T000000Z"; printf x >"$W/icloud/Library/Preferences/a"; }
+t "F6" "list ignores legacy Mackup/ entries and non-machine names" \
+  'W=$(newenv); legacy; run_apps backup && out=$(run_apps list 2>&1) && printf "%s\n" "$out" | grep -q "^macA" &&
+   [ "$(printf "%s\n" "$out" | grep -c "Library\|gitkraken\|gnupg\|ngrok\|bad")" -eq 0 ]'
+t "F7" "restore --from a legacy folder is refused" \
+  'W=$(newenv); legacy; run_apps backup && refused "no snapshots for" restore --from Library'
+t "F8" "restore --from a folder name outside [A-Za-z0-9-] is refused" \
+  'W=$(newenv); legacy; refused "invalid machine" restore --from "bad name"'
+t "F9" "legacy entries are never modified by backup, restore or list" \
+  'W=$(newenv); legacy; before=$(cd "$W/icloud" && find .gitkraken .gnupg .ngrok Library "bad name" | sort; find .gitkraken .gnupg .ngrok Library "bad name" -type f -exec cksum {} +)
+   run_apps backup && run_apps list && run_apps restore && after=$(cd "$W/icloud" && find .gitkraken .gnupg .ngrok Library "bad name" | sort; find .gitkraken .gnupg .ngrok Library "bad name" -type f -exec cksum {} +) && [ "$before" = "$after" ]'
+
+snapdir() { printf '%s' "$W/icloud/macA/snapshots/$(latest_of)"; }
+t "F10" "backup writes a MANIFEST with sha256, size and path for every staged file" \
+  'W=$(newenv); run_apps backup && m="$(snapdir)/MANIFEST" && [ -f "$m" ] &&
+   [ "$(grep -c . "$m")" -eq 2 ] && grep -q "Library/Preferences/com.example.alpha.plist" "$m" &&
+   h=$(shasum -a 256 "$W/home/Library/Preferences/com.example.alpha.plist" | cut -d" " -f1) && grep -q "^$h" "$m"'
+t "F11" "restore refuses a file whose size differs (dataless or truncated), listing it" \
+  'W=$(newenv); run_apps backup && chg2() { printf "x" >"$(snapdir)/Mackup/Library/Application Support/Beta/settings.json"; }; chg2
+   out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "settings.json" && printf "%s\n" "$out" | grep -qi "manifest" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "F12" "restore refuses a file with the same size but a different hash" \
+  'W=$(newenv); run_apps backup && printf "{\"a\":2}\n" >"$(snapdir)/Mackup/Library/Application Support/Beta/settings.json"
+   refused "settings.json" restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "F13" "restore refuses a file missing from the snapshot" \
+  'W=$(newenv); run_apps backup && wipe "$(snapdir)/Mackup/Library/Application Support/Beta/settings.json"
+   refused "is missing from the snapshot" restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "F14" "a snapshot without a MANIFEST is refused" \
+  'W=$(newenv); run_apps backup && wipe "$(snapdir)/MANIFEST" && refused "no MANIFEST" restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "F15" "the manifest is verified against the copy before the snapshot is renamed into place" \
+  'W=$(newenv); printf "#!/bin/sh\nfor a in \"\$@\"; do case \"\$a\" in *.tmp-*) echo 0000 x; exit 0 ;; esac; done\nexec /usr/bin/shasum \"\$@\"\n" >"$W/stubs/shasum"; chmod +x "$W/stubs/shasum"
+   refused "nothing was published" backup && [ "$(nsnaps)" -eq 0 ]'
+t "F16" "undo verifies the rescue copy's manifest too" \
+  'W=$(newenv); run_apps backup && chg && run_apps restore && d=$(rescue_dirs | tail -n 1) && wipe "$d/MANIFEST" && refused "no MANIFEST" undo'
+t "F17" "a failed mackup restore still flushes cfprefsd and points at undo" \
+  'W=$(newenv); run_apps backup && out=$(APPS_ENV="STUB_RESTORE_FAIL=1" run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && grep -q "^killall cfprefsd" "$W/log" && printf "%s\n" "$out" | grep -q "undo" && printf "%s\n" "$out" | grep -qi "cfprefsd"'
+t "F18" "a refused post-restore symlink check still flushes cfprefsd" \
+  'W=$(newenv); run_apps backup && APPS_ENV="STUB_RESTORE_LINK=1" run_apps restore; grep -q "^killall cfprefsd" "$W/log"'
+t "F19" "a refusal before anything was touched does not flush" \
+  'W=$(newenv); run_apps backup && printf "alphaProc\n" >"$W/running"; run_apps restore; [ "$(grep -c "^killall" "$W/log")" -eq 0 ]'
+
+#############################################################################
 section "C -- CLI routing, install flow and docs (6.6, 6.7)"
 #############################################################################
 t "C1" "dotfiles help lists the apps command" \
