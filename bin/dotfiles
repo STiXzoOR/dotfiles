@@ -52,9 +52,11 @@ sub_help() {
   echo "   profiler         Profile shell startup time"
   echo "   secrets          Manage secrets (macOS Keychain)"
   echo "   setup            Run interactive setup wizard"
+  echo "   sync             Keep this Mac current: fetch, fast-forward, restow, report drift"
   echo "   test             Run test suite to validate configuration"
   echo "   unlink           Restore dotfiles from ~/.dotfiles_backup"
   echo "   update           Update dotfiles (submodules)"
+  echo "   vault            Move the Obsidian vault into iCloud Drive (migrate)"
 }
 
 sub_install_help() {
@@ -191,6 +193,7 @@ sub_install() {
   # Restoring app settings is a deliberate step, never part of --all: copy
   # mode is last-writer-wins, so it must be chosen, and the apps must be quit.
   echo "To bring app settings over from another Mac (quit those apps first): $BIN_NAME apps list, then $BIN_NAME apps restore --from <machine>"
+  echo "To keep this Mac and the other one in step: $BIN_NAME sync (a daily check runs on its own once the LaunchAgent is installed)"
 }
 
 sub_install_all() {
@@ -1059,6 +1062,14 @@ sub_private() {
   "$DOTFILES_DIR/bin/dotfiles-private" "$@"
 }
 
+sub_sync() {
+  "$DOTFILES_DIR/bin/dotfiles-sync" "$@"
+}
+
+sub_vault() {
+  "$DOTFILES_DIR/bin/dotfiles-vault" "$@"
+}
+
 
 sub_baseline() {
   "$DOTFILES_DIR/bin/dotfiles-baseline" "$@"
@@ -1131,7 +1142,7 @@ case $COMMAND_NAME in
 "" | "help")
   sub_help
   ;;
-"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "apps" | "private")
+"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "apps" | "private" | "sync" | "vault")
   shift
   sub_"$COMMAND_NAME" "$@"
   ;;

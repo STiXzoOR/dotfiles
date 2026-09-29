@@ -361,4 +361,27 @@ t "V3.6" "the only rm in the migrate code removes the staging folder it made" \
 t "V4.1" "an unknown subcommand is a usage error" \
   'W=$(venv); out=$(env -i HOME="$W/home" PATH="/usr/bin:/bin" bash bin/dotfiles-vault frob 2>&1); rc=$?; [ "$rc" -eq 2 ] && printf "%s\n" "$out" | grep -q Usage'
 
+#############################################################################
+section "A -- the daily sync agent (launchagents/com.stixzoor.dotfiles-sync.plist)"
+#############################################################################
+PLIST=launchagents/com.stixzoor.dotfiles-sync.plist
+t "A1.1" "the agent is a top-level plist, so install --launchagents loads it" \
+  '[ -f "$PLIST" ] && [ "$(dirname "$PLIST")" = launchagents ]'
+t "A1.2" "the plist is valid and its label matches the file name" \
+  '{ ! command -v plutil >/dev/null 2>&1 || plutil -lint "$PLIST" >/dev/null; } &&
+   grep -A1 "<key>Label</key>" "$PLIST" | grep -q "<string>com.stixzoor.dotfiles-sync</string>"'
+t "A1.3" "it runs dotfiles-sync --scheduled through bash -c" \
+  'body=$(command cat "$PLIST"); printf "%s\n" "$body" | grep -qF "exec \"\$HOME/.dotfiles/bin/dotfiles-sync\" --scheduled" &&
+   printf "%s\n" "$body" | grep -A1 "<key>ProgramArguments</key>" | grep -q "<array>" && printf "%s\n" "$body" | grep -q "<string>/bin/bash</string>"'
+t "A1.4" "daily at 09:30, not at load, background priority" \
+  'body=$(command cat "$PLIST")
+   printf "%s\n" "$body" | grep -A1 "<key>Hour</key>" | grep -q "<integer>9</integer>" &&
+   printf "%s\n" "$body" | grep -A1 "<key>Minute</key>" | grep -q "<integer>30</integer>" &&
+   printf "%s\n" "$body" | grep -A1 "<key>RunAtLoad</key>" | grep -q "<false/>" &&
+   printf "%s\n" "$body" | grep -A1 "<key>ProcessType</key>" | grep -q "<string>Background</string>"'
+t "A1.5" "no StandardOutPath or StandardErrorPath (the script logs itself under ~/Library/Logs)" \
+  '[ "$(grep -c "<key>Standard\(Out\|Error\)Path</key>" "$PLIST")" -eq 0 ] && grep -q "Library/Logs" bin/dotfiles-sync'
+t "A1.6" "the plist carries no absolute home path" \
+  '[ "$(grep -c "/Users/" "$PLIST")" -eq 0 ]'
+
 finish

@@ -1372,6 +1372,12 @@ t "T7.2" "install --help lists --private" \
   'out=$(bash bin/dotfiles install --help 2>&1); case "$out" in *"--private"*) true ;; *) false ;; esac'
 t "T7.3" "dotfiles private is routed to bin/dotfiles-private (status with no repo says what to run)" '
   W=$(sandbox); out=$(_t7 "$W" private status); case "$out" in *"dotfiles private clone"*) true ;; *) false ;; esac'
+t "T7.1b" "the top-level help lists sync and vault" \
+  'out=$(bash bin/dotfiles help 2>&1); case "$out" in *"   sync "*) case "$out" in *"   vault "*) true ;; *) false ;; esac ;; *) false ;; esac'
+t "T7.3b" "dotfiles sync is routed to bin/dotfiles-sync" \
+  'W=$(sandbox); out=$(_t7 "$W" sync --help); case "$out" in *"--scheduled"*) true ;; *) false ;; esac'
+t "T7.3c" "dotfiles vault is routed to bin/dotfiles-vault" \
+  'W=$(sandbox); out=$(_t7 "$W" vault --help); case "$out" in *"vault migrate"*) true ;; *) false ;; esac'
 t "T7.4" "the private step runs after prezto and right before link in install --all" '
   W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install --all >/dev/null 2>&1
   a=$(_first_line private "$W/log"); b=$(_first_line link "$W/log"); [ "$a" -gt 0 ] && [ "$b" -eq $((a + 1)) ]'
