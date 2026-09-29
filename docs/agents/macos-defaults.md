@@ -82,11 +82,13 @@ with `systemsetup -getremotelogin`, and a Mac where it is still off gets an
   runs after them. On a Tinycast Mac it first reads the stored hotkey and switch
   (raw, through PlistBuddy: `defaults read` quotes and escapes strings) and does
   nothing when both are already right. Otherwise it says so, quits a running
-  Tinycast (skipping with a warning if it will not quit), writes `hotkey.togglePalette` (Cmd-Space,
+  Tinycast (skipping with a warning if it will not quit), writes
+  `hotkey.togglePalette` (Cmd-Space,
   `{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}`) and
-  `settingsFileEnabled` to `com.tinycast.app`, and reads the hotkey back the same way; a
-  mismatch is an error, not ignored. The hotkey format is documented upstream as
-  not stable, so this is best-effort with Tinycast > Settings > General as the
+  `settingsFileEnabled` to `com.tinycast.app`, and reads both back the same way;
+  a hotkey mismatch is an error and a switch mismatch a warning, neither
+  ignored. The hotkey format is documented upstream as not stable, so this is
+  best-effort with Tinycast > Settings > General as the
   fallback. If Raycast.app is still installed it warns once and names
   `brew uninstall --cask raycast`; nothing is uninstalled. On a Raycast Mac the
   block does nothing: Raycast's hotkey is set inside Raycast.

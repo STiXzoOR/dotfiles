@@ -63,6 +63,9 @@ t "L1.15" "an unreadable file warns and does not stop the lookup" \
 t "L1.16" "a file that merely ends on a failing command is not a warning" \
   'D=$(_lc_dir); printf "DOTFILES_LAUNCHER=raycast\n[ -f /nonexistent ] && true\n" >"$D/macos/machine.local.sh"; [ -z "$(_lc_err "$D")" ] && [ "$(_lc "$D")" = raycast ]'
 
+if ! command -v brew >/dev/null 2>&1; then
+  printf '%sSKIP%s L2/L6 need Homebrew (brew bundle list); the Brewfile launcher tests below pass vacuously\n' "$RED" "$RESET"
+fi
 section "L2 -- the Brewfile installs exactly one launcher"
 # `brew bundle list` is read-only (it prints the cask without its tap).
 # HOMEBREW_NO_AUTO_UPDATE keeps it offline. Only HOMEBREW_* variables reach the
