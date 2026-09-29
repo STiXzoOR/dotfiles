@@ -18,10 +18,15 @@ FAILURES=()
 # The native installer puts `claude` in ~/.local/bin, which is not on PATH
 # under `bash install_claude.sh`. Without this every `claude plugin ...` call
 # failed with "command not found" and the signature check was skipped.
-case ":$PATH:" in
-  *":$HOME/.local/bin:"*) ;;
-  *) PATH="$HOME/.local/bin:$PATH" ;;
-esac
+#
+# The mise shims (node, npx, uv, qmd ...) are missing from that PATH too.
+for _dir in "$HOME/.local/share/mise/shims" "$HOME/.local/bin"; do
+  case ":$PATH:" in
+    *":$_dir:"*) ;;
+    *) PATH="$_dir:$PATH" ;;
+  esac
+done
+unset _dir
 export PATH
 
 # Release verification. Anthropic publishes a per-release manifest.json and a
@@ -36,6 +41,7 @@ CLAUDE_RELEASE_KEY_FINGERPRINT="31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE" #gitle
 source "$ROOT_DIR/scripts/echos.sh"
 source "$ROOT_DIR/scripts/requirers.sh"
 source "$ROOT_DIR/scripts/lib/lists.sh"
+source "$ROOT_DIR/scripts/lib/mcp.sh"
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -290,6 +296,119 @@ install_plugins() {
   if [[ $skipped -gt 0 ]]; then
     ok "$skipped plugins already installed, skipped"
   fi
+}
+
+# ─── 3b. MCP servers ─────────────────────────────────────────────────────────
+
+# Register every server in mcp.list (plus the gitignored mcp.local.list) at
+# user scope, skipping any that already exist. `claude mcp get` succeeding is
+# the existence check, so a re-run neither duplicates nor overwrites a server
+# the user has edited by hand.
+register_mcp_servers() {
+  local line count=0 rc failed=0
+  if [[ ! -f "$CLAUDE_DIR/mcp.list" && ! -f "$CLAUDE_DIR/mcp.local.list" ]]; then
+    warn "No mcp.list found, skipping"
+    return 0
+  fi
+  if ! command -v claude >/dev/null 2>&1; then
+    error "claude is not installed, so MCP servers cannot be registered"
+    return 1
+  fi
+
+  action "Registering Claude Code MCP servers"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "${line// /}" ]] && continue
+    if ! parse_mcp_entry "$line"; then
+      warn "mcp.list: ignoring '$line' (expected: name command [args...])"
+      continue
+    fi
+    count=$((count + 1))
+
+    if claude mcp get "$MCP_NAME" >>"$CLAUDE_INSTALL_LOG" 2>&1; then
+      ok "MCP server $MCP_NAME already registered"
+      continue
+    fi
+
+    local name="$MCP_NAME"
+    local -a cmd=("${MCP_CMD[@]}")
+    prepare_mcp_server "$name"
+    rc=$?
+    if [[ "$rc" -eq 1 ]]; then
+      continue
+    elif [[ "$rc" -ne 0 ]]; then
+      FAILURES+=("mcp server: $name")
+      failed=$((failed + 1))
+      continue
+    fi
+
+    if claude mcp add --scope user "$name" -- "${cmd[@]}" >>"$CLAUDE_INSTALL_LOG" 2>&1; then
+      ok "MCP server $name registered (user scope)"
+    else
+      warn "failed to register MCP server $name"
+      FAILURES+=("mcp server: $name")
+      failed=$((failed + 1))
+    fi
+  done < <(read_list "$CLAUDE_DIR" mcp)
+
+  [[ "$failed" -eq 0 ]]
+}
+
+# ─── 3c. Skills ──────────────────────────────────────────────────────────────
+
+# Install each "<source> <skill>" entry from skills.list with the skills CLI.
+# The CLI keeps a canonical copy in ~/.agents/skills and symlinks it into the
+# agent directories, so an existing symlink means "already installed". A real
+# directory (a hand-placed copy) would make the CLI refuse or clobber it, so it
+# is moved aside to <skill>.bak.<epoch>, the repo's backup convention.
+install_skills() {
+  local line source skill dest failed=0
+  if [[ ! -f "$CLAUDE_DIR/skills.list" && ! -f "$CLAUDE_DIR/skills.local.list" ]]; then
+    return 0
+  fi
+
+  action "Installing Claude Code skills"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "${line// /}" ]] && continue
+    # shellcheck disable=SC2086
+    set -- $line
+    source="${1:-}" skill="${2:-}"
+    if [[ -z "$source" || -z "$skill" ]]; then
+      warn "skills.list: ignoring '$line' (expected: source skill)"
+      continue
+    fi
+
+    dest="$CLAUDE_HOME/skills/$skill"
+    if [[ -L "$dest" ]]; then
+      ok "skill $skill already installed"
+      continue
+    fi
+    if ! command -v npx >/dev/null 2>&1; then
+      error "npx not found: cannot install skill $skill (mise provides node; run 'dotfiles install --node')"
+      FAILURES+=("skill: $skill")
+      failed=$((failed + 1))
+      continue
+    fi
+    if [[ -e "$dest" ]]; then
+      if ! mv "$dest" "$dest.bak.$(date +%s)"; then
+        warn "could not move $dest aside"
+        FAILURES+=("skill: $skill")
+        failed=$((failed + 1))
+        continue
+      fi
+      ok "moved the existing $skill aside to $skill.bak.<epoch>"
+    fi
+
+    running "skill $skill"
+    if npx -y skills add "$source" --skill "$skill" -g -a claude-code -a codex -y >>"$CLAUDE_INSTALL_LOG" 2>&1; then
+      ok "skill $skill installed"
+    else
+      warn "failed to install skill $skill"
+      FAILURES+=("skill: $skill")
+      failed=$((failed + 1))
+    fi
+  done < <(read_list "$CLAUDE_DIR" skills)
+
+  [[ "$failed" -eq 0 ]]
 }
 
 # ─── 4. Copy rules and hooks ─────────────────────────────────────────────────
@@ -619,16 +738,6 @@ setup_qmd() {
   else
     warn "no vault at $VAULT_DIR: skipping QMD collections and indexing"
   fi
-
-  # Register QMD MCP server with Claude Code (stored in ~/.claude.json)
-  if command -v claude &>/dev/null; then
-    action "Registering QMD MCP server"
-    if claude mcp add --transport stdio --scope user qmd -- qmd mcp 2>>"$CLAUDE_INSTALL_LOG"; then
-      ok "QMD MCP server registered (user scope)"
-    else
-      warn "QMD MCP registration failed (run 'claude mcp add --transport stdio --scope user qmd -- qmd mcp' manually)"
-    fi
-  fi
 }
 
 # Collections, index and embeddings. Only runs against a vault that exists:
@@ -698,6 +807,8 @@ main() {
   try_or_track "release verification" verify_claude_install
   register_marketplaces
   install_plugins
+  register_mcp_servers
+  install_skills
   copy_claude_files "$CLAUDE_DIR/rules" "$CLAUDE_HOME/rules" "rules"
   try_or_track "rule imports" link_rule_imports
   copy_claude_files "$CLAUDE_DIR/hooks" "$CLAUDE_HOME/hooks" "hooks" "true"

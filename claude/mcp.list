@@ -1,0 +1,21 @@
+# Claude Code and Codex MCP servers
+# Format: one server per line, "<name> <command> [args...]", separated by
+# whitespace. The first word is the server name; the rest is the stdio command.
+# A literal $HOME in a word is expanded at install time, so no absolute path is
+# ever tracked. Never put secrets or tokens here: this file is public.
+# Used by: scripts/install_claude.sh (claude mcp add --scope user) and
+#          scripts/install_codex.sh (codex mcp add)
+#
+# A server that is already registered is skipped. Private servers belong in
+# claude/mcp.local.list (gitignored), same format.
+
+# QMD -- local search over the Obsidian vault (installed by mise:
+# npm:@tobilu/qmd).
+qmd qmd mcp
+
+# Blender -- Blender Foundation's official MCP server. The installer runs
+#   uv tool install --force "git+https://projects.blender.org/lab/blender_mcp.git@v1.0.3#subdirectory=mcp"
+# first (scripts/lib/mcp.sh); never `uv tool install blender-mcp`, the PyPI
+# name is an unrelated project. Needs the Blender add-on (Blender 5.1+),
+# installed from inside Blender.
+blender $HOME/.local/bin/blender-mcp

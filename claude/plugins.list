@@ -15,6 +15,11 @@
 superpowers@superpowers-marketplace
 compound-engineering@compound-engineering-plugin
 
+# Upstream renamed the plugin safety-net -> cc-safety-net; the old name fails
+# on a fresh machine.
+cc-safety-net@cc-marketplace
+warp@claude-code-warp
+
 # Required by the QMD/Obsidian bootstrap, not a preference:
 #   recall                -> extract-sessions.py, driven by the Stop hook
 #   sync-claude-sessions  -> populates $VAULT_DIR/Claude-Sessions, which

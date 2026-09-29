@@ -74,10 +74,13 @@ t "E2.11" "binary is verified against the signed manifest" 'grep -q "manifest.js
 _main_with_failing() { # _main_with_failing <function-to-fail>
   local failing="$1" w="$2" f
   (
+    # A step added to main() but forgotten in the stub list below would run for
+    # real; a sandbox HOME keeps that from ever touching the owner's machine.
+    export HOME="$w/home"; mkdir -p "$HOME"
     source scripts/install_claude.sh --lib 2>/dev/null
     CLAUDE_INSTALL_LOG="$w/log"
     for f in install_claude_binary verify_claude_install register_marketplaces \
-      install_plugins copy_claude_files link_rule_imports install_statusline \
+      install_plugins register_mcp_servers install_skills copy_claude_files link_rule_imports install_statusline \
       setup_recall_venv merge_settings verify_settings_refs setup_vault setup_qmd; do
       eval "$f() { :; }"
     done
@@ -152,10 +155,20 @@ _stubs() { # _stubs <W>
   local w="$1" n
   mkdir -p "$w/bin" "$w/home"; : >| "$w/log"
   ln -s "$(command -v jq)" "$w/bin/jq"
-  for n in uv npx qmd blender-mcp; do
-    printf '#!/bin/sh\necho "%s $*" >> "$STUBLOG"\nexit 0\n' "$n" >| "$w/bin/$n"
+  for n in qmd npx; do
+    printf '#!/bin/sh\necho "%s $*" >> "$STUBLOG"\n[ -n "${STUB_FAIL_%s:-}" ] && exit 1\nexit 0\n' "$n" "$n" >| "$w/bin/$n"
     chmod +x "$w/bin/$n"
   done
+  # uv: `tool install` drops the console script, as the real one does.
+  cat >| "$w/bin/uv" <<'STUB'
+#!/bin/sh
+echo "uv $*" >> "$STUBLOG"
+if [ "$1 $2" = "tool install" ]; then
+  mkdir -p "$HOME/.local/bin"; printf '#!/bin/sh\n' > "$HOME/.local/bin/blender-mcp"; chmod +x "$HOME/.local/bin/blender-mcp"
+fi
+exit 0
+STUB
+  chmod +x "$w/bin/uv"
   # A timeout that runs the wrapped command, so the wrapped call is observable.
   printf '#!/bin/sh\necho "gtimeout $*" >> "$STUBLOG"\nshift\nexec "$@"\n' >| "$w/bin/gtimeout"
   chmod +x "$w/bin/gtimeout"
@@ -242,5 +255,98 @@ t "N3.3" "an existing vault still gets its collections and templates" '
   [ "$(grep -c "^qmd collection add notes" "$W/log")" -eq 1 ] &&
   [ "$(grep -c "^qmd collection add sessions" "$W/log")" -eq 1 ] &&
   [ -d "$W/home/Vault/Polaris" ]'
+
+section "N4 — plugins (item 2.4)"
+t "N4.1" "the cc-marketplace and claude-code-warp marketplaces are listed" '
+  grep -qx "kenryu42/cc-marketplace" claude/marketplaces.list &&
+  grep -qx "warpdotdev/claude-code-warp" claude/marketplaces.list'
+t "N4.2" "cc-safety-net and warp are listed; the renamed safety-net is not" '
+  grep -qx "cc-safety-net@cc-marketplace" claude/plugins.list &&
+  grep -qx "warp@claude-code-warp" claude/plugins.list &&
+  [ "$(grep -c "^safety-net@" claude/plugins.list)" -eq 0 ]'
+t "N4.3" "the bootstrap adds those marketplaces and installs those plugins" '
+  W=$(sandbox); _stubs "$W"; _full_run "$W"
+  [ "$(grep -c "^claude plugin marketplace add kenryu42/cc-marketplace" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^claude plugin marketplace add warpdotdev/claude-code-warp" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^claude plugin install cc-safety-net@cc-marketplace" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^claude plugin install warp@claude-code-warp" "$W/log")" -eq 1 ]'
+
+section "N5 — MCP servers from a list (item 2.5)"
+t "N5.1" "mcp.list holds qmd and blender and the file documents its format" '
+  [ "$(grep -cE "^qmd[[:space:]]+qmd mcp$" claude/mcp.list)" -eq 1 ] &&
+  [ "$(grep -cE "^blender[[:space:]]+\\\$HOME/.local/bin/blender-mcp$" claude/mcp.list)" -eq 1 ] &&
+  [ "$(grep -c "^#.*name" claude/mcp.list)" -ge 1 ]'
+t "N5.2" "the bootstrap registers each listed server at user scope, once" '
+  W=$(sandbox); _stubs "$W"; _full_run "$W"
+  [ "$(grep -c "^claude mcp add --scope user qmd -- qmd mcp$" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^claude mcp add --scope user blender -- $W/home/.local/bin/blender-mcp$" "$W/log")" -eq 1 ]'
+t "N5.3" "a server that already exists is skipped" '
+  W=$(sandbox); _stubs "$W"; printf "qmd\n" >| "$W/have-mcp"; _full_run "$W"
+  [ "$(grep -c "^claude mcp get qmd" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^claude mcp add .* qmd " "$W/log")" -eq 0 ] &&
+  [ "$(grep -c "^claude mcp add .* blender " "$W/log")" -eq 1 ]'
+t "N5.4" "blender: the official server is installed from its git tag, never by PyPI name" '
+  W=$(sandbox); _stubs "$W"; _full_run "$W"
+  [ "$(grep -c "^uv tool install --force git+https://projects.blender.org/lab/blender_mcp.git@v1.0.3#subdirectory=mcp$" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^uv tool install .*blender-mcp$" "$W/log")" -eq 0 ]'
+t "N5.5" "blender: the add-on note names the zip and the Blender version" '
+  W=$(sandbox); _stubs "$W"; _full_run "$W"
+  [ "$(grep -c "mcp-1.0.3.zip" "$W/out")" -ge 1 ] && [ "$(grep -c "5.1" "$W/out")" -ge 1 ]'
+t "N5.6" "blender: without uv it warns and registers nothing dead" '
+  W=$(sandbox); _stubs "$W"; command rm -f "$W/bin/uv"; _full_run "$W"
+  [ "$(grep -c "^claude mcp add .* blender " "$W/log")" -eq 0 ] &&
+  [ "$(grep -ci "uv" "$W/out")" -ge 1 ]'
+t "N5.7" "blender: an installed server is not reinstalled" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/.local/bin"; printf "#!/bin/sh\n" >| "$W/home/.local/bin/blender-mcp"; chmod +x "$W/home/.local/bin/blender-mcp"
+  _full_run "$W"; [ "$(grep -c "^uv tool install" "$W/log")" -eq 0 ]'
+t "N5.8" "mcp.local.list is read too, and \$HOME is expanded at install time" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/cd"
+  printf "# comment\nalpha alpha-bin one\n" >| "$W/cd/mcp.list"
+  printf "beta \$HOME/bin/beta --x\n" >| "$W/cd/mcp.local.list"
+  command cp "$W/claude-stub" "$W/bin/claude"; (
+    export HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" STUBLOG="$W/log" STUBDIR="$W"
+    source scripts/install_claude.sh --lib; CLAUDE_DIR="$W/cd"; CLAUDE_INSTALL_LOG="$W/i.log"; register_mcp_servers )
+  [ "$(grep -c "^claude mcp add --scope user alpha -- alpha-bin one$" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^claude mcp add --scope user beta -- $W/home/bin/beta --x$" "$W/log")" -eq 1 ]'
+t "N5.9" "the qmd registration is no longer hardcoded in the script" '
+  [ "$(code_of scripts/install_claude.sh | grep -c "mcp add --transport stdio --scope user qmd")" -eq 0 ]'
+
+section "N7 — dotfiles claude diff reports unregistered MCP servers (item 2.8)"
+_diff_home() { # _diff_home <W> [mcpServers-json]: a sandbox HOME identical to the repo
+  local w="$1"
+  mkdir -p "$w/home/.claude/hooks" "$w/home/.claude/rules"
+  command cp claude/hooks/* "$w/home/.claude/hooks/"; command cp claude/rules/* "$w/home/.claude/rules/"
+  command cp claude/statusline.sh "$w/home/.claude/"
+  [ -z "${2:-}" ] || printf '{"mcpServers":%s}\n' "$2" >| "$w/home/.claude.json"
+}
+t "N7.1" "diff names a listed server that is not registered and exits non-zero" '
+  W=$(sandbox); _diff_home "$W" "{\"qmd\":{}}"
+  out=$(HOME="$W/home" bash bin/dotfiles-claude diff 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s" "$out" | grep -c "MCP server blender is in mcp.list but not registered")" -eq 1 ] &&
+  [ "$(printf "%s" "$out" | grep -c "MCP server qmd is in mcp.list")" -eq 0 ]'
+t "N7.2" "diff passes when every listed server is registered" '
+  W=$(sandbox); _diff_home "$W" "{\"qmd\":{},\"blender\":{}}"; HOME="$W/home" bash bin/dotfiles-claude diff'
+t "N7.3" "diff skips the MCP check when there is no ~/.claude.json yet" '
+  W=$(sandbox); _diff_home "$W"; out=$(HOME="$W/home" bash bin/dotfiles-claude diff 2>&1)
+  [ "$(printf "%s" "$out" | grep -ci "claude.json")" -ge 1 ]'
+
+section "N6 — find-docs skill (item 2.6)"
+t "N6.1" "skills.list names the find-docs skill and its source" 'grep -qx "upstash/context7 find-docs" claude/skills.list'
+t "N6.2" "the skill is installed with the skills CLI for claude-code and codex" '
+  W=$(sandbox); _stubs "$W"; _full_run "$W"
+  [ "$(grep -c "^npx -y skills add upstash/context7 --skill find-docs -g -a claude-code -a codex -y$" "$W/log")" -eq 1 ]'
+t "N6.3" "a hand-placed real directory is moved aside to find-docs.bak.<epoch>" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/.claude/skills/find-docs"; printf old >| "$W/home/.claude/skills/find-docs/SKILL.md"
+  _full_run "$W"
+  [ "$(ls "$W/home/.claude/skills" | grep -c "^find-docs\.bak\.[0-9]*$")" -eq 1 ] &&
+  [ "$(grep -c "^npx -y skills add" "$W/log")" -eq 1 ]'
+t "N6.4" "an already-installed (symlinked) skill is left alone" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/.claude/skills" "$W/home/.agents/skills/find-docs"
+  ln -s ../../.agents/skills/find-docs "$W/home/.claude/skills/find-docs"
+  _full_run "$W"; [ "$(grep -c "^npx" "$W/log")" -eq 0 ] &&
+  [ "$(ls "$W/home/.claude/skills" | grep -c "\.bak\.")" -eq 0 ]'
+t "N6.5" "a failing skills install fails the run and names the skill" '
+  W=$(sandbox); _stubs "$W"; ! _full_run "$W" STUB_FAIL_npx=1 &&
+  [ "$(grep -c -- "- skill: find-docs" "$W/out")" -eq 1 ]'
 
 finish

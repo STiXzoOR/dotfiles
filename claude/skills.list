@@ -1,0 +1,14 @@
+# Agent skills installed with the vercel-labs `skills` CLI
+# Format: "<source> <skill>"  (source is a GitHub owner/repo)
+# Used by: scripts/install_claude.sh  (dotfiles install --claude)
+#
+# Each entry runs:  npx -y skills add <source> --skill <skill> -g -a claude-code -a codex -y
+# which keeps one canonical copy in ~/.agents/skills and symlinks it into
+# ~/.claude/skills and ~/.codex/skills. `npx skills update -g` refreshes them.
+# A skill whose ~/.claude/skills/<skill> is already a symlink is skipped; a
+# hand-placed real directory is moved aside to <skill>.bak.<epoch> first.
+# Private entries belong in claude/skills.local.list (gitignored).
+
+# find-docs -- current library docs through the ctx7 CLI (config/mise/config.toml).
+# Replaces the context7 MCP server.
+upstash/context7 find-docs
