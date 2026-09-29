@@ -52,6 +52,16 @@ t "L1.11" "sourcing machine.sh has no side effects" \
 t "L1.12" "a file value does not leak into the caller's shell" \
   'D=$(_lc_dir); printf "DOTFILES_LAUNCHER=raycast\nLEAK=1\n" >"$D/macos/machine.local.sh"
    [ "$(env -i PATH=/usr/bin:/bin bash -c ". \"$ROOT_DIR/scripts/lib/machine.sh\"; dotfiles_launcher \"$D\" >/dev/null; echo \"\${LEAK:-none}\"")" = none ]'
+t "L1.13" "a machine.local.sh with a syntax error warns once, naming the file, and the next file still counts" \
+  'D=$(_lc_dir); printf "DOTFILES_LAUNCHER=raycast\nif then fi (\n" >"$D/macos/machine.local.sh"; printf "DOTFILES_LAUNCHER=raycast\n" >"$D/macos/local.sh"
+   e=$(_lc_err "$D"); [ "$(_lc "$D")" = raycast ] && [ "$(printf "%s\n" "$e" | grep -c "machine.local.sh")" -eq 1 ]'
+t "L1.14" "a broken file and nothing else: tinycast, with the warning" \
+  'D=$(_lc_dir); printf "if then fi (\n" >"$D/macos/machine.local.sh"; [ "$(_lc "$D")" = tinycast ] && case "$(_lc_err "$D")" in *machine.local.sh*) true ;; *) false ;; esac'
+t "L1.15" "an unreadable file warns and does not stop the lookup" \
+  '[ "$(id -u)" -eq 0 ] || { D=$(_lc_dir); printf "DOTFILES_LAUNCHER=raycast\n" >"$D/macos/machine.local.sh"; chmod 000 "$D/macos/machine.local.sh"; printf "DOTFILES_LAUNCHER=raycast\n" >"$D/macos/local.sh"
+   r=$(_lc "$D"); e=$(_lc_err "$D"); chmod 600 "$D/macos/machine.local.sh"; [ "$r" = raycast ] && case "$e" in *machine.local.sh*) true ;; *) false ;; esac; }'
+t "L1.16" "a file that merely ends on a failing command is not a warning" \
+  'D=$(_lc_dir); printf "DOTFILES_LAUNCHER=raycast\n[ -f /nonexistent ] && true\n" >"$D/macos/machine.local.sh"; [ -z "$(_lc_err "$D")" ] && [ "$(_lc "$D")" = raycast ]'
 
 section "L2 -- the Brewfile installs exactly one launcher"
 # `brew bundle list` is read-only (it prints the cask without its tap).
@@ -161,6 +171,8 @@ t "L6.4" "an unknown value is tinycast" \
   '! command -v brew >/dev/null || { D=$(_bdir); printf "DOTFILES_LAUNCHER=alfred\n" >"$D/macos/machine.local.sh"; o=$(_bare "$D"); printf "%s\n" "$o" | grep -qx tinycast; }'
 t "L6.5" "HOMEBREW_DOTFILES_LAUNCHER beats the files" \
   '! command -v brew >/dev/null || { D=$(_bdir); printf "DOTFILES_LAUNCHER=raycast\n" >"$D/macos/machine.local.sh"; o=$(_bare "$D" HOMEBREW_DOTFILES_LAUNCHER=tinycast); printf "%s\n" "$o" | grep -qx tinycast; }'
+t "L6.7" "an unreadable machine.local.sh gives no value and no crash" \
+  '! command -v brew >/dev/null || [ "$(id -u)" -eq 0 ] || { D=$(_bdir); printf "DOTFILES_LAUNCHER=tinycast\n" >"$D/macos/machine.local.sh"; chmod 000 "$D/macos/machine.local.sh"; printf "DOTFILES_LAUNCHER=raycast\n" >"$D/macos/local.sh"; o=$(_bare "$D"); chmod 600 "$D/macos/machine.local.sh"; printf "%s\n" "$o" | grep -qx raycast; }'
 t "L6.6" "no files at all: tinycast" \
   '! command -v brew >/dev/null || { D=$(_bdir); o=$(_bare "$D"); printf "%s\n" "$o" | grep -qx tinycast; }'
 

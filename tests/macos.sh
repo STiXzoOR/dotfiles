@@ -297,7 +297,8 @@ if [ "$1 $2" = "export com.tinycast.app" ]; then
     printf "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\n"
     if [ -n "${HK_FORCE:-}" ]; then printf "<key>hotkey.togglePalette</key><string>%s</string>\n" "$HK_FORCE"
     elif [ -f "$HK_STATE" ]; then printf "<key>hotkey.togglePalette</key><string>%s</string>\n" "$(cat "$HK_STATE")"; fi
-    [ -f "$SFE_STATE" ] && printf "<key>settingsFileEnabled</key><%s/>\n" "$(cat "$SFE_STATE")"
+    if [ -n "${SFE_FORCE:-}" ]; then printf "<key>settingsFileEnabled</key><%s/>\n" "$SFE_FORCE"
+    elif [ -f "$SFE_STATE" ]; then printf "<key>settingsFileEnabled</key><%s/>\n" "$(cat "$SFE_STATE")"; fi
     printf "</dict></plist>\n"
   } >"$3"
 fi
@@ -780,5 +781,11 @@ t "G8.23" "a running Tinycast that must be quit is announced first" '
   grep -qi "quitting tinycast" "$RUN/out"'
 t "G8.24" "a Tinycast that is not running is not announced as quit" \
   '! grep -qi "quitting tinycast" "$TC/out"'
+
+SFM=$(_g_env); _g_run "$SFM" defaults.sh SFE_FORCE=false
+t "G8.25" "a settings switch that reads back off is reported, not ignored" \
+  'grep -q "settingsFileEnabled read back" "$SFM/out"'
+t "G8.26" "a settings switch that reads back on is not reported" \
+  '! grep -q "settingsFileEnabled read back" "$TC/out"'
 
 finish

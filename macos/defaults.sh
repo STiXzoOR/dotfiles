@@ -389,7 +389,8 @@ ok
 # Symbolic hotkeys. Disabled because other apps take these over: Spotlight
 # (64, Cmd-Space) and Finder search (65) by the launcher (Tinycast or Raycast),
 # the built-in screenshot shortcuts (28-31) by Shottr. Raycast's own hotkey is
-# set inside Raycast, not here; Tinycast's is written by the launcher block below. Arguments per key: id, ascii code, key code, modifier mask.
+# set inside Raycast, not here; Tinycast's is written by the launcher block
+# below. Arguments per key: id, ascii code, key code, modifier mask.
 _disable_hotkey() {
   defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add "$1" \
     "<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>$2</integer><integer>$3</integer><integer>$4</integer></array><key>type</key><string>standard</string></dict></dict>"
@@ -418,9 +419,9 @@ ok
 DOTFILES_LAUNCHER=$(dotfiles_launcher "$DOTFILES_DIR")
 TINYCAST_HOTKEY='{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}'
 RAYCAST_APP="${DOTFILES_RAYCAST_APP:-/Applications/Raycast.app}"
-# _tinycast_get <key> -- the raw stored value, or nothing. `defaults read` prints
-# a string quoted and escaped, so the domain is exported to a plist and read with
-# PlistBuddy (":" is its path separator, so a dotted key is one key).
+# _tinycast_get <key> -- the raw stored value, or nothing. `defaults read`
+# prints a string quoted and escaped, so the domain is exported to a plist and
+# read with PlistBuddy (":" is its path separator, so a dotted key is one key).
 _tinycast_get() {
   local tmp v
   tmp=$(mktemp "${TMPDIR:-/tmp}/tinycast.XXXXXX") || return 1
@@ -449,10 +450,13 @@ if [ "$DOTFILES_LAUNCHER" = tinycast ]; then
       defaults write com.tinycast.app hotkey.togglePalette "$TINYCAST_HOTKEY"
       defaults write com.tinycast.app settingsFileEnabled -bool true
       got=$(_tinycast_get hotkey.togglePalette)
-      if [ "$got" = "$TINYCAST_HOTKEY" ]; then
-        ok
-      else
+      sfe=$(_tinycast_get settingsFileEnabled)
+      if [ "$got" != "$TINYCAST_HOTKEY" ]; then
         error "Tinycast hotkey read back as '$got', expected '$TINYCAST_HOTKEY'; set Cmd-Space in Tinycast > Settings > General"
+      elif [ "$sfe" != true ]; then
+        warn "Tinycast settingsFileEnabled read back as '$sfe', expected 'true'; switch on Tinycast > Settings > Backup > Settings File"
+      else
+        ok
       fi
     fi
   fi

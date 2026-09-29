@@ -181,8 +181,13 @@ launcher = ENV["HOMEBREW_DOTFILES_LAUNCHER"].to_s
 if launcher.empty?
   %w[machine.local.sh local.sh].each do |name|
     file = File.join(__dir__, "macos", name)
-    next unless File.file?(file)
-    line = File.foreach(file).find { |l| l.match?(/^DOTFILES_LAUNCHER=/) }
+    next unless File.file?(file) && File.readable?(file)
+    # An unreadable or non-text file gives no value rather than a crash.
+    line = begin
+      File.foreach(file).find { |l| l.match?(/^DOTFILES_LAUNCHER=/) }
+    rescue StandardError
+      nil
+    end
     next unless line
     launcher = line[/^DOTFILES_LAUNCHER=["']?([A-Za-z]*)/, 1].to_s
     break

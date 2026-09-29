@@ -63,7 +63,13 @@ dotfiles_launcher() {
   local dir="${1:-${DOTFILES_DIR:-$HOME/.dotfiles}}" v="${DOTFILES_LAUNCHER:-}" f
   for f in machine.local.sh local.sh; do
     [ -n "$v" ] && break
-    [ -f "$dir/macos/$f" ] || continue
+    [ -e "$dir/macos/$f" ] || continue
+    # A file that cannot be read or does not parse gives no value. Say so:
+    # falling through to tinycast silently would put Tinycast on a Raycast Mac.
+    if [ ! -r "$dir/macos/$f" ] || ! bash -n "$dir/macos/$f" >/dev/null 2>&1; then
+      printf 'warning: cannot read %s/macos/%s (unreadable or a syntax error); ignoring it\n' "$dir" "$f" >&2
+      continue
+    fi
     # shellcheck disable=SC1090
     v=$(unset DOTFILES_LAUNCHER; . "$dir/macos/$f" >/dev/null 2>&1; printf '%s' "${DOTFILES_LAUNCHER:-}")
   done
