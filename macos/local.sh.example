@@ -10,6 +10,9 @@
 # Sourced, never executed.
 
 # Computer name; also sets LocalHostName, HostName and the SMB NetBIOS name.
+# With two Macs sharing this file through the private repo (dotfiles private),
+# delete this line: each Mac has its own name, so set it per Mac instead with
+#   DOTFILES_COMPUTER_NAME=<name> dotfiles configure --defaults
 DOTFILES_COMPUTER_NAME="my-mac"
 
 # Preferred languages, space-separated, most preferred first.

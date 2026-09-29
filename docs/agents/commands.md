@@ -20,6 +20,9 @@ open                    # Open the dotfiles in Finder
 profiler                # Profile shell startup time
 secrets                 # Manage secrets in the macOS Keychain
 apps <check|backup|restore|list|undo>  # App settings backup (mackup, copy mode); see app-settings.md
+private <init|clone|link|status>       # Private companion repo for the gitignored files; see two-mac-sync.md
+sync [--scheduled]      # Keep this Mac current: fetch, fast-forward, restow, report drift; see two-mac-sync.md
+vault migrate           # Move ~/Vault into iCloud Drive, leaving a symlink; see two-mac-sync.md
 setup                   # Run the interactive setup wizard
 test                    # Run the test suite
 unlink <timestamp>      # Restore dotfiles from ~/.dotfiles_backup
@@ -34,7 +37,7 @@ default and diffs a later capture against it.
 
 ```
 install                 # Bootstrap: sudo keep-alive, Command Line Tools, git hooks, Homebrew, stow, SSH key
-install --all           # The steps below in order: prezto, link, node, packages, fonts,
+install --all           # The steps below in order: prezto, private, link, node, packages, fonts,
                         #   launchagents, claude, codex, configure, hosts (last)
 install --claude        # Claude Code: binary, marketplaces, plugins, hooks, rules, settings, QMD
 install --codex         # Codex CLI (runs scripts/install_codex.sh)
@@ -45,6 +48,7 @@ install --launchagents  # LaunchAgents from launchagents/ (see launchagents/disa
 install --node          # mise, Node and the CLIs in config/mise/config.toml (run link first)
 install --packages      # Brewfile (+ Brewfile.local) and VS Code extensions
 install --prezto        # The zsh framework
+install --private       # Clone the private companion repo and link its files (two-mac-sync.md)
 install --ssh           # SSH key (ed25519)
 ```
 

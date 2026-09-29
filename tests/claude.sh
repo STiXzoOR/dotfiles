@@ -257,6 +257,44 @@ t "N3.3" "an existing vault still gets its collections and templates" '
   [ "$(grep -c "^qmd collection add sessions" "$W/log")" -eq 1 ] &&
   [ -d "$W/home/Vault/Polaris" ]'
 
+section "N3b — the vault in iCloud Drive (Task 7)"
+# A fake iCloud Drive lives under the sandbox; DOTFILES_VAULT_ICLOUD points at
+# the vault folder inside it, so nothing here reaches the real iCloud Drive.
+# brctl is a stub that logs; STUB_BRCTL_MATERIALIZE=1 makes it clear placeholders.
+_icloud_env() { # _icloud_env <W> [placeholder]: stubs, a fake iCloud vault, optional placeholder
+  local w="$1"; _stubs "$w"
+  mkdir -p "$w/icloud/Vault/Notes"; printf 'n\n' >"$w/icloud/Vault/Notes/a.md"
+  [ "${2:-}" = placeholder ] && : >"$w/icloud/Vault/Notes/.b.md.icloud"
+  printf '#!/bin/sh\necho "brctl $*" >> "$STUBLOG"\n[ -n "${STUB_BRCTL_MATERIALIZE:-}" ] && find "$2/" -name "*.icloud" -exec rm -f {} + 2>/dev/null\nexit 0\n' >| "$w/bin/brctl"
+  chmod +x "$w/bin/brctl"
+}
+_icloud_run() { local w="$1"; shift; _full_run "$w" DOTFILES_VAULT_ICLOUD="$w/icloud/Vault" DOTFILES_VAULT_DL_WAIT=0 "$@"; }
+t "N3b.1" "a missing ~/Vault with an iCloud vault present becomes a symlink to it" '
+  W=$(sandbox); _icloud_env "$W"; _icloud_run "$W"
+  [ -L "$W/home/Vault" ] && [ "$(readlink "$W/home/Vault")" = "$W/icloud/Vault" ]'
+t "N3b.2" "the iCloud vault is downloaded before it is indexed, then indexed" '
+  W=$(sandbox); _icloud_env "$W"; _icloud_run "$W"
+  grep -q "^brctl download .*/icloud/Vault" "$W/log" && [ "$(grep -c "^qmd collection add notes" "$W/log")" -eq 1 ]'
+t "N3b.3" "placeholders that stay: a warning, and nothing is indexed" '
+  W=$(sandbox); _icloud_env "$W" placeholder; _icloud_run "$W"
+  [ "$(grep -c "^qmd collection add" "$W/log")" -eq 0 ] && [ "$(grep -c "^qmd update" "$W/log")" -eq 0 ] &&
+  [ "$(grep -ci "icloud" "$W/out")" -ge 1 ] && [ "$(grep -ci "Keep Downloaded" "$W/out")" -ge 1 ]'
+t "N3b.4" "placeholders that brctl materialises: indexing proceeds" '
+  W=$(sandbox); _icloud_env "$W" placeholder; _icloud_run "$W" STUB_BRCTL_MATERIALIZE=1
+  [ "$(grep -c "^qmd collection add notes" "$W/log")" -eq 1 ]'
+t "N3b.5" "placeholders block the template copy too: nothing is written into a half-downloaded vault" '
+  W=$(sandbox); _icloud_env "$W" placeholder; _icloud_run "$W"; [ ! -d "$W/icloud/Vault/Polaris" ]'
+t "N3b.6" "no iCloud vault and no ~/Vault: the old advice, no symlink" '
+  W=$(sandbox); _stubs "$W"; _full_run "$W" DOTFILES_VAULT_ICLOUD="$W/icloud/Vault"
+  [ ! -e "$W/home/Vault" ] && [ ! -L "$W/home/Vault" ] && [ "$(grep -ci "copy your vault" "$W/out")" -ge 1 ]'
+t "N3b.7" "an existing local ~/Vault is never replaced by the iCloud one" '
+  W=$(sandbox); _icloud_env "$W"; mkdir -p "$W/home/Vault"; printf "mine\n" >"$W/home/Vault/x.md"; _icloud_run "$W"
+  [ ! -L "$W/home/Vault" ] && [ -f "$W/home/Vault/x.md" ] && [ ! -e "$W/home/Vault/Vault" ] && [ ! -L "$W/home/Vault/Vault" ] &&
+  [ "$(grep -c "^brctl" "$W/log")" -eq 0 ]'
+t "N3b.8" "a local vault never calls brctl" '
+  W=$(sandbox); _icloud_env "$W"; mkdir -p "$W/home/Vault"; _icloud_run "$W"; [ "$(grep -c "^brctl" "$W/log")" -eq 0 ] &&
+  [ "$(grep -c "^qmd collection add notes" "$W/log")" -eq 1 ]'
+
 section "N4 — plugins (item 2.4)"
 t "N4.1" "the cc-marketplace and claude-code-warp marketplaces are listed" '
   grep -qx "kenryu42/cc-marketplace" claude/marketplaces.list &&

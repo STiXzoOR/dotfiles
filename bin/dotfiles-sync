@@ -1,0 +1,486 @@
+#!/usr/bin/env bash
+#
+# dotfiles-sync - keep this Mac current with the other one
+#
+# Usage: dotfiles-sync [--scheduled]
+#
+# For the public repo and then the private companion repo:
+#   - `git fetch`; fast-forward only, and only when the tracked files are clean
+#     and the branch is behind. Never merge, rebase or stash.
+#   - report what needs the owner, with the exact command: unpushed commits,
+#     behind-but-dirty, diverged.
+# When anything moved: `stow --restow` both packages, then `dotfiles private
+# link`. Then the actions the change calls for:
+#   mise install               when config/mise/ changed
+#   brew bundle install        when Brewfile / Brewfile.local are not satisfied
+#   install --claude / --codex when claude/ or codex/ changed
+# Interactively each one is offered (confirm). `secrets.age` changing upstream
+# is only reported: importing prompts for the age passphrase, so it is never
+# automatic. Finally, packages installed here but declared in neither the
+# public nor the private lists are listed, each with the line to add.
+#
+# --scheduled (the daily LaunchAgent): logs to ~/Library/Logs/dotfiles-sync.log,
+# never prompts, never runs sudo, never installs or upgrades anything (no
+# `brew bundle`/`brew install`, no `mise install`), and posts ONE macOS
+# notification, only when something needs the owner. The read-only package
+# queries for the drift report (`brew leaves`, `brew list --cask`, `mas list`,
+# `code --list-extensions`) do run; pending installs are remembered in
+# ~/.local/state/dotfiles/sync-pending until an interactive run does them.
+#
+# Bash 3.2 (macOS /bin/bash): no mapfile, no associative arrays, and never
+# `((x++))`. GNU tools are not on PATH under launchd, so only BSD-safe flags.
+
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$SELF_DIR/.." && pwd)}"
+PRIVATE_DIR="${DOTFILES_PRIVATE_DIR:-$HOME/.dotfiles-private}"
+DOTFILES_BIN="${DOTFILES_BIN:-$SELF_DIR/dotfiles}"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+PENDING_FILE="$STATE_DIR/sync-pending"
+LOG="${DOTFILES_SYNC_LOG:-$HOME/Library/Logs/dotfiles-sync.log}"
+
+export DOTFILES_DIR DOTFILES_PRIVATE_DIR="$PRIVATE_DIR"
+
+# launchd's PATH is /usr/bin:/bin:/usr/sbin:/sbin. Homebrew goes first, but
+# only when brew is not already resolvable, so an interactive shell (and a
+# test with stubs) keeps its own order. The mise shims come last.
+if ! command -v brew >/dev/null 2>&1; then
+  PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+fi
+case ":$PATH:" in
+  *":$HOME/.local/share/mise/shims:"*) ;;
+  *) PATH="$PATH:$HOME/.local/share/mise/shims" ;;
+esac
+export PATH
+
+# shellcheck source=../scripts/echos.sh
+source "$SELF_DIR/../scripts/echos.sh"
+# shellcheck source=../scripts/lib/lists.sh
+source "$SELF_DIR/../scripts/lib/lists.sh"
+
+SCHEDULED=0
+ATTN=""    # one line per thing that needs the owner
+CHANGED="" # "<repo>|<path>" for every file a fast-forward brought in
+MOVED=0
+PENDING="" # actions still to do: mise brew claude codex
+FAILED=0
+
+say() { printf '%s\n' "$*"; }
+attn() { ATTN="${ATTN}$1"$'\n'; }
+
+usage() {
+  cat <<'USAGE'
+Usage: dotfiles sync [--scheduled]
+
+  Fetch the public and private repos, fast-forward what is safe, restow, and
+  report (or, interactively, offer) what the change calls for.
+
+  --scheduled   No prompts, no sudo, no installs; logs to
+                ~/Library/Logs/dotfiles-sync.log and notifies once when
+                something needs you.
+USAGE
+}
+
+#############################################################################
+# Git
+#############################################################################
+
+# changed <repo> <pattern>...: did the last fast-forward of <repo> touch a
+# path matching one of the shell patterns?
+changed() {
+  local repo="$1" r p pat
+  shift
+  while IFS='|' read -r r p; do
+    [ "$r" = "$repo" ] || continue
+    for pat in "$@"; do
+      # shellcheck disable=SC2254
+      case "$p" in $pat) return 0 ;; esac
+    done
+  done <<EOF
+$CHANGED
+EOF
+  return 1
+}
+
+# repo_sync <label> <dir>
+repo_sync() {
+  local label="$1" dir="$2" up counts ahead behind old new f
+  say "== $label repo: $dir"
+
+  if ! git -C "$dir" fetch -q 2>/dev/null; then
+    # Offline is normal for a laptop: say so, do not notify.
+    say "  could not fetch (offline, or no access); nothing compared"
+    return 0
+  fi
+  if ! up=$(git -C "$dir" rev-parse --abbrev-ref '@{u}' 2>/dev/null); then
+    say "  no upstream branch, nothing to compare (git -C \"$dir\" push -u origin <branch>)"
+    return 0
+  fi
+  counts=$(git -C "$dir" rev-list --left-right --count "HEAD...$up")
+  ahead=${counts%%[[:space:]]*}
+  behind=${counts##*[[:space:]]}
+
+  if [ "$ahead" -gt 0 ] && [ "$behind" -gt 0 ]; then
+    say "  diverged from $up: $ahead local commit(s), $behind upstream. Nothing was changed. Resolve it by hand:"
+    say "    git -C \"$dir\" rebase $up    (replay your commits on top of upstream)"
+    say "    git -C \"$dir\" merge $up     (or merge)"
+    attn "$label repo has diverged from $up (git -C $dir rebase $up)"
+  elif [ "$behind" -gt 0 ]; then
+    if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
+      say "  behind $up by $behind commit(s) but has uncommitted changes, so it was left alone."
+      say "    Commit or discard them, then: git -C \"$dir\" pull --ff-only"
+      attn "$label repo is behind but has local changes (commit them, then git -C $dir pull --ff-only)"
+    else
+      old=$(git -C "$dir" rev-parse HEAD)
+      if git -C "$dir" merge --ff-only -q "$up" >/dev/null 2>&1; then
+        new=$(git -C "$dir" rev-parse HEAD)
+        say "  fast-forwarded $behind commit(s)"
+        while IFS= read -r f; do
+          [ -n "$f" ] && CHANGED="${CHANGED}${label}|${f}"$'\n'
+        done <<EOF
+$(git -C "$dir" diff --name-only "$old" "$new")
+EOF
+        MOVED=1
+      else
+        say "  could not fast-forward; try: git -C \"$dir\" pull --ff-only"
+        attn "$label repo could not be fast-forwarded (git -C $dir pull --ff-only)"
+      fi
+    fi
+  elif [ "$ahead" -gt 0 ]; then
+    say "  $ahead unpushed commit(s): git -C \"$dir\" push"
+    attn "$label repo has $ahead unpushed commit(s) (git -C $dir push)"
+  else
+    say "  up to date with $up"
+  fi
+
+  # New files in the private repo are untracked, and untracked means they stay
+  # on this Mac.
+  if [ "$label" = private ] && [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+    say "  uncommitted changes: they will not reach the other Mac until committed and pushed"
+    attn "private repo has uncommitted changes"
+  fi
+}
+
+#############################################################################
+# After a change: restow and relink
+#############################################################################
+
+restow() {
+  say "== restow"
+  if ! command -v stow >/dev/null 2>&1; then
+    say "  stow is not installed; run: dotfiles install --packages"
+    attn "stow is missing, so the new files were not linked"
+    return 0
+  fi
+  if (cd "$DOTFILES_DIR" && stow --restow -t "$HOME" runcom && stow --restow -t "$XDG_CONFIG_HOME" config); then
+    say "  restowed runcom and config"
+  else
+    say "  stow reported a problem; run: dotfiles link"
+    attn "stow --restow failed (run dotfiles link)"
+    FAILED=1
+  fi
+  if [ -d "$PRIVATE_DIR/.git" ]; then
+    "$SELF_DIR/dotfiles-private" link || { attn "dotfiles private link failed"; FAILED=1; }
+  fi
+}
+
+#############################################################################
+# Pending actions
+#############################################################################
+
+pending_add() {
+  case "$PENDING" in
+    *"$1"$'\n'*) ;;
+    *) PENDING="${PENDING}$1"$'\n' ;;
+  esac
+}
+pending_has() { case "$PENDING" in *"$1"$'\n'*) return 0 ;; esac; return 1; }
+pending_drop() {
+  local out="" l
+  while IFS= read -r l; do
+    [ -n "$l" ] && [ "$l" != "$1" ] && out="${out}${l}"$'\n'
+  done <<EOF
+$PENDING
+EOF
+  PENDING="$out"
+}
+pending_save() {
+  mkdir -p "$STATE_DIR" 2>/dev/null || return 0
+  printf '%s' "$PENDING" >"$PENDING_FILE" 2>/dev/null || true
+}
+
+collect_pending() {
+  local l
+  if [ -f "$PENDING_FILE" ]; then
+    while IFS= read -r l; do
+      case "$l" in mise | brew | claude | codex) pending_add "$l" ;; esac
+    done <"$PENDING_FILE"
+  fi
+  if changed public 'config/mise/*'; then pending_add mise; fi
+  if changed public 'Brewfile' || changed private 'Brewfile.local'; then pending_add brew; fi
+  if changed public 'claude/*' || changed private 'claude/*'; then pending_add claude; fi
+  if changed public 'codex/*' || changed private 'codex/*'; then pending_add codex; fi
+  if changed private 'secrets.age'; then
+    say "secrets.age changed upstream: run 'dotfiles secrets import $PRIVATE_DIR/secrets.age' (it asks for the age passphrase, so sync never does it)"
+    attn "secrets.age changed: run dotfiles secrets import"
+  fi
+}
+
+brewfiles() {
+  local f
+  for f in "$DOTFILES_DIR/Brewfile" "$DOTFILES_DIR/Brewfile.local"; do
+    [ -f "$f" ] && printf '%s\n' "$f"
+  done
+}
+
+# Interactive only: is the Brewfile satisfied on this Mac right now?
+brew_unsatisfied() {
+  local f rc=1
+  command -v brew >/dev/null 2>&1 || return 1
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    brew bundle check --file="$f" >/dev/null 2>&1 || { printf '%s\n' "$f"; rc=0; }
+  done <<EOF
+$(brewfiles)
+EOF
+  return "$rc"
+}
+
+run_action() { # run_action <name> <description> <command...>
+  local name="$1" desc="$2"
+  shift 2
+  if confirm "Run: $desc?"; then
+    if "$@"; then
+      pending_drop "$name"
+    else
+      say "  $desc failed"
+      attn "$desc failed"
+      FAILED=1
+    fi
+  else
+    say "  skipped: $desc (still pending)"
+  fi
+}
+
+install_brew_bundle() {
+  local f rc=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    brew bundle install --file="$f" || rc=1
+  done <<EOF
+$(brew_unsatisfied)
+EOF
+  return "$rc"
+}
+
+do_pending() {
+  say "== pending actions"
+  # Interactively the Brewfiles themselves are the truth: satisfied means
+  # nothing to do (whatever an earlier run remembered), unsatisfied means offer
+  # it. Scheduled never runs `brew bundle`, so it goes by what changed.
+  if [ "$SCHEDULED" -eq 0 ] && command -v brew >/dev/null 2>&1; then
+    if brew_unsatisfied >/dev/null; then pending_add brew; else pending_drop brew; fi
+  fi
+  if [ -z "$PENDING" ]; then
+    say "  none"
+    return 0
+  fi
+
+  local name desc cmd
+  for name in mise brew claude codex; do
+    pending_has "$name" || continue
+    case "$name" in
+      mise) desc="mise install (config/mise changed)"; cmd="mise install" ;;
+      brew) desc="brew bundle install (the Brewfiles are not satisfied)"; cmd="brew bundle install --file=<Brewfile>" ;;
+      claude) desc="dotfiles install --claude (claude/ changed)"; cmd="dotfiles install --claude" ;;
+      codex) desc="dotfiles install --codex (codex/ changed)"; cmd="dotfiles install --codex" ;;
+    esac
+    if [ "$SCHEDULED" -eq 1 ]; then
+      say "  pending: $cmd"
+      attn "pending: $cmd"
+      continue
+    fi
+    case "$name" in
+      mise) run_action mise "$desc" mise install ;;
+      brew) run_action brew "$desc" install_brew_bundle ;;
+      claude) run_action claude "$desc" "$DOTFILES_BIN" install --claude ;;
+      codex) run_action codex "$desc" "$DOTFILES_BIN" install --codex ;;
+    esac
+  done
+  pending_save
+}
+
+#############################################################################
+# Drift: installed here, declared nowhere
+#############################################################################
+
+declared_brewfile_names() { # declared_brewfile_names <kind>
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] && sed -n -E "s/^[[:space:]]*$1 \"([^\"]+)\".*/\\1/p" "$f"
+  done <<EOF
+$(brewfiles)
+EOF
+}
+
+declared_mas_ids() {
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] && sed -n -E 's/^[[:space:]]*mas .*id:[[:space:]]*([0-9]+).*/\1/p' "$f"
+  done <<EOF
+$(brewfiles)
+EOF
+}
+
+# in_list <needle> <newline list>: exact, case-insensitive match.
+in_list() { printf '%s\n' "$2" | grep -qixF -- "$1"; }
+
+report_drift() {
+  say "== drift: installed on this Mac, declared in no list"
+  local n=0 decl item base line id name
+
+  if command -v brew >/dev/null 2>&1; then
+    decl=$(declared_brewfile_names brew)
+    while IFS= read -r item; do
+      [ -n "$item" ] || continue
+      base=${item##*/}
+      if ! in_list "$item" "$decl" && ! in_list "$base" "$decl"; then
+        say "  brew \"$item\"      (add to Brewfile, or Brewfile.local for private ones)"
+        n=$((n + 1))
+      fi
+    done <<EOF
+$(brew leaves --installed-on-request 2>/dev/null)
+EOF
+    decl=$(declared_brewfile_names cask)
+    while IFS= read -r item; do
+      [ -n "$item" ] || continue
+      base=${item##*/}
+      if ! in_list "$item" "$decl" && ! in_list "$base" "$decl"; then
+        say "  cask \"$item\"      (add to Brewfile, or Brewfile.local)"
+        n=$((n + 1))
+      fi
+    done <<EOF
+$(brew list --cask -1 2>/dev/null)
+EOF
+  fi
+
+  if command -v mas >/dev/null 2>&1; then
+    decl=$(declared_mas_ids)
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      id=$(printf '%s' "$line" | awk '{ print $1 }')
+      name=$(printf '%s' "$line" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//; s/[[:space:]]+\([^)]*\)[[:space:]]*$//')
+      if [ -n "$id" ] && ! in_list "$id" "$decl"; then
+        say "  mas \"$name\", id: $id      (add to Brewfile, or Brewfile.local)"
+        n=$((n + 1))
+      fi
+    done <<EOF
+$(mas list 2>/dev/null)
+EOF
+  fi
+
+  local code_bin
+  code_bin=$(command -v code || true)
+  [ -n "$code_bin" ] || code_bin="${DOTFILES_CODE_BIN_FALLBACK:-/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code}"
+  if [ -x "$code_bin" ]; then
+    decl=$(read_list "$DOTFILES_DIR/packages" code)
+    while IFS= read -r item; do
+      [ -n "$item" ] || continue
+      if ! in_list "$item" "$decl"; then
+        say "  $item      (add to packages/code.list, or packages/code.local.list)"
+        n=$((n + 1))
+      fi
+    done <<EOF
+$("$code_bin" --list-extensions </dev/null 2>/dev/null)
+EOF
+  fi
+
+  if [ "$n" -eq 0 ]; then
+    say "  none"
+  else
+    attn "$n installed package(s) are declared nowhere (dotfiles sync lists them)"
+  fi
+}
+
+#############################################################################
+# Notification and logging
+#############################################################################
+
+notify() {
+  local msg line total=0 shown=0 text=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    total=$((total + 1))
+    if [ "$shown" -lt 3 ]; then
+      text="${text:+$text; }$line"
+      shown=$((shown + 1))
+    fi
+  done <<EOF
+$ATTN
+EOF
+  [ "$total" -gt "$shown" ] && text="$text (+$((total - shown)) more)"
+  msg=$(printf '%s' "$text" | tr -d '\042\134' | cut -c 1-220)
+  osascript -e "display notification \"$msg\" with title \"dotfiles sync\" subtitle \"run: dotfiles sync\"" >/dev/null 2>&1 || true
+}
+
+setup_scheduled() {
+  mkdir -p "$(dirname "$LOG")" 2>/dev/null
+  # One megabyte is years of daily runs; keep one previous file.
+  if [ -f "$LOG" ] && [ "$(wc -c <"$LOG" | tr -d ' ')" -gt 1048576 ]; then
+    mv -f "$LOG" "$LOG.1"
+  fi
+  exec >>"$LOG" 2>&1 </dev/null
+  say "=== $(date '+%Y-%m-%d %H:%M:%S') dotfiles sync (scheduled)"
+  # Nothing may wait at a prompt: no credential prompt, no ssh passphrase
+  # prompt, and Homebrew must not update itself for a read-only query.
+  export GIT_TERMINAL_PROMPT=0
+  export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes}"
+  export HOMEBREW_NO_AUTO_UPDATE=1
+  unset DOTFILES_YES
+}
+
+main() {
+  case "${1:-}" in
+    "") ;;
+    --scheduled) SCHEDULED=1 ;;
+    -h | --help | help)
+      usage
+      return 0
+      ;;
+    *)
+      usage >&2
+      return 2
+      ;;
+  esac
+  [ "$SCHEDULED" -eq 1 ] && setup_scheduled
+  # A first-seen GitHub host key must not stop a fetch at a prompt.
+  export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}"
+
+  if [ -d "$DOTFILES_DIR/.git" ]; then
+    repo_sync public "$DOTFILES_DIR"
+  else
+    say "== public repo: $DOTFILES_DIR is not a git checkout; skipped"
+  fi
+  if [ -d "$PRIVATE_DIR/.git" ]; then
+    repo_sync private "$PRIVATE_DIR"
+  else
+    say "== private repo: none at $PRIVATE_DIR (dotfiles private clone, or dotfiles private init)"
+  fi
+
+  [ "$MOVED" -eq 1 ] && restow
+  collect_pending
+  do_pending
+  report_drift
+
+  if [ "$SCHEDULED" -eq 1 ]; then
+    [ -n "$ATTN" ] && notify
+    say "=== done"
+    return 0
+  fi
+  [ -z "$ATTN" ] && say "Everything is in sync."
+  return "$FAILED"
+}
+
+main "$@"

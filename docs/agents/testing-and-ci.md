@@ -32,6 +32,8 @@ any suite failed. Arguments are passed through to each suite.
 | `tests/mise.sh`            | mise config, the lockfile and `config/mise/locks/`             |
 | `tests/ci.sh`              | The workflows and git hooks                                    |
 | `tests/secrets.sh`         | `bin/dotfiles-secrets`                                         |
+| `tests/sync.sh`            | `scripts/lib/machine.sh`, `bin/dotfiles-sync`, `bin/dotfiles-vault`, the sync LaunchAgent (`SYNC_ONLY="S V"` runs a subset) |
+| `tests/private.sh`         | `bin/dotfiles-private` (sandbox repos and a bare remote)       |
 
 `tests/lib.sh` defines a `timeout <secs> <cmd...>` function for the suites. A
 stock macOS `PATH` and the CI runner have no GNU `timeout`, so it uses `timeout`,

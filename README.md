@@ -113,7 +113,7 @@ cd ~/.dotfiles
 
 > Note: plain `./bin/dotfiles install` bootstraps the machine — Command Line Tools, Homebrew, stow and an SSH key — sets the repo's git hooks (the gitleaks pre-commit), then lists the remaining steps and offers to run them. It prints its success banner only when every step succeeded, and otherwise names the ones that failed.
 >
-> `./bin/dotfiles install --all` runs the rest in one go, in this order: `--prezto`, `link`, `--node`, `--packages`, `--fonts`, `--launchagents`, `--claude`, `--codex`, `configure`, then `--hosts` last (the blocklist can break downloads made later in a run). A failed step does not stop the run; the closing summary names each one and the exit status is non-zero. `--node` needs `link` to have run first, because mise reads `~/.config/mise`.
+> `./bin/dotfiles install --all` runs the rest in one go, in this order: `--prezto`, `--private` (the private companion repo, when you use one; see [Two Macs](#two-macs)), `link`, `--node`, `--packages`, `--fonts`, `--launchagents`, `--claude`, `--codex`, `configure`, then `--hosts` last (the blocklist can break downloads made later in a run). A failed step does not stop the run; the closing summary names each one and the exit status is non-zero. `--node` needs `link` to have run first, because mise reads `~/.config/mise`.
 >
 > To do it piece by piece, run `./bin/dotfiles install --help` for the flag list, or `./bin/dotfiles help` for every command.
 >
@@ -133,8 +133,9 @@ installs the plugins in `claude/plugins.list`, registers the MCP servers in
 `claude/mcp.list` (QMD and Blender), installs the skills in `claude/skills.list`
 (`find-docs`), copies the hooks, rules and status line from `claude/` into
 `~/.claude/`, merges `claude/settings.template.json` into `~/.claude/settings.json`,
-and sets up QMD over the Obsidian vault. The vault is a plain folder you copy
-over by hand first; if it is missing the script says so and skips it.
+and sets up QMD over the Obsidian vault. The vault is a plain folder you bring
+over first (or the iCloud Drive vault, see [Two Macs](#two-macs)); if it is
+missing the script says so and skips it.
 
 `./bin/dotfiles install --codex` does the same for Codex: it seeds
 `~/.codex/config.toml` (only when absent), registers the marketplaces in
@@ -168,6 +169,18 @@ If you have existing dotfiles for configuring git, zsh, vim, etc., these will be
 Where `YYYY.MM.DD.HH.MM.SS` is the timestamp of the backup you want to restore (check `~/.dotfiles_backup/` for available backups).
 
 > The restore script does not currently restore system settings--only your original dotfiles. To restore system settings, you'll need to manually undo what you don't like (so don't forget to fork, review, and tweak before installing)
+
+## Two Macs
+
+A MacBook and a Mac mini can share one setup. Dotfiles travel through git, the personal gitignored files (git identity, private profiles, work lists, private SSH hosts, the encrypted secrets export) through a private companion repo cloned to `~/.dotfiles-private`, and the Obsidian vault through iCloud Drive. Remote Login and the power settings apply to the desktop only.
+
+```shell
+./bin/dotfiles sync                 # fetch, fast-forward what is safe, restow, offer the follow-ups, report drift
+./bin/dotfiles private status       # the private repo, and gitignored files that will not sync
+./bin/dotfiles vault migrate        # once: move ~/Vault into iCloud Drive (quit Obsidian first)
+```
+
+A daily LaunchAgent runs `dotfiles sync --scheduled`: it never installs anything and posts one notification only when something needs you. See [docs/agents/two-mac-sync.md](docs/agents/two-mac-sync.md).
 
 ## App Settings Backup
 
@@ -219,14 +232,14 @@ The following will only happen if you agree on the prompt
 - install vim plugins/themes
 - install fonts
 - install brew, cask, code, mas, npm packages
-- install LaunchAgents for automated tasks (a daily app-settings backup, `dotfiles apps backup --scheduled`)
+- install LaunchAgents for automated tasks (a daily app-settings backup, `dotfiles apps backup --scheduled`, and a daily check that keeps two Macs in step, `dotfiles sync --scheduled`)
 - change system configuration
 
 ### Security
 
 - Enable install from Anywhere
 - Disable remote apple events
-- Enable remote login (SSH), Restart automatically after a power failure, disable Power Nap and disk sleep
+- Enable remote login (SSH), Restart automatically after a power failure, disable Power Nap and disk sleep, never sleep the system on AC power and sleep the display after 10 minutes (desktop only; a MacBook keeps its own)
 - Disable wake-on modem
 - Disable wake-on LAN
 - Disable guest account login

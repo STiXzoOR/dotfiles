@@ -21,6 +21,12 @@ LSREGISTER="${DOTFILES_LSREGISTER:-/System/Library/Frameworks/CoreServices.frame
 
 source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
+source "$DOTFILES_DIR/scripts/lib/machine.sh"
+
+# desktop or laptop (scripts/lib/machine.sh). Remote Login and the power
+# settings below are desktop-only: the laptop keeps its own, and this script
+# neither turns them on nor off there.
+DOTFILES_ROLE=$(dotfiles_machine_role)
 
 # `ok` is an unconditional echo, so every step used to report success whether
 # or not it did anything. print_result takes the command's exit status instead.
@@ -70,36 +76,50 @@ running "Disable remote apple events"
 sudo systemsetup -setremoteappleevents off >/dev/null 2>&1
 print_result $?
 
-# Remote Login (SSH) is ON: this machine is reached remotely. -f suppresses the
-# confirmation prompt, which would otherwise block forever because it is
-# written to a stream that goes to /dev/null while stdin is still the
-# terminal. See `man systemsetup`, -setremotelogin [-f] on | off.
-running "Enable remote login"
-sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
-print_result $?
+if [ "$DOTFILES_ROLE" = desktop ]; then
+  # Remote Login (SSH) is ON: this machine is reached remotely. -f suppresses the
+  # confirmation prompt, which would otherwise block forever because it is
+  # written to a stream that goes to /dev/null while stdin is still the
+  # terminal. See `man systemsetup`, -setremotelogin [-f] on | off.
+  running "Enable remote login"
+  sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
+  print_result $?
 
-# Like the firewall, systemsetup can print success and change nothing without
-# Full Disk Access, so read the state back.
-running "Verify Remote Login is really on"
-if sudo systemsetup -getremotelogin 2>/dev/null | grep -q "On"; then
-  ok
+  # Like the firewall, systemsetup can print success and change nothing without
+  # Full Disk Access, so read the state back.
+  running "Verify Remote Login is really on"
+  if sudo systemsetup -getremotelogin 2>/dev/null | grep -q "On"; then
+    ok
+  else
+    error "Remote Login is still off: grant Full Disk Access to this terminal and run again"
+  fi
+
+  # Power. Apple silicon ignores `standbydelay` (it reads back absent), so it is
+  # not written.
+  running "Restart automatically after a power failure"
+  sudo pmset -a autorestart 1
+  print_result $?
+
+  running "Disable Power Nap"
+  sudo pmset -a powernap 0
+  print_result $?
+
+  running "Never sleep the disks"
+  sudo pmset -a disksleep 0
+  print_result $?
+
+  # Reachable over SSH (and Tailscale) at all times: on AC power the machine
+  # never system-sleeps, and only the display goes to sleep, after 10 minutes.
+  running "Never sleep the system on AC power"
+  sudo pmset -c sleep 0
+  print_result $?
+
+  running "Sleep the display after 10 minutes on AC power"
+  sudo pmset -c displaysleep 10
+  print_result $?
 else
-  error "Remote Login is still off: grant Full Disk Access to this terminal and run again"
+  skip "Remote Login and power settings: left as they are on a laptop (role: $DOTFILES_ROLE)"
 fi
-
-# Power. Apple silicon ignores `standbydelay` (it reads back absent), so it is
-# not written.
-running "Restart automatically after a power failure"
-sudo pmset -a autorestart 1
-print_result $?
-
-running "Disable Power Nap"
-sudo pmset -a powernap 0
-print_result $?
-
-running "Never sleep the disks"
-sudo pmset -a disksleep 0
-print_result $?
 
 running "Disable wake-on LAN"
 sudo pmset -a womp 0

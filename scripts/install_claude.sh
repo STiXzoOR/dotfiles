@@ -12,6 +12,10 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CLAUDE_DIR="$ROOT_DIR/claude"
 CLAUDE_HOME="$HOME/.claude"
 VAULT_DIR="${VAULT_DIR:-$HOME/Vault}"
+# shellcheck source=lib/vault.sh
+source "$SCRIPT_DIR/lib/vault.sh"
+# 1 once we know the iCloud vault still has undownloaded placeholders.
+VAULT_PLACEHOLDERS_LEFT=0
 CLAUDE_INSTALL_LOG="$HOME/.cache/dotfiles/claude-install.log"
 FAILURES=()
 
@@ -703,12 +707,49 @@ merge_settings() {
 
 # ─── 6. Setup Obsidian vault ─────────────────────────────────────────────────
 
+# The vault is not always local: on a Mac that shares it through iCloud Drive,
+# ~/Vault is a symlink to the vault folder there. Make sure iCloud has really
+# downloaded it before anything is written into it or indexed: a half-synced
+# vault holds `.name.icloud` placeholders instead of the notes. Sets
+# VAULT_PLACEHOLDERS_LEFT; the download is only asked for once per run.
+prepare_icloud_vault() {
+  [[ -d "$VAULT_DIR" ]] || return 0
+  dotfiles_vault_in_icloud "$VAULT_DIR" || return 0
+  action "Asking iCloud Drive to download the vault"
+  if dotfiles_vault_materialise "$VAULT_DIR"; then
+    VAULT_PLACEHOLDERS_LEFT=0
+    ok "the vault is fully downloaded"
+  else
+    VAULT_PLACEHOLDERS_LEFT=1
+    warn "iCloud has not finished downloading the vault (placeholders above). Nothing was written into it and QMD was not told about it. In Finder, right-click the Vault folder in iCloud Drive and choose Keep Downloaded, wait for it to finish, then re-run 'dotfiles install --claude'"
+  fi
+}
+
 setup_vault() {
-  # The vault is a plain local folder the owner copies over by hand. Creating
-  # it here made an empty tree that QMD then indexed, and a later copy landed
-  # on top of a half-scaffolded directory.
+  # The vault is a plain folder the owner brings over (a copy, or the iCloud
+  # one). Creating it here made an empty tree that QMD then indexed, and a
+  # later copy landed on top of a half-scaffolded directory.
+  #
+  # The one thing this does create is the ~/Vault symlink, and only when
+  # nothing is at ~/Vault and the iCloud vault already exists: a local vault
+  # is never replaced (dotfiles vault migrate does that, deliberately).
+  local icloud
+  icloud=$(dotfiles_vault_icloud)
+  if [[ ! -e "$VAULT_DIR" && ! -L "$VAULT_DIR" && -d "$icloud" ]]; then
+    if ln -s "$icloud" "$VAULT_DIR"; then
+      ok "vault: $VAULT_DIR -> the iCloud Drive vault"
+    else
+      warn "could not link $VAULT_DIR to the iCloud vault"
+    fi
+  fi
+
   if [[ ! -d "$VAULT_DIR" ]]; then
-    warn "no vault at $VAULT_DIR: copy your vault there first, then re-run 'dotfiles install --claude'"
+    warn "no vault at $VAULT_DIR: copy your vault there first, then re-run 'dotfiles install --claude' (or, on the Mac that has it, 'dotfiles vault migrate' to move it to iCloud Drive)"
+    return 0
+  fi
+
+  prepare_icloud_vault
+  if [[ "$VAULT_PLACEHOLDERS_LEFT" == 1 ]]; then
     return 0
   fi
 
@@ -757,7 +798,9 @@ setup_qmd() {
     fi
   fi
 
-  if [[ -d "$VAULT_DIR" ]]; then
+  if [[ -d "$VAULT_DIR" && "$VAULT_PLACEHOLDERS_LEFT" == 1 ]]; then
+    warn "the iCloud vault is not fully downloaded: skipping QMD collections and indexing"
+  elif [[ -d "$VAULT_DIR" ]]; then
     setup_qmd_index
   else
     warn "no vault at $VAULT_DIR: skipping QMD collections and indexing"

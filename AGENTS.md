@@ -59,7 +59,8 @@ These affect nearly every task.
   (gitignored; copy `macos/local.sh.example`), never in `macos/defaults.sh`.
 - **`config/mise/locks/` is tracked.** A fresh clone needs it for `install --node`.
 - **App settings**: `dotfiles apps` backs up and restores them with mackup in
-  copy mode. Never part of `install --all`.
+  copy mode. `install --launchagents` (part of `--all`) installs the daily
+  backup agent; a restore is never automatic.
 - **Git hooks**: `core.hooksPath` is repo-local (`.githooks`), set by `install`
   and checked by `doctor`. There is no global hooks path.
 - **Tests** call `timeout` through the shim in `tests/lib.sh` (no GNU `timeout` on
@@ -84,6 +85,8 @@ every time:
 - `scripts/install_claude.sh` — it overwrites `~/.claude`
 - `install --passwordless` — it writes a `NOPASSWD` sudoers fragment
 - `install --hosts` — it rewrites `/etc/hosts` with sudo
+- `dotfiles sync`, `dotfiles private …`, `dotfiles vault migrate` — they move
+  git state, symlink over gitignored files, or move the real vault
 - `stow`, `launchctl`, `sudo`, `brew bundle`, `brew uninstall`
 - anything that writes under `~/.claude` while Claude Code is running
 
@@ -108,4 +111,5 @@ each edit run `zsh -n <file>` and `zsh -l -i -c 'exit'`.
 | Secrets management (macOS Keychain)            | [secrets.md](docs/agents/secrets.md)                         |
 | App settings backup/restore (mackup, copy mode) | [app-settings.md](docs/agents/app-settings.md)              |
 | Setting up a new Mac (order, manual steps)     | [new-mac.md](docs/agents/new-mac.md)                         |
+| Two Macs: roles, private repo, sync, iCloud vault | [two-mac-sync.md](docs/agents/two-mac-sync.md)            |
 | Neovim config (lazy.nvim)                      | [neovim.md](docs/agents/neovim.md)                           |

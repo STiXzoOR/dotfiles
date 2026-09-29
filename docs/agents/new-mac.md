@@ -59,10 +59,13 @@ live in the owner's private notes, not here: this repo is public.
 
 ## Two Macs
 
-Until the app-settings sync work lands, do not re-run `dotfiles configure` on
-the MacBook. Remote Login and the desktop power settings (restart after power
-loss, no Power Nap, no disk sleep) are declared for the Mac mini and are not yet
-gated by machine role, so a re-run would turn them on for a laptop too.
+`configure` detects the machine role: a Mac with no internal battery is a
+desktop and gets Remote Login and the always-on power settings (restart after
+power loss, no Power Nap, no disk sleep, no system sleep on AC); a laptop keeps
+its own. Override with `DOTFILES_MACHINE_ROLE=desktop|laptop` in
+`macos/local.sh`. Keeping both Macs in step (the private companion repo,
+`dotfiles sync`, the vault in iCloud Drive) is covered in
+[two-mac-sync.md](two-mac-sync.md).
 
 ## Things that are manual on purpose
 

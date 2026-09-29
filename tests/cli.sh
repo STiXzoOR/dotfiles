@@ -892,7 +892,7 @@ _mk_repo() { # _mk_repo <W> <step>... -- steps listed are NOT stubbed
     echo 'dotfiles_sudo_keepalive() { _log keepalive; }'
     echo 'require_brew() { _log "brew:$*"; }'
     local s keep
-    for s in install_clt install_homebrew install_ssh install_prezto install_node install_packages install_fonts \
+    for s in install_clt install_homebrew install_ssh install_prezto install_private install_node install_packages install_fonts \
       install_launchagents install_claude install_codex install_hosts link configure hooks; do
       keep=0; for k in "$@"; do [ "$k" = "$s" ] && keep=1; done
       [ "$keep" = 1 ] && continue
@@ -927,10 +927,10 @@ t "N4.5" "a failed Homebrew step does not stop stow and SSH from being tried" '
 t "N4.6" "install --all runs the steps in the documented order with hosts last" '
   W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install --all >/dev/null 2>&1; rc=$?
   [ "$rc" -eq 0 ] &&
-  [ "$(_log_line "$W/log")" = "keepalive prezto link node packages fonts launchagents claude codex configure hosts" ]'
+  [ "$(_log_line "$W/log")" = "keepalive prezto private link node packages fonts launchagents claude codex configure hosts" ]'
 t "N4.7" "install --all keeps going after a failure, names it and returns non-zero" '
   W=$(sandbox); _mk_repo "$W"; out=$(FAIL=packages _run_repo "$W" install --all 2>&1); rc=$?
-  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive prezto link node packages fonts launchagents claude codex configure hosts" ] &&
+  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive prezto private link node packages fonts launchagents claude codex configure hosts" ] &&
   case "$out" in *"packages"*) true ;; *) false ;; esac'
 t "N4.8" "install --all names every failed step" '
   W=$(sandbox); _mk_repo "$W"
@@ -1500,5 +1500,42 @@ RUN
   [ -L "$W/h/.config/gh" ] &&
   [ "$(cat "$W/h/.config/gh/hosts.yml")" = "user: me" ] &&
   [ "$(cat "$W/h/.config/gh/config.yml")" = tracked ]'
+
+#############################################################################
+section "T7 — two-Mac sync: routing, help and install --all (Task 7)"
+#############################################################################
+# _t7 <args...>: the real bin/dotfiles against a sandbox HOME. Only commands
+# that fail early (no private repo) or print help are routed this way.
+_t7() {
+  local W="$1"; shift
+  mkdir -p "$W/h"
+  env -i HOME="$W/h" PATH="/usr/bin:/bin" DOTFILES_PRIVATE_DIR="$W/none" bash bin/dotfiles "$@" 2>&1
+}
+t "T7.1" "the top-level help lists private" \
+  'out=$(bash bin/dotfiles help 2>&1); case "$out" in *"   private "*) true ;; *) false ;; esac'
+t "T7.2" "install --help lists --private" \
+  'out=$(bash bin/dotfiles install --help 2>&1); case "$out" in *"--private"*) true ;; *) false ;; esac'
+t "T7.3" "dotfiles private is routed to bin/dotfiles-private (status with no repo says what to run)" '
+  W=$(sandbox); out=$(_t7 "$W" private status); case "$out" in *"dotfiles private clone"*) true ;; *) false ;; esac'
+t "T7.1b" "the top-level help lists sync and vault" \
+  'out=$(bash bin/dotfiles help 2>&1); case "$out" in *"   sync "*) case "$out" in *"   vault "*) true ;; *) false ;; esac ;; *) false ;; esac'
+t "T7.3b" "dotfiles sync is routed to bin/dotfiles-sync" \
+  'W=$(sandbox); out=$(_t7 "$W" sync --help); case "$out" in *"--scheduled"*) true ;; *) false ;; esac'
+t "T7.3c" "dotfiles vault is routed to bin/dotfiles-vault" \
+  'W=$(sandbox); out=$(_t7 "$W" vault --help); case "$out" in *"vault migrate"*) true ;; *) false ;; esac'
+t "T7.4" "the private step runs after prezto and right before link in install --all" '
+  W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install --all >/dev/null 2>&1
+  a=$(_first_line private "$W/log"); b=$(_first_line link "$W/log"); [ "$a" -gt 0 ] && [ "$b" -eq $((a + 1)) ]'
+t "T7.5" "a failed private clone is named, does not stop install --all, and the status is non-zero" '
+  W=$(sandbox); _mk_repo "$W"; out=$(FAIL=private _run_repo "$W" install --all 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive prezto private link node packages fonts launchagents claude codex configure hosts" ] &&
+  case "$out" in *private*) true ;; *) false ;; esac'
+t "T7.6" "install --private runs bin/dotfiles-private install after a confirm" '
+  W=$(sandbox); mkdir -p "$W/df/bin" "$W/h"
+  fn_of sub_install_private > "$W/fn.sh"
+  printf "#!/bin/bash\necho \"private \$*\" >> \"%s/log\"\n" "$W" > "$W/df/bin/dotfiles-private"; chmod +x "$W/df/bin/dotfiles-private"
+  ( DOTFILES_DIR="$W/df"; DOTFILES_YES=1; bot() { :; }; confirm() { return 0; }; skip() { :; }
+    source "$W/fn.sh"; sub_install_private ) >/dev/null 2>&1 &&
+  [ "$(command cat "$W/log")" = "private install" ]'
 
 finish

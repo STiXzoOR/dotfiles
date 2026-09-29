@@ -31,6 +31,10 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$SELF_DIR/.." && pwd)}"
 export DOTFILES_DIR
 
+# dotfiles_machine_name: this Mac's name, shared with dotfiles-sync.
+# shellcheck source=../scripts/lib/machine.sh
+source "$SELF_DIR/../scripts/lib/machine.sh"
+
 # launchd's PATH is /usr/bin:/bin:/usr/sbin:/sbin. Homebrew goes first, but
 # only when mackup is not already resolvable, so an interactive shell (and a
 # test with a stub) keeps its own order.
@@ -260,17 +264,6 @@ EOF
 #############################################################################
 # Machine, storage and lock
 #############################################################################
-
-# This Mac's name, for the per-machine folder. DOTFILES_MACHINE_NAME wins, else
-# LocalHostName; anything outside [A-Za-z0-9-] becomes '-'. Task 7 may move
-# this to a shared scripts/lib/machine.sh (dotfiles_machine_name).
-machine_name() {
-  local n="${DOTFILES_MACHINE_NAME:-}"
-  [ -n "$n" ] || n=$(scutil --get LocalHostName 2>/dev/null)
-  n=$(printf '%s' "$n" | tr -c 'A-Za-z0-9-' '-')
-  [ -n "$n" ] || { err "cannot work out this Mac's name; set DOTFILES_MACHINE_NAME"; return 1; }
-  printf '%s' "$n"
-}
 
 # The store must already exist as iCloud Drive; it is never created for the
 # user (an absent iCloud Drive means signed out or disabled).
@@ -584,7 +577,7 @@ cmd_backup() {
     fi
   fi
 
-  machine=$(machine_name) || return 1
+  machine=$(dotfiles_machine_name) || return 1
   store_ready || return 1
   take_lock || return 1
   cmd_check || return 1
@@ -749,7 +742,7 @@ cmd_restore() {
     esac
   done
 
-  machine="${from:-$(machine_name)}" || return 1
+  machine="${from:-$(dotfiles_machine_name)}" || return 1
   printf '%s' "$machine" | grep -Eq '^[A-Za-z0-9-]+$' || { err "invalid machine name '$machine'"; return 2; }
   if [ -n "$snap" ]; then
     printf '%s' "$snap" | grep -Eq '^[0-9]{8}T[0-9]{6}Z(-[0-9]+)?$' || { err "invalid snapshot name '$snap'"; return 2; }

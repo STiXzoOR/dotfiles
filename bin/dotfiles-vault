@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+#
+# dotfiles-vault - move the Obsidian vault into iCloud Drive, safely
+#
+# Usage: dotfiles-vault migrate
+#
+# ~/Vault stays the path everything uses; afterwards it is a symlink to the
+# vault folder in iCloud Drive, which is how the MacBook and the Mac mini share
+# it. The location logic lives in scripts/lib/vault.sh, shared with
+# `install --claude`, so there is one owner of it.
+#
+# `migrate` moves real user data, so the original is not modified until every
+# check has passed:
+#   1. refuse while Obsidian runs, and when the iCloud folder already holds
+#      anything (two vaults must never be merged blindly);
+#   2. ditto the vault to a staging folder next to its final place;
+#   3. compare the entry count and a checksum listing of source and copy;
+#   4. only then rename the original to ~/Vault.local-backup-<epoch>, move the
+#      copy into place and create the ~/Vault symlink.
+# A failure at any step removes only the staging folder this run made and
+# leaves ~/Vault exactly as it was. The last step failing puts the original
+# back. It prints how to undo the migration.
+#
+# Bash 3.2 (macOS /bin/bash); BSD-safe tools only.
+
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VAULT_DIR="${VAULT_DIR:-$HOME/Vault}"
+
+# shellcheck source=../scripts/lib/vault.sh
+source "$SELF_DIR/../scripts/lib/vault.sh"
+
+say() { printf '%s\n' "$*"; }
+err() { printf 'dotfiles-vault: %s\n' "$*" >&2; }
+
+# A listing of every entry and a checksum of every file, both relative to <dir>
+# and sorted, so two trees can be compared with cmp. .DS_Store is Finder noise
+# that iCloud may rewrite at any moment.
+tree_listing() {
+  ( cd "$1" && find . -name .DS_Store -prune -o -print | LC_ALL=C sort )
+}
+tree_checksums() {
+  ( cd "$1" && find . -name .DS_Store -prune -o -type f -exec cksum {} + 2>/dev/null | LC_ALL=C sort )
+}
+
+cmd_migrate() {
+  local icloud parent
+  icloud=$(dotfiles_vault_icloud)
+  parent=$(dirname "$icloud")
+
+  if [ -L "$VAULT_DIR" ]; then
+    if [ "$(readlink "$VAULT_DIR")" = "$icloud" ]; then
+      say "$VAULT_DIR is already a link to the iCloud vault; nothing to do."
+      return 0
+    fi
+    err "$VAULT_DIR is a symlink to $(readlink "$VAULT_DIR"), not the iCloud vault; nothing changed"
+    return 1
+  fi
+  if [ ! -d "$VAULT_DIR" ]; then
+    err "no vault at $VAULT_DIR to migrate"
+    return 1
+  fi
+
+  # Obsidian keeps files open and rewrites .obsidian/workspace.json; a copy made
+  # under it can be inconsistent.
+  if pgrep -x Obsidian >/dev/null 2>&1; then
+    err "Obsidian is running. Quit it, then run this again; nothing changed"
+    return 1
+  fi
+
+  if [ ! -d "$parent" ]; then
+    err "iCloud Drive is not available ($parent is missing); sign in and turn on iCloud Drive. Nothing changed"
+    return 1
+  fi
+  if [ -e "$icloud" ] || [ -L "$icloud" ]; then
+    if [ ! -d "$icloud" ] || [ -n "$(ls -A "$icloud" 2>/dev/null)" ]; then
+      err "the iCloud vault folder already exists and is not empty ($icloud); it is never merged or overwritten. Nothing changed"
+      return 1
+    fi
+  fi
+  if ! command -v ditto >/dev/null 2>&1; then
+    err "ditto is missing; nothing changed"
+    return 1
+  fi
+
+  local epoch stage backup
+  epoch=$(date +%s)
+  stage="$icloud.migrating.$epoch"
+  backup="$VAULT_DIR.local-backup-$epoch"
+
+  say "copying $VAULT_DIR to iCloud Drive (this can take a minute)..."
+  if ! ditto "$VAULT_DIR" "$stage"; then
+    err "the copy failed; removing the partial copy. $VAULT_DIR was not touched"
+    discard_stage "$stage"
+    return 1
+  fi
+
+  local a b
+  a=$(find "$VAULT_DIR" -name .DS_Store -prune -o -print | wc -l | tr -d ' ')
+  b=$(find "$stage" -name .DS_Store -prune -o -print | wc -l | tr -d ' ')
+  if [ "$a" != "$b" ]; then
+    err "entry count differs (original $a, copy $b); removing the copy. $VAULT_DIR was not touched"
+    discard_stage "$stage"
+    return 1
+  fi
+  say "  $a entries in both"
+
+  if ! [ "$(tree_listing "$VAULT_DIR")" = "$(tree_listing "$stage")" ] ||
+    ! [ "$(tree_checksums "$VAULT_DIR")" = "$(tree_checksums "$stage")" ]; then
+    err "the copy does not match the original (names or checksums differ); removing the copy. $VAULT_DIR was not touched"
+    discard_stage "$stage"
+    return 1
+  fi
+  say "  names and checksums match"
+
+  # Point of no return is a rename, and every rename below is undone on failure.
+  if [ -d "$icloud" ]; then
+    rmdir "$icloud" 2>/dev/null || { err "could not clear the empty iCloud folder"; discard_stage "$stage"; return 1; }
+  fi
+  if ! mv "$stage" "$icloud"; then
+    err "could not move the copy into place; $VAULT_DIR was not touched"
+    discard_stage "$stage"
+    return 1
+  fi
+  if ! mv "$VAULT_DIR" "$backup"; then
+    err "could not rename the original; $VAULT_DIR was not touched. The iCloud copy is at $icloud"
+    return 1
+  fi
+  if ! ln -s "$icloud" "$VAULT_DIR"; then
+    mv "$backup" "$VAULT_DIR"
+    err "could not create the symlink; the original is back at $VAULT_DIR. The iCloud copy is at $icloud"
+    return 1
+  fi
+
+  say ""
+  say "Done. $VAULT_DIR is now a link to the iCloud vault:"
+  say "  $icloud"
+  say "The original is kept at $backup. Delete it once you have used the new vault for a while."
+  say ""
+  say "To undo:"
+  say "  rm \"$VAULT_DIR\" && mv \"$backup\" \"$VAULT_DIR\""
+  say ""
+  say "Next: in Finder, right-click the Vault folder in iCloud Drive and choose Keep Downloaded,"
+  say "so the notes are never evicted. Then re-run: dotfiles install --claude (registers QMD)."
+}
+
+# Remove the staging folder this run created, and nothing else. The guard
+# refuses any path that is not one of ours.
+discard_stage() {
+  case "$1" in
+    *.migrating.[0-9]*) [ -d "$1" ] && rm -rf "$1" ;;
+  esac
+  return 0
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: dotfiles vault migrate
+
+  Move ~/Vault into iCloud Drive and leave ~/Vault as a symlink to it. The
+  original is kept as ~/Vault.local-backup-<epoch>; nothing is deleted.
+USAGE
+}
+
+case "${1:-}" in
+  migrate) cmd_migrate ;;
+  -h | --help | help) usage ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

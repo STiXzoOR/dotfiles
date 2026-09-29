@@ -1,0 +1,302 @@
+#!/usr/bin/env bash
+#
+# dotfiles-private - the private companion repo for the gitignored files
+#
+# Usage: dotfiles-private <command>
+#
+#   init      Create the private repo from the gitignored files in this repo
+#   clone     Clone it (git, then gh when authenticated)
+#   link      Symlink every private file to its path in this repo
+#   status    Ahead/behind/dirty, and local-only files that will not sync
+#   install   clone, then link (what `dotfiles install --private` runs)
+#
+# The public repo is public, so the files that must not be in it (git identity,
+# private profiles, work marketplaces, extra packages, macOS locale, private
+# SSH hosts, the encrypted secrets export) live in a private GitHub repo,
+# cloned beside it, at DOTFILES_PRIVATE_DIR (default ~/.dotfiles-private). Its
+# layout mirrors the public repo's paths, so `link` needs no table beyond the
+# allowlist below. See docs/agents/two-mac-sync.md.
+#
+# `init` never creates the GitHub repo: that is an outward-facing action, so
+# it prints the command for the owner to run.
+#
+# Bash 3.2 (macOS /bin/bash): no mapfile, no associative arrays, and never
+# `((x++))`. GNU tools are not on PATH under launchd or `bash script.sh`, so
+# only BSD-safe flags.
+
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PUBLIC_DIR="${DOTFILES_DIR:-$(cd "$SELF_DIR/.." && pwd)}"
+PRIVATE_DIR="${DOTFILES_PRIVATE_DIR:-$HOME/.dotfiles-private}"
+REMOTE="${DOTFILES_PRIVATE_REMOTE:-git@github.com:STiXzoOR/dotfiles-private.git}"
+
+# Never stop at an ssh prompt: a first-seen GitHub host key is accepted, and a
+# key that needs a passphrase fails instead of waiting. An ssh command the
+# owner already set is respected.
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes}"
+
+# shellcheck source=../scripts/lib/ssh.sh
+source "$SELF_DIR/../scripts/lib/ssh.sh"
+
+say() { printf '%s\n' "$*"; }
+warn() { printf 'dotfiles-private: warning: %s\n' "$*" >&2; }
+err() { printf 'dotfiles-private: %s\n' "$*" >&2; }
+
+#############################################################################
+# The mapping. A private file is linked into the public repo only when its
+# relative path is one of these, so a stray file in the private repo can never
+# create a link anywhere else.
+#############################################################################
+
+# is_mapped <relative path>: does this private path map to a gitignored path
+# in the public repo?
+is_mapped() {
+  case "$1" in
+    profiles/local.zsh | profiles/local.post.zsh | config/git/config.local | Brewfile.local | packages/code.local.list | macos/local.sh) return 0 ;;
+    claude/*.local.list | codex/*.local.list) return 0 ;;
+  esac
+  return 1
+}
+
+# The mapped paths that exist (as files or links) in the public repo, one
+# relative path per line.
+public_mapped_paths() {
+  local p f
+  for p in profiles/local.zsh profiles/local.post.zsh config/git/config.local Brewfile.local packages/code.local.list macos/local.sh; do
+    if [ -e "$PUBLIC_DIR/$p" ] || [ -L "$PUBLIC_DIR/$p" ]; then printf '%s\n' "$p"; fi
+  done
+  for f in "$PUBLIC_DIR"/claude/*.local.list "$PUBLIC_DIR"/codex/*.local.list; do
+    if [ -e "$f" ] || [ -L "$f" ]; then printf '%s\n' "${f#"$PUBLIC_DIR"/}"; fi
+  done
+}
+
+# Every regular file in the private repo, as relative paths, .git excluded.
+private_files() {
+  find "$PRIVATE_DIR" -path "$PRIVATE_DIR/.git" -prune -o -type f -print | sed "s#^$PRIVATE_DIR/##" | LC_ALL=C sort
+}
+
+have_private() { [ -d "$PRIVATE_DIR/.git" ]; }
+
+need_private() {
+  have_private && return 0
+  err "no private repo at $PRIVATE_DIR; run: dotfiles private clone (or dotfiles private init to create it)"
+  return 1
+}
+
+# owner/repo of a GitHub remote URL, or nothing for any other remote.
+remote_slug() {
+  printf '%s' "$REMOTE" | sed -n -E 's#^(git@|ssh://git@|https://)github\.com[:/]([^/]+/[^/]+)$#\2#p' | sed -E 's#\.git$##'
+}
+
+#############################################################################
+# init
+#############################################################################
+
+cmd_init() {
+  if have_private; then
+    err "$PRIVATE_DIR is already a git repository; nothing changed"
+    return 1
+  fi
+  if [ -d "$PRIVATE_DIR" ] && [ -n "$(ls -A "$PRIVATE_DIR" 2>/dev/null)" ]; then
+    err "$PRIVATE_DIR exists and is not empty; move it away first"
+    return 1
+  fi
+
+  mkdir -p "$PRIVATE_DIR" || return 1
+  git -C "$PRIVATE_DIR" init -q -b main || return 1
+  printf '.DS_Store\n*.bak.*\n' >"$PRIVATE_DIR/.gitignore"
+
+  local rel moved=0
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    # Only real files move. A path that is already a link (to somewhere else,
+    # or from an earlier run) is left exactly as it is.
+    if [ -L "$PUBLIC_DIR/$rel" ] || [ ! -f "$PUBLIC_DIR/$rel" ]; then continue; fi
+    mkdir -p "$(dirname "$PRIVATE_DIR/$rel")"
+    mv -f "$PUBLIC_DIR/$rel" "$PRIVATE_DIR/$rel" || { err "could not move $rel"; return 1; }
+    ln -s "$PRIVATE_DIR/$rel" "$PUBLIC_DIR/$rel" || { err "could not link $rel"; return 1; }
+    say "moved $rel into $PRIVATE_DIR and left a link"
+    moved=$((moved + 1))
+  done <<EOF
+$(public_mapped_paths)
+EOF
+
+  git -C "$PRIVATE_DIR" add -A
+  if ! git -C "$PRIVATE_DIR" commit -q -m "Initial private files"; then
+    warn "could not make the first commit (is a git identity set?); commit in $PRIVATE_DIR yourself"
+  fi
+
+  local slug
+  slug=$(remote_slug)
+  say "created $PRIVATE_DIR with $moved file(s)."
+  say ""
+  say "The GitHub repo is not created for you (that is an outward-facing action)."
+  say "When you are ready, run:"
+  say "  gh repo create ${slug:-<owner>/dotfiles-private} --private --source \"$PRIVATE_DIR\" --push"
+  say ""
+  say "Private SSH hosts go in $PRIVATE_DIR/ssh/config; the encrypted secrets export is"
+  say "written to $PRIVATE_DIR/secrets.age by: dotfiles secrets export"
+}
+
+#############################################################################
+# clone
+#############################################################################
+
+cmd_clone() {
+  if have_private; then
+    say "private repo already at $PRIVATE_DIR"
+    return 0
+  fi
+  if [ -e "$PRIVATE_DIR" ] && [ -n "$(ls -A "$PRIVATE_DIR" 2>/dev/null)" ]; then
+    err "$PRIVATE_DIR exists and is not a git repository; move it away, then run clone again"
+    return 1
+  fi
+
+  # Never wait at a credential prompt: an install run should fail with the
+  # guidance below, not hang.
+  if GIT_TERMINAL_PROMPT=0 git clone -q "$REMOTE" "$PRIVATE_DIR" 2>/dev/null; then
+    say "cloned the private repo into $PRIVATE_DIR"
+    return 0
+  fi
+
+  local slug
+  slug=$(remote_slug)
+  if [ -n "$slug" ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    if gh repo clone "$slug" "$PRIVATE_DIR" >/dev/null 2>&1; then
+      say "cloned the private repo into $PRIVATE_DIR (through gh)"
+      return 0
+    fi
+  fi
+
+  # Not set up yet: the repo does not exist, there is no GitHub auth, or the
+  # SSH key is not on GitHub. Exit 3 tells `install` this is a skip, not a fault.
+  warn "could not clone the private repo ($REMOTE); it is probably not set up yet"
+  warn "  - if the repo does not exist yet, on the Mac that has the files run: dotfiles private init,"
+  warn "    then: gh repo create ${slug:-<owner>/dotfiles-private} --private --source \"$PRIVATE_DIR\" --push"
+  warn "  - otherwise add an SSH key to your GitHub account (dotfiles install --ssh makes one), or run: gh auth login"
+  warn "  - then run: dotfiles private clone"
+  return 3
+}
+
+#############################################################################
+# link
+#############################################################################
+
+# link_one <source in the private repo> <destination> <label>
+link_one() {
+  local src="$1" dst="$2" label="$3"
+  if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
+    return 0
+  fi
+  if [ -L "$dst" ] || [ -e "$dst" ]; then
+    if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
+      rm -f "$dst"
+    else
+      local bak
+      bak="$dst.bak.$(date +%s)"
+      mv "$dst" "$bak" || { err "could not move $dst aside"; return 1; }
+      say "moved $label aside to $bak"
+    fi
+  fi
+  mkdir -p "$(dirname "$dst")"
+  ln -s "$src" "$dst" || { err "could not link $dst"; return 1; }
+  say "linked $label"
+}
+
+cmd_link() {
+  need_private || return 1
+  local rel rc=0
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    if [ "$rel" = ssh/config ]; then
+      mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+      link_one "$PRIVATE_DIR/$rel" "$HOME/.ssh/config.private" "ssh/config (as ~/.ssh/config.private)" || rc=1
+      dotfiles_ensure_ssh_include || rc=1
+    elif is_mapped "$rel"; then
+      link_one "$PRIVATE_DIR/$rel" "$PUBLIC_DIR/$rel" "$rel" || rc=1
+    fi
+  done <<EOF
+$(private_files)
+EOF
+  return "$rc"
+}
+
+#############################################################################
+# status
+#############################################################################
+
+cmd_status() {
+  need_private || return 1
+  say "private repo: $PRIVATE_DIR"
+
+  if ! git -C "$PRIVATE_DIR" fetch -q 2>/dev/null; then
+    say "  could not fetch (offline, or no remote); the numbers below may be stale"
+  fi
+  local up counts ahead behind
+  if up=$(git -C "$PRIVATE_DIR" rev-parse --abbrev-ref '@{u}' 2>/dev/null); then
+    counts=$(git -C "$PRIVATE_DIR" rev-list --left-right --count "HEAD...$up")
+    ahead=${counts%%[[:space:]]*}
+    behind=${counts##*[[:space:]]}
+    if [ "$ahead" -gt 0 ]; then say "  ahead of $up by $ahead commit(s), not pushed: git -C \"$PRIVATE_DIR\" push"; fi
+    if [ "$behind" -gt 0 ]; then say "  behind $up by $behind commit(s): dotfiles sync (or git -C \"$PRIVATE_DIR\" pull --ff-only)"; fi
+    if [ "$ahead" -eq 0 ] && [ "$behind" -eq 0 ]; then say "  up to date with $up"; fi
+  else
+    say "  no upstream branch: git -C \"$PRIVATE_DIR\" push -u origin main"
+  fi
+  if [ -n "$(git -C "$PRIVATE_DIR" status --porcelain)" ]; then
+    say "  uncommitted changes: commit and push them, or they stay on this Mac"
+  fi
+
+  local rel
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    if [ ! -L "$PUBLIC_DIR/$rel" ]; then
+      say "  local-only: $rel is a real file in the public repo and will not reach the other Mac."
+      say "    Move it to $PRIVATE_DIR/$rel, then run: dotfiles private link"
+    fi
+  done <<EOF
+$(public_mapped_paths)
+EOF
+  return 0
+}
+
+#############################################################################
+# install
+#############################################################################
+
+cmd_install() {
+  local rc=0
+  cmd_clone || rc=$?
+  if [ "$rc" -eq 3 ]; then
+    say "skipped: the private repo is not reachable yet (see above); nothing was linked"
+    return 0
+  fi
+  [ "$rc" -eq 0 ] || return "$rc"
+  cmd_link
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: dotfiles private <command>
+
+  init      Create the private repo from the gitignored files here (never creates the GitHub repo)
+  clone     Clone it (git first, then gh when authenticated)
+  link      Symlink each private file to its path in the public repo
+  status    Ahead/behind/dirty, and gitignored files that will not sync
+  install   clone, then link
+USAGE
+}
+
+case "${1:-}" in
+  init) cmd_init ;;
+  clone) cmd_clone ;;
+  link) cmd_link ;;
+  status) cmd_status ;;
+  install) cmd_install ;;
+  -h | --help | help) usage ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
