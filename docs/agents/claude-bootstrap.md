@@ -47,8 +47,13 @@ used to fail with "command not found".
 8. **Verify every path** the merged settings reference.
 9. **Create the vault structure** and copy `claude/vault-templates/` into
    `$VAULT_DIR/Polaris/` -- but only when `$VAULT_DIR` already exists. The vault
-   is a plain local folder copied over by hand; when it is missing the script
-   warns to copy it first and re-run, and creates nothing.
+   is a plain folder brought over by hand; when it is missing the script warns
+   to copy it first and re-run, and creates nothing. The one exception is the
+   iCloud vault: when nothing is at `~/Vault` and the vault folder in iCloud Drive
+   exists (`DOTFILES_VAULT_ICLOUD`), `~/Vault` is created as a symlink to it. A
+   vault inside iCloud Drive is downloaded first (`brctl download`, waiting up to
+   `DOTFILES_VAULT_DL_WAIT` seconds); while `.icloud` placeholders remain nothing is
+   written into it and QMD is not told about it. See [two-mac-sync.md](two-mac-sync.md).
 10. **Set up QMD**: symlink `qmd` into `~/.local/bin` so non-interactive
     contexts can find it and, when the vault exists, register the `notes` and
     `sessions` collections and update and embed the index. Those two calls run

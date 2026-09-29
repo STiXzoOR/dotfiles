@@ -29,6 +29,8 @@ any suite failed. Arguments are passed through to each suite.
 | `tests/claude.sh`          | The Claude Code bootstrap, hooks, status line, rules and docs  |
 | `tests/ci.sh`              | The workflows and git hooks                                    |
 | `tests/secrets.sh`         | `bin/dotfiles-secrets`                                         |
+| `tests/sync.sh`            | `scripts/lib/machine.sh`, `bin/dotfiles-sync`, `bin/dotfiles-vault`, the sync LaunchAgent (`SYNC_ONLY="S V"` runs a subset) |
+| `tests/private.sh`         | `bin/dotfiles-private` (sandbox repos and a bare remote)       |
 
 Read `tests/audit-regressions.sh` **before** editing `claude/statusline.sh`,
 `claude/settings.template.json` or anything under `claude/hooks/`. It encodes

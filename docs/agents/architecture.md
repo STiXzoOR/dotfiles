@@ -4,8 +4,8 @@
 
 | Directory       | Purpose                                                                                                     |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
-| `bin/`          | The `dotfiles` CLI and its subcommand scripts (`dotfiles-doctor`, `dotfiles-claude`, `dotfiles-test`, …)     |
-| `scripts/`      | Install helpers — `echos.sh` (coloured output), `requirers.sh` (idempotent installers), `install_claude.sh`, `install_prezto.zsh`, and `lib/` (`fs.sh`, `lib/lists.sh`, `ssh.sh`) |
+| `bin/`          | The `dotfiles` CLI and its subcommand scripts (`dotfiles-doctor`, `dotfiles-claude`, `dotfiles-test`, `dotfiles-sync`, `dotfiles-private`, `dotfiles-vault`, …) |
+| `scripts/`      | Install helpers — `echos.sh` (coloured output), `requirers.sh` (idempotent installers), `install_claude.sh`, `install_prezto.zsh`, and `lib/` (`fs.sh`, `lists.sh`, `ssh.sh`, `machine.sh`, `vault.sh`) |
 | `packages/`     | Lists for what Homebrew does not cover: `code.list` (Node CLIs live in `config/mise/config.toml`)            |
 | `macos/`        | System defaults scripts — `defaults.sh`, `defaults-*.sh` (per app), `dock.sh`                               |
 | `runcom/`       | Dotfiles stowed to `~/` — `.zshrc`, `.zprofile`, `.zpreztorc`, `.profile`                                    |

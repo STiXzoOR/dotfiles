@@ -71,6 +71,8 @@ every time:
 - `scripts/install_claude.sh` — it overwrites `~/.claude`
 - `install --passwordless` — it writes a `NOPASSWD` sudoers fragment
 - `install --hosts` — it rewrites `/etc/hosts` with sudo
+- `dotfiles sync`, `dotfiles private …`, `dotfiles vault migrate` — they move
+  git state, symlink over gitignored files, or move the real vault
 - `stow`, `launchctl`, `sudo`, `brew bundle`, `brew uninstall`
 - anything that writes under `~/.claude` while Claude Code is running
 
@@ -94,4 +96,5 @@ each edit run `zsh -n <file>` and `zsh -l -i -c 'exit'`.
 | Test suites, CI, git hooks                     | [testing-and-ci.md](docs/agents/testing-and-ci.md)           |
 | Secrets management (macOS Keychain)            | [secrets.md](docs/agents/secrets.md)                         |
 | App settings backup/restore (mackup, copy mode) | [app-settings.md](docs/agents/app-settings.md)              |
+| Two Macs: roles, private repo, sync, iCloud vault | [two-mac-sync.md](docs/agents/two-mac-sync.md)            |
 | Neovim config (lazy.nvim)                      | [neovim.md](docs/agents/neovim.md)                           |

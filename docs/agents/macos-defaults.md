@@ -47,7 +47,13 @@ Access. Revoke the grant when the install is done.
 
 Declared here: firewall on with stealth mode, Remote Login on, restart after a
 power failure, no Power Nap, no disk sleep, no wake-on-LAN, password required
-immediately after sleep or the screen saver. The screen-lock delay is set with
+immediately after sleep or the screen saver. Remote Login, `autorestart`,
+`powernap` and `disksleep` are desktop-only: `scripts/lib/machine.sh` reads the
+role (`desktop` when `pmset -g batt` shows no internal battery, else `laptop`;
+`DOTFILES_MACHINE_ROLE` overrides) and on a laptop the script leaves those
+settings untouched (it never turns Remote Login off). Firewall, stealth mode,
+wake-on-LAN off and the screen-lock password apply to both. See
+[two-mac-sync.md](two-mac-sync.md). The screen-lock delay is set with
 `sysadminctl -screenLock immediate -password -`, which prompts for the account
 password; it runs only on a terminal without `DOTFILES_YES`, otherwise the
 command is printed for you to run. `pmset standbydelay` is not written (Apple
