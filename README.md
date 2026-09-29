@@ -169,6 +169,19 @@ Where `YYYY.MM.DD.HH.MM.SS` is the timestamp of the backup you want to restore (
 
 > The restore script does not currently restore system settings--only your original dotfiles. To restore system settings, you'll need to manually undo what you don't like (so don't forget to fork, review, and tweak before installing)
 
+## App Settings Backup
+
+Settings of apps that nothing else here manages (Bartender, CleanShot, Flux, iStat Menus, Magnet, OpenEmu, PixelSnap, Proxyman, Spark) are backed up daily to a private folder in iCloud Drive, one folder per Mac, with [mackup](https://github.com/lra/mackup) in copy mode (never symlinks). Anything the dotfiles already manage stays owned by the dotfiles, and `dotfiles apps check` fails if the allowlist ever overlaps it.
+
+```shell
+./bin/dotfiles apps backup                  # also runs daily via the LaunchAgent
+./bin/dotfiles apps list                    # snapshots of every Mac
+./bin/dotfiles apps restore --from <mac>    # deliberate; quit the apps first
+./bin/dotfiles apps undo                    # put back what the last restore replaced
+```
+
+Restoring is never part of `install --all`. See [docs/agents/app-settings.md](docs/agents/app-settings.md).
+
 ## Managing Hosts Whitelist
 
 The `/etc/hosts` installation blocks ads and tracking domains using StevenBlack's unified hosts file. If you need to whitelist certain domains (prevent them from being blocked), you can add them to `system/hosts.whitelist`:
@@ -206,7 +219,7 @@ The following will only happen if you agree on the prompt
 - install vim plugins/themes
 - install fonts
 - install brew, cask, code, mas, npm packages
-- install LaunchAgents for automated tasks (mackup auto-backup every hour)
+- install LaunchAgents for automated tasks (a daily app-settings backup, `dotfiles apps backup --scheduled`)
 - change system configuration
 
 ### Security
@@ -500,7 +513,7 @@ The following is the software installed by default:
 - bats-core
 - coreutils, dos2unix
 - dockutil
-- mackup, mas
+- mackup (app settings backup, copy mode; see below), mas
 - starship (cross-shell prompt)
 - stow (dotfile symlink management)
 - thefuck

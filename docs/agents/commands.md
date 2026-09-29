@@ -19,6 +19,7 @@ link                    # Link dotfiles into ~/ via GNU Stow
 open                    # Open the dotfiles in Finder
 profiler                # Profile shell startup time
 secrets                 # Manage secrets in the macOS Keychain
+apps <check|backup|restore|list|undo>  # App settings backup (mackup, copy mode); see app-settings.md
 setup                   # Run the interactive setup wizard
 test                    # Run the test suite
 unlink <timestamp>      # Restore dotfiles from ~/.dotfiles_backup

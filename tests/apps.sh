@@ -407,6 +407,12 @@ t "C5" "the install summary points at apps restore" \
   'body=$(sed -n "/^sub_install()/,/^}/p" <(code_of bin/dotfiles)); printf "%s\n" "$body" | grep -q "apps restore"'
 t "C6" "the daily agent is a top-level plist (installed by --launchagents), the old hourly one is gone" \
   '[ -f launchagents/com.stixzoor.dotfiles-apps-backup.plist ] && [ ! -e launchagents/disabled/com.stixzoor.mackup-auto.plist ]'
+t "C7" "docs: app-settings.md exists and is in the AGENTS.md table" \
+  '[ -f docs/agents/app-settings.md ] && grep -q "app-settings.md" AGENTS.md'
+t "C8" "docs describe restore, undo and the ownership rule" \
+  '(for w in "dotfiles apps restore" "dotfiles apps undo" "ownership rule" "copy mode" "never .mackup link."; do grep -qi -- "$w" docs/agents/app-settings.md || exit 1; done)'
+t "C9" "the README no longer promises an hourly mackup backup" \
+  '[ "$(grep -c "mackup auto-backup every hour" README.md)" -eq 0 ] && grep -q "dotfiles apps" README.md'
 t "C10" "no tracked mackup config remains at runcom/.mackup.cfg" \
   '[ ! -e runcom/.mackup.cfg ]'
 t "C11" "the wrapper sets its own PATH for launchd (/opt/homebrew/bin first)" \
