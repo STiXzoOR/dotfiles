@@ -5,7 +5,7 @@
 # statusline shipped in claude/, the rules, `bin/dotfiles-claude`, and the
 # agent-facing documentation.
 #
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016,SC2030,SC2031,SC2088
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 section "E1 — hooks"
@@ -141,5 +141,106 @@ t "E5.9" "worktreeinclude exists" '[ -f .worktreeinclude ]'
 t "E5.10" "testing-and-ci.md documents the per-workstream suites" 'grep -q "tests/run.sh" docs/agents/testing-and-ci.md && grep -q "audit-regressions" docs/agents/testing-and-ci.md'
 t "E5.12" "shell-config.md does not name the replaced thefuck file" '! grep -q "\.thefuck" docs/agents/shell-config.md'
 t "E5.11" "archived plans carry a superseded banner" '(for f in docs/plans/archive/*.md; do head -3 "$f" | grep -qi "superseded" || exit 1; done)'
+
+# ─── New-Mac readiness: install_claude.sh against stub binaries ──────────────
+#
+# Every run below uses a sandbox HOME and a PATH of stubs that log their argv
+# to $STUBLOG. Nothing reaches the real machine: the real `claude` is never
+# on PATH (a stub installer drops the stub into $HOME/.local/bin, exactly as
+# the native installer does), and jq is the only real tool linked in.
+_stubs() { # _stubs <W>
+  local w="$1" n
+  mkdir -p "$w/bin" "$w/home"; : >| "$w/log"
+  ln -s "$(command -v jq)" "$w/bin/jq"
+  for n in uv npx qmd blender-mcp; do
+    printf '#!/bin/sh\necho "%s $*" >> "$STUBLOG"\nexit 0\n' "$n" >| "$w/bin/$n"
+    chmod +x "$w/bin/$n"
+  done
+  # A timeout that runs the wrapped command, so the wrapped call is observable.
+  printf '#!/bin/sh\necho "gtimeout $*" >> "$STUBLOG"\nshift\nexec "$@"\n' >| "$w/bin/gtimeout"
+  chmod +x "$w/bin/gtimeout"
+  cat >| "$w/claude-stub" <<'STUB'
+#!/bin/sh
+echo "claude $*" >> "$STUBLOG"
+case "$*" in
+  "--version") echo "9.9.9 (Claude Code)" ;;
+  "mcp get "*) grep -qx "$3" "$STUBDIR/have-mcp" 2>/dev/null; exit $? ;;
+esac
+exit 0
+STUB
+  chmod +x "$w/claude-stub"
+  cat >| "$w/bin/curl" <<'STUB'
+#!/bin/sh
+out=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
+[ -n "$out" ] || exit 0
+if [ "${STUB_INSTALLER:-drop}" = drop ]; then
+  printf '#!/bin/sh\nmkdir -p "$HOME/.local/bin"\ncp "%s/claude-stub" "$HOME/.local/bin/claude"\n' "$STUBDIR" >| "$out"
+else
+  printf '#!/bin/sh\nexit 0\n' >| "$out"
+fi
+STUB
+  chmod +x "$w/bin/curl"
+}
+# _full_run <W> [VAR=value ...] -- the whole bootstrap as `bash install_claude.sh`
+_full_run() {
+  local w="$1"; shift
+  (
+    export HOME="$w/home" PATH="$w/bin:/usr/bin:/bin" STUBLOG="$w/log" STUBDIR="$w"
+    unset VAULT_DIR
+    env "$@" bash scripts/install_claude.sh >| "$w/out" 2>&1
+  )
+}
+# _in_env <W> <command...> -- run one function from the sourced library
+_in_env() {
+  local w="$1"; shift
+  (
+    export HOME="$w/home" PATH="$w/bin:/usr/bin:/bin" STUBLOG="$w/log" STUBDIR="$w"
+    unset VAULT_DIR
+    # shellcheck source=/dev/null
+    source scripts/install_claude.sh --lib
+    mkdir -p "$(dirname "$CLAUDE_INSTALL_LOG")"
+    "$@"
+  )
+}
+
+section "N1 — claude is reachable during the bootstrap (item 2.1)"
+t "N1.1" "the plugin commands reach the claude the installer just dropped in ~/.local/bin" '
+  W=$(sandbox); _stubs "$W"; _full_run "$W"
+  [ "$(grep -c "^claude plugin install superpowers@superpowers-marketplace" "$W/log")" -eq 1 ]'
+t "N1.2" "a missing binary after the install step fails the run loudly" '
+  W=$(sandbox); _stubs "$W"; ! _full_run "$W" STUB_INSTALLER=noop &&
+  [ "$(grep -c -- "- claude binary" "$W/out")" -eq 1 ]'
+t "N1.4" "verify_claude_install fails, not skips, when claude is absent" '
+  W=$(sandbox); _stubs "$W"; ! _in_env "$W" verify_claude_install'
+t "N1.3" "~/.local/bin is put on PATH exactly once" '
+  W=$(sandbox); _stubs "$W"
+  n=$(export HOME="$W/home" PATH="$W/bin:/usr/bin:/bin"; source scripts/install_claude.sh --lib; source scripts/install_claude.sh --lib; printf "%s" "$PATH" | tr ":" "\n" | grep -cx "$W/home/.local/bin")
+  [ "$n" -eq 1 ]'
+
+section "N2 — a timeout that exists (item 2.2)"
+t "N2.1" "qmd update and embed run when only gtimeout is on PATH (no bare timeout)" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W"
+  [ "$(grep -c "^qmd update" "$W/log")" -eq 1 ] && [ "$(grep -c "^qmd embed" "$W/log")" -eq 1 ]'
+t "N2.2" "the qmd calls go through the resolved timeout" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W"
+  [ "$(grep -c "^gtimeout 60 qmd update" "$W/log")" -eq 1 ]'
+t "N2.3" "with no timeout binary the command still runs unbounded" '
+  W=$(sandbox); _stubs "$W"
+  ( export HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" STUBLOG="$W/log" STUBDIR="$W"
+    source scripts/install_claude.sh --lib; TIMEOUT_BIN=""; run_bounded 5 qmd update ) &&
+  [ "$(grep -c "^qmd update" "$W/log")" -eq 1 ] && [ "$(grep -c "^gtimeout" "$W/log")" -eq 0 ]'
+
+section "N3 — no empty vault (item 2.3)"
+t "N3.1" "a missing vault is not scaffolded" '
+  W=$(sandbox); _stubs "$W"; _full_run "$W"; [ ! -e "$W/home/Vault" ]'
+t "N3.2" "a missing vault registers no QMD collections and says why" '
+  W=$(sandbox); _stubs "$W"; _full_run "$W"
+  [ "$(grep -c "^qmd collection add" "$W/log")" -eq 0 ] &&
+  [ "$(grep -ci "copy your vault" "$W/out")" -ge 1 ]'
+t "N3.3" "an existing vault still gets its collections and templates" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W"
+  [ "$(grep -c "^qmd collection add notes" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^qmd collection add sessions" "$W/log")" -eq 1 ] &&
+  [ -d "$W/home/Vault/Polaris" ]'
 
 finish

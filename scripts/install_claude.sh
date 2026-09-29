@@ -15,6 +15,15 @@ VAULT_DIR="${VAULT_DIR:-$HOME/Vault}"
 CLAUDE_INSTALL_LOG="$HOME/.cache/dotfiles/claude-install.log"
 FAILURES=()
 
+# The native installer puts `claude` in ~/.local/bin, which is not on PATH
+# under `bash install_claude.sh`. Without this every `claude plugin ...` call
+# failed with "command not found" and the signature check was skipped.
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) PATH="$HOME/.local/bin:$PATH" ;;
+esac
+export PATH
+
 # Release verification. Anthropic publishes a per-release manifest.json and a
 # detached manifest.json.sig, signed by "Anthropic Claude Code Release Signing
 # <security@anthropic.com>". Signatures exist from 2.1.89 onward.
@@ -52,6 +61,31 @@ install_file() { # install_file <src> <dest>
   cp "$src" "$dest"
 }
 
+# GNU timeout is not on a default macOS PATH, and `bash script.sh` never gets
+# the interactive GNU PATH, so a bare `timeout` was "command not found": qmd
+# was never run and the output blamed a timeout. Resolve it the way
+# claude/hooks/index-sessions.sh does, and run unbounded when there is none.
+resolve_timeout_bin() {
+  local candidate
+  TIMEOUT_BIN=""
+  for candidate in \
+    "$(command -v gtimeout 2>/dev/null)" \
+    /opt/homebrew/bin/gtimeout \
+    /opt/homebrew/opt/coreutils/libexec/gnubin/timeout \
+    "$(command -v timeout 2>/dev/null)"; do
+    [[ -n "$candidate" && -x "$candidate" ]] && TIMEOUT_BIN="$candidate" && break
+  done
+  return 0
+}
+TIMEOUT_BIN=""
+resolve_timeout_bin
+
+run_bounded() { # run_bounded <seconds> <cmd...>
+  local secs="$1"
+  shift
+  if [[ -n "$TIMEOUT_BIN" ]]; then "$TIMEOUT_BIN" "$secs" "$@"; else "$@"; fi
+}
+
 report_failures() {
   if [[ ${#FAILURES[@]} -gt 0 ]]; then
     echo ""
@@ -78,6 +112,10 @@ install_claude_binary() {
 
   if curl -fsSL --proto '=https' --tlsv1.2 https://claude.ai/install.sh -o "$tmpfile"; then
     if bash "$tmpfile"; then
+      if ! command -v claude &>/dev/null; then
+        error "the installer ran but no claude binary is on PATH (expected in ~/.local/bin)"
+        return 1
+      fi
       ok "Claude Code installed"
     else
       error "Claude Code installer failed"
@@ -169,7 +207,10 @@ verify_claude_binary() {
 
 verify_claude_install() {
   local version binary
-  command -v claude >/dev/null 2>&1 || return 0
+  if ! command -v claude >/dev/null 2>&1; then
+    error "claude is not installed, so the release cannot be verified"
+    return 1
+  fi
 
   version=$(claude --version 2>/dev/null | awk '{print $1}')
   if [[ -z "$version" ]]; then
@@ -520,6 +561,14 @@ merge_settings() {
 # ─── 6. Setup Obsidian vault ─────────────────────────────────────────────────
 
 setup_vault() {
+  # The vault is a plain local folder the owner copies over by hand. Creating
+  # it here made an empty tree that QMD then indexed, and a later copy landed
+  # on top of a half-scaffolded directory.
+  if [[ ! -d "$VAULT_DIR" ]]; then
+    warn "no vault at $VAULT_DIR: copy your vault there first, then re-run 'dotfiles install --claude'"
+    return 0
+  fi
+
   action "Setting up Obsidian vault structure"
   mkdir -p "$VAULT_DIR"/{Claude-Sessions,Resources,Inbox,Projects,Daily,Polaris}
   ok "vault directories ready"
@@ -565,6 +614,27 @@ setup_qmd() {
     fi
   fi
 
+  if [[ -d "$VAULT_DIR" ]]; then
+    setup_qmd_index
+  else
+    warn "no vault at $VAULT_DIR: skipping QMD collections and indexing"
+  fi
+
+  # Register QMD MCP server with Claude Code (stored in ~/.claude.json)
+  if command -v claude &>/dev/null; then
+    action "Registering QMD MCP server"
+    if claude mcp add --transport stdio --scope user qmd -- qmd mcp 2>>"$CLAUDE_INSTALL_LOG"; then
+      ok "QMD MCP server registered (user scope)"
+    else
+      warn "QMD MCP registration failed (run 'claude mcp add --transport stdio --scope user qmd -- qmd mcp' manually)"
+    fi
+  fi
+}
+
+# Collections, index and embeddings. Only runs against a vault that exists:
+# registering collections on a tree the owner has not copied in yet indexes
+# nothing and leaves qmd pointing at an empty scaffold.
+setup_qmd_index() {
   # Register collections (idempotent — qmd ignores duplicates)
   action "Configuring QMD collections"
 
@@ -593,7 +663,7 @@ setup_qmd() {
 
   # Update index (fast — only processes changed files)
   action "Updating QMD index"
-  if timeout 60 qmd update 2>>"$CLAUDE_INSTALL_LOG"; then
+  if run_bounded 60 qmd update 2>>"$CLAUDE_INSTALL_LOG"; then
     ok "QMD index updated"
   else
     warn "QMD update timed out or failed (run 'qmd update' manually)"
@@ -601,21 +671,12 @@ setup_qmd() {
 
   # Run embedding if models are available (first run downloads ~2GB)
   action "Building QMD embeddings (may take a moment on first run)"
-  if timeout 120 qmd embed 2>>"$CLAUDE_INSTALL_LOG"; then
+  if run_bounded 120 qmd embed 2>>"$CLAUDE_INSTALL_LOG"; then
     ok "QMD embeddings ready"
   else
     warn "QMD embed timed out or failed (run 'qmd embed' manually)"
   fi
 
-  # Register QMD MCP server with Claude Code (stored in ~/.claude.json)
-  if command -v claude &>/dev/null; then
-    action "Registering QMD MCP server"
-    if claude mcp add --transport stdio --scope user qmd -- qmd mcp 2>>"$CLAUDE_INSTALL_LOG"; then
-      ok "QMD MCP server registered (user scope)"
-    else
-      warn "QMD MCP registration failed (run 'claude mcp add --transport stdio --scope user qmd -- qmd mcp' manually)"
-    fi
-  fi
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
