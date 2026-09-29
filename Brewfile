@@ -51,6 +51,7 @@ brew "yq"                           # YAML processor
 brew "coreutils"                    # GNU core utilities
 brew "findutils"                    # GNU find, xargs, etc.
 brew "stow"                         # Symlink farm manager
+brew "mackup"                       # App settings backup, copy mode only (dotfiles apps)
 brew "mas"                          # Mac App Store CLI
 brew "topgrade"                     # System upgrade tool
 brew "zoxide"                       # Smarter cd command

@@ -35,6 +35,7 @@ sub_help() {
   echo -e "\nUsage: $BIN_NAME <command>"
   echo
   echo "Commands:"
+  echo "   apps             Back up and restore app settings (mackup, copy mode)"
   echo "   baseline         Capture or diff a macOS defaults baseline"
   echo "   cheatsheet       Show aliases and functions cheatsheet"
   echo "   claude           Inspect the installed Claude Code setup"
@@ -184,6 +185,9 @@ sub_install() {
   # open failed and the killall closed the window showing the summary the user
   # had just been told to read.
   bot "Open a new shell (or run: exec \$SHELL) to pick up the new configuration."
+  # Restoring app settings is a deliberate step, never part of --all: copy
+  # mode is last-writer-wins, so it must be chosen, and the apps must be quit.
+  echo "To bring app settings over from another Mac (quit those apps first): $BIN_NAME apps list, then $BIN_NAME apps restore --from <machine>"
 }
 
 sub_install_all() {
@@ -1029,6 +1033,11 @@ sub_secrets() {
 }
 
 
+sub_apps() {
+  "$DOTFILES_DIR/bin/dotfiles-apps" "$@"
+}
+
+
 sub_baseline() {
   "$DOTFILES_DIR/bin/dotfiles-baseline" "$@"
 }
@@ -1100,7 +1109,7 @@ case $COMMAND_NAME in
 "" | "help")
   sub_help
   ;;
-"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude")
+"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "apps")
   shift
   sub_"$COMMAND_NAME" "$@"
   ;;

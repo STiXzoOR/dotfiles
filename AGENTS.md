@@ -93,4 +93,5 @@ each edit run `zsh -n <file>` and `zsh -l -i -c 'exit'`.
 | macOS system defaults and Dock                 | [macos-defaults.md](docs/agents/macos-defaults.md)           |
 | Test suites, CI, git hooks                     | [testing-and-ci.md](docs/agents/testing-and-ci.md)           |
 | Secrets management (macOS Keychain)            | [secrets.md](docs/agents/secrets.md)                         |
+| App settings backup/restore (mackup, copy mode) | [app-settings.md](docs/agents/app-settings.md)              |
 | Neovim config (lazy.nvim)                      | [neovim.md](docs/agents/neovim.md)                           |
