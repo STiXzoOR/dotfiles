@@ -48,6 +48,7 @@ sub_help() {
   echo "   install          Bootstrap system"
   echo "   link             Link dotfiles to ~/"
   echo "   open             Open dotfiles in Finder"
+  echo "   private          Private companion repo for gitignored files (init, clone, link, status)"
   echo "   profiler         Profile shell startup time"
   echo "   secrets          Manage secrets (macOS Keychain)"
   echo "   setup            Run interactive setup wizard"
@@ -71,6 +72,7 @@ sub_install_help() {
   echo "   --node             mise, Node and the CLIs in config/mise/config.toml"
   echo "   --packages         3rd party packages and extensions (brew, cask, code)"
   echo "   --prezto           Zsh framework"
+  echo "   --private          Private companion repo (clone it, link its files)"
   echo "   --ssh              SSH Key"
 }
 
@@ -163,6 +165,7 @@ sub_install() {
   # this used to print all fell through to an error.
   bot "Woot. All done!. You should run the complementary commands to have your machine fully configured and ready to use:\n"
   echo "$BIN_NAME install --prezto"
+  echo "$BIN_NAME install --private (Second Mac: the private repo with your gitignored files; optional)"
   echo "$BIN_NAME link (This should be run after prezto)"
   echo "$BIN_NAME install --node (This should be run after link)"
   echo "$BIN_NAME install --packages"
@@ -200,11 +203,14 @@ sub_install_all() {
   dotfiles_sudo_keepalive || return 1
 
   # Order matters. prezto before link (link backs up the runcoms prezto
-  # would otherwise leave behind), link before node (mise needs
+  # would otherwise leave behind), private right before link (it puts the
+  # gitignored files, such as the git identity, in place for link to find),
+  # link before node (mise needs
   # ~/.config/mise to be the repo copy), and hosts last: the blocklist can
   # break downloads made later in the run.
   DOTFILES_FAILED_STEPS=""
   dotfiles_run_step prezto "$0" install --prezto
+  dotfiles_run_step private "$0" install --private
   dotfiles_run_step link "$0" link
   dotfiles_run_step node "$0" install --node
   dotfiles_run_step packages "$0" install --packages
@@ -673,6 +679,18 @@ sub_install_launchagents() {
   fi
 }
 
+sub_install_private() {
+  bot "Private companion repo\n"
+
+  if confirm "Clone the private repo and link its gitignored files?"; then
+    # The tool prints what to set up (SSH key or gh auth login) when the clone
+    # fails; the non-zero status lands in the install --all summary.
+    "$DOTFILES_DIR/bin/dotfiles-private" install || return 1
+  else
+    skip
+  fi
+}
+
 sub_install_claude() {
   bot "Claude Code Bootstrap\n"
 
@@ -1037,6 +1055,10 @@ sub_apps() {
   "$DOTFILES_DIR/bin/dotfiles-apps" "$@"
 }
 
+sub_private() {
+  "$DOTFILES_DIR/bin/dotfiles-private" "$@"
+}
+
 
 sub_baseline() {
   "$DOTFILES_DIR/bin/dotfiles-baseline" "$@"
@@ -1109,7 +1131,7 @@ case $COMMAND_NAME in
 "" | "help")
   sub_help
   ;;
-"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "apps")
+"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "apps" | "private")
   shift
   sub_"$COMMAND_NAME" "$@"
   ;;
