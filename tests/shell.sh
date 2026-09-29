@@ -252,14 +252,14 @@ ENV_STATE='
 # itself, and the theme prezto was asked for.
 PROMPT_STATE='print -r -- "PROMPT=${precmd_functions[(r)prompt_starship_precmd]:-none} p10k=$+functions[p10k] theme=$(zstyle -s ":prezto:module:prompt" theme t && print -r -- $t)"'
 # Prezto modules marked loaded: the four line-editor ones, whether their
-# widgets' functions exist, and the other thirteen. "none" when empty, so a
+# widgets' functions exist, and the other twelve. "none" when empty, so a
 # missing line cannot pass for an empty one.
 ZLE_STATE='
   _m=(); for _p in editor syntax-highlighting history-substring-search autosuggestions; do
     zstyle -t ":prezto:module:$_p" loaded && _m+=($_p); done
   print -r -- "ZLE_MODULES=${_m:-none}"
   print -r -- "ZLE_FUNCS=$+functions[_zsh_autosuggest_start]$+functions[_zsh_highlight]"
-  _m=(); for _p in environment terminal history directory spectrum utility git homebrew osx ssh python completion prompt; do
+  _m=(); for _p in environment terminal history directory spectrum utility git homebrew osx ssh python completion; do
     zstyle -t ":prezto:module:$_p" loaded && _m+=($_p); done
   print -r -- "CORE_MODULES=${_m:-none}"
 '
@@ -518,9 +518,9 @@ t "H3.2" "Warp and a shell with no terminal load none of them" \
   '( for h in warp dumb; do
        [ "$(pv ZLE_MODULES $h)" = none ] && [ "$(pv ZLE_FUNCS $h)" = 00 ] || exit 1
      done )'
-t "H3.3" "every host loads the other thirteen modules" \
+t "H3.3" "every host loads the other twelve modules" \
   '( for h in rich warp dumb; do
-       [ "$(pv CORE_MODULES $h)" = "environment terminal history directory spectrum utility git homebrew osx ssh python completion prompt" ] || exit 1
+       [ "$(pv CORE_MODULES $h)" = "environment terminal history directory spectrum utility git homebrew osx ssh python completion" ] || exit 1
      done )'
 
 section "H4 — key bindings and atuin, per host"
@@ -537,5 +537,23 @@ t "H4.3" ".bindings loads in rich terminals only" \
 section "H5 — Powerlevel10k retired"
 t "H5.1" "the Powerlevel10k config is gone" \
   '[ ! -e system/.prompt ]'
+
+# ---------------------------------------------------------------------------
+# P -- shell performance (2026-09-29). Every case drives the host through
+# DOTFILES_TERM_HOST (ZSHRUN_TERM_HOST) and a sandbox HOME, and counts calls
+# to stubs that log their argv.
+# ---------------------------------------------------------------------------
+
+section "P1 — prezto's prompt module is not loaded (promptinit scans 18 themes nobody uses)"
+_PROMPT_PROBE='print -r -- "PROMPTINIT=$+functions[promptinit] SETUPS=${#${(k)functions[(I)prompt_*_setup]}} PS1=$PS1"'
+t "P1.1" "a warp shell has no promptinit, no theme setup functions, and PS1 is %# " \
+  '[ "$(ZSHRUN_TERM_HOST=warp zshrun "$_PROMPT_PROBE")" = "PROMPTINIT=0 SETUPS=0 PS1=%# " ]'
+t "P1.2" "a shell with no terminal has the same" \
+  '[ "$(ZSHRUN_TERM_HOST=dumb zshrun "$_PROMPT_PROBE")" = "PROMPTINIT=0 SETUPS=0 PS1=%# " ]'
+t "P1.3" "a rich terminal still gets the Starship prompt, and no theme functions" \
+  '[ "$(pty_zshrun "$PROMPT_STATE" | sed -n "s/^PROMPT=//p")" = "prompt_starship_precmd p10k=0 theme=off" ] &&
+   [ "$(ZSHRUN_TERM_HOST=rich zshrun "$_PROMPT_PROBE" | grep -c "SETUPS=0")" -eq 1 ]'
+t "P1.4" "the module list no longer names prompt" \
+  '[ "$(code_of runcom/.zpreztorc | grep -cx "[[:space:]]*.prompt.")" -eq 0 ]'
 
 finish

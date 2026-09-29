@@ -55,6 +55,11 @@ fpath=("$DOTFILES_DIR/completions" $fpath)
 
 [[ -s "$DOTFILES_DIR/modules/prezto/init.zsh" ]] && . "$DOTFILES_DIR/modules/prezto/init.zsh"
 
+# Prezto's prompt module is not loaded (.zpreztorc), so a shell that does not
+# get Starship keeps zsh's own PS1; hold it at what the module's "off" theme
+# left, a bare %# .
+[[ "$DOTFILES_TERM_HOST" == (warp|dumb) ]] && PS1='%# '
+
 ##################################################################################################
 # Prompt (Starship, rich terminals only)
 ##################################################################################################
