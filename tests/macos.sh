@@ -592,4 +592,38 @@ t "G5.12" "config/atuin and config/gh stow into a sandbox ~/.config, and hosts.y
      [ -f "$W/xdg/atuin/config.toml" ] && [ -f "$W/xdg/gh/config.yml" ] && [ ! -e "$W/xdg/gh/hosts.yml" ]
    }'
 
+#############################################################################
+section "G6 -- role gate: Remote Login and power are for the desktop only"
+#############################################################################
+# _g_battery <W>: make the stub pmset answer like a laptop's `pmset -g batt`.
+_g_battery() {
+  _stub "$1/bin" pmset 'case "$*" in "-g batt") printf "%s\n" "Now drawing from Battery Power" " -InternalBattery-0 (id=1)	87%; discharging" ;; esac'
+}
+_g_touched() { # the desktop-only settings, as logged lines: count of any call
+  _logcount "$1" "systemsetup -setremotelogin"; }
+LAP=$(_g_env); _g_run "$LAP" defaults.sh DOTFILES_MACHINE_ROLE=laptop FW_TAKES=1
+BAT=$(_g_env); _g_battery "$BAT"; _g_run "$BAT" defaults.sh FW_TAKES=1
+DSK=$(_g_env); _g_battery "$DSK"; _g_run "$DSK" defaults.sh DOTFILES_MACHINE_ROLE=desktop FW_TAKES=1
+
+t "G6.1" "laptop: Remote Login is left alone, neither turned on nor off" \
+  '[ "$(_g_touched "$LAP")" -eq 0 ]'
+t "G6.2" "laptop: autorestart, powernap and disksleep are left alone" \
+  '[ "$(_logcount "$LAP" "pmset -a autorestart")" -eq 0 ] && [ "$(_logcount "$LAP" "pmset -a powernap")" -eq 0 ] &&
+   [ "$(_logcount "$LAP" "pmset -a disksleep")" -eq 0 ]'
+t "G6.3" "laptop: firewall, stealth mode and the screen-lock password still apply" \
+  '_logged "$LAP" "socketfilterfw --setglobalstate on" && _logged "$LAP" "socketfilterfw --setstealthmode on" &&
+   _logged "$LAP" "defaults write com.apple.screensaver askForPassword -int 1" &&
+   _logged "$LAP" "defaults write com.apple.screensaver askForPasswordDelay -int 0"'
+t "G6.4" "laptop: the run says what it skipped and reports no error" \
+  '[ "$(grep -ci "laptop" "$LAP/out")" -ge 1 ] && [ "$(grep -c "error" "$LAP/out")" -eq 0 ]'
+t "G6.5" "a Mac whose pmset reports an InternalBattery is a laptop without any override" \
+  '[ "$(_g_touched "$BAT")" -eq 0 ] && [ "$(_logcount "$BAT" "pmset -a autorestart")" -eq 0 ]'
+t "G6.6" "DOTFILES_MACHINE_ROLE=desktop wins over the battery" \
+  '_logged "$DSK" "systemsetup -setremotelogin -f on" && _logged "$DSK" "sudo pmset -a autorestart 1" &&
+   _logged "$DSK" "sudo pmset -a powernap 0" && _logged "$DSK" "sudo pmset -a disksleep 0"'
+t "G6.7" "wake-on-LAN off is a security setting and applies to both roles" \
+  '_logged "$LAP" "sudo pmset -a womp 0" && _logged "$DSK" "sudo pmset -a womp 0"'
+t "G6.8" "nothing in defaults.sh ever turns Remote Login off" \
+  '[ "$(code_of macos/defaults.sh | grep -c -- "-setremotelogin.* off")" -eq 0 ]'
+
 finish

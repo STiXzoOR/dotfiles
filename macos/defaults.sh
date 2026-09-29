@@ -21,6 +21,12 @@ LSREGISTER="${DOTFILES_LSREGISTER:-/System/Library/Frameworks/CoreServices.frame
 
 source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
+source "$DOTFILES_DIR/scripts/lib/machine.sh"
+
+# desktop or laptop (scripts/lib/machine.sh). Remote Login and the power
+# settings below are desktop-only: the laptop keeps its own, and this script
+# neither turns them on nor off there.
+DOTFILES_ROLE=$(dotfiles_machine_role)
 
 # `ok` is an unconditional echo, so every step used to report success whether
 # or not it did anything. print_result takes the command's exit status instead.
@@ -70,27 +76,31 @@ running "Disable remote apple events"
 sudo systemsetup -setremoteappleevents off >/dev/null 2>&1
 print_result $?
 
-# Remote Login (SSH) is ON: this machine is reached remotely. -f suppresses the
-# confirmation prompt, which would otherwise block forever because it is
-# written to a stream that goes to /dev/null while stdin is still the
-# terminal. See `man systemsetup`, -setremotelogin [-f] on | off.
-running "Enable remote login"
-sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
-print_result $?
+if [ "$DOTFILES_ROLE" = desktop ]; then
+  # Remote Login (SSH) is ON: this machine is reached remotely. -f suppresses the
+  # confirmation prompt, which would otherwise block forever because it is
+  # written to a stream that goes to /dev/null while stdin is still the
+  # terminal. See `man systemsetup`, -setremotelogin [-f] on | off.
+  running "Enable remote login"
+  sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
+  print_result $?
 
-# Power. Apple silicon ignores `standbydelay` (it reads back absent), so it is
-# not written.
-running "Restart automatically after a power failure"
-sudo pmset -a autorestart 1
-print_result $?
+  # Power. Apple silicon ignores `standbydelay` (it reads back absent), so it is
+  # not written.
+  running "Restart automatically after a power failure"
+  sudo pmset -a autorestart 1
+  print_result $?
 
-running "Disable Power Nap"
-sudo pmset -a powernap 0
-print_result $?
+  running "Disable Power Nap"
+  sudo pmset -a powernap 0
+  print_result $?
 
-running "Never sleep the disks"
-sudo pmset -a disksleep 0
-print_result $?
+  running "Never sleep the disks"
+  sudo pmset -a disksleep 0
+  print_result $?
+else
+  skip "Remote Login and power settings: left as they are on a laptop (role: $DOTFILES_ROLE)"
+fi
 
 running "Disable wake-on LAN"
 sudo pmset -a womp 0
