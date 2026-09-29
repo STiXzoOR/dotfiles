@@ -331,7 +331,7 @@ t "A9.19" "lastupdate goes to config.local" \
 t "A9.19b" "lastupdate never touches the global or the tracked git config" \
   '! grep -q "git config --global dotfiles.lastupdate" <(code_of bin/dotfiles)'
 t "A9.20" "install --claude propagates failure" \
-  'sed -n "/^sub_install_claude()/,/^}/p" <(code_of bin/dotfiles) | grep -qE "\|\| return 1|return \$\?"'
+  '[ "$(sed -n "/^sub_install_claude()/,/^}/p" <(code_of bin/dotfiles) | grep -cE "\|\| return 1|return \$\?")" -ge 1 ]'
 # The brief spelled the first grep as "launchctl bootstrap gui"; the domain
 # target is quoted here ("gui/$UID"), so match the two parts separately.
 t "A9.21" "launchagents use bootstrap/bootout and copy" \
@@ -384,7 +384,7 @@ t "A10.1" "configure prompts once" \
 t "A10.1b" "configure calls the functions directly, not through a subprocess" \
   '[ "$(sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -c "\$0 configure")" -eq 0 ]'
 t "A10.1c" "configure restores DOTFILES_YES afterwards" \
-  'sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -q "_prev_yes"'
+  '[ "$(sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -c "_prev_yes")" -ge 1 ]'
 t "A10.2" "claude subcommand routes to bin/dotfiles-claude" \
   'grep -q "\"claude\"" <(code_of bin/dotfiles) && grep -q "dotfiles-claude" <(code_of bin/dotfiles)'
 t "A10.2b" "claude appears in the top-level help" \

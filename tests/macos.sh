@@ -22,13 +22,13 @@ mk() {
 }
 
 t "B1.1" "keys with spaces survive" \
-  'W=$(mk "defaults write com.apple.print.PrintingPrefs \"Quit When Finished\" -bool true"); DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -q "Quit When Finished"'
+  'W=$(mk "defaults write com.apple.print.PrintingPrefs \"Quit When Finished\" -bool true"); out=$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list); [ "$(printf "%s\n" "$out" | grep -c "Quit When Finished")" -ge 1 ]'
 t "B1.2" "indented writes are captured" \
-  'W=$(mk "  defaults write com.apple.terminal \"Default Window Settings\" -string Nord"); DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -q "Default Window Settings"'
+  'W=$(mk "  defaults write com.apple.terminal \"Default Window Settings\" -string Nord"); out=$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list); [ "$(printf "%s\n" "$out" | grep -c "Default Window Settings")" -ge 1 ]'
 t "B1.3" "sudo writes are captured with their domain path" \
-  'W=$(mk "sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false"); DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -q "GuestEnabled"'
+  'W=$(mk "sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false"); out=$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list); [ "$(printf "%s\n" "$out" | grep -c "GuestEnabled")" -ge 1 ]'
 t "B1.4" "-currentHost writes are captured" \
-  'W=$(mk "defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true"); DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -q "disableHotPlug"'
+  'W=$(mk "defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true"); out=$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list); [ "$(printf "%s\n" "$out" | grep -c "disableHotPlug")" -ge 1 ]'
 t "B1.5" "a write with no key is rejected, not recorded as domain=-bool" \
   'W=$(mk "defaults write com.apple.sound.beep.feedback -bool false"); [ "$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -c -- "-bool")" -eq 0 ]'
 
@@ -457,7 +457,7 @@ t "G2.9" "a missing activateSettings is skipped, not an error" '
   W=$(_g_env) && command rm -f "$W/bin/activateSettings" && _g_run "$W" defaults.sh &&
   [ "$(_logcount "$W" "activateSettings")" -eq 0 ]'
 t "G2.10" "activateSettings is guarded by an executable test" \
-  'code_of macos/defaults.sh | grep -qE "\[ -x .*ACTIVATE_SETTINGS"'
+  '[ "$(code_of macos/defaults.sh | grep -cE "\[ -x .*ACTIVATE_SETTINGS")" -ge 1 ]'
 
 #############################################################################
 section "G3 -- security and power"

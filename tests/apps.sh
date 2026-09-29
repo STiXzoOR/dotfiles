@@ -576,7 +576,7 @@ t "C9" "the README no longer promises an hourly mackup backup" \
 t "C10" "no tracked mackup config remains at runcom/.mackup.cfg" \
   '[ ! -e runcom/.mackup.cfg ]'
 t "C11" "the wrapper sets its own PATH for launchd (/opt/homebrew/bin first)" \
-  'code_of bin/dotfiles-apps | grep -q "PATH=\"/opt/homebrew/bin:/opt/homebrew/sbin:\$PATH\""'
+  '[ "$(code_of bin/dotfiles-apps | grep -c "PATH=\"/opt/homebrew/bin:/opt/homebrew/sbin:\$PATH\"")" -ge 1 ]'
 t "C12" "minimal PATH (as under launchd) still finds mackup when installed (skipped, visibly, when not installed)" \
   '[ "$HAVE_MACKUP" -eq 0 ] || {
    W=$(sandbox); mkdir -p "$W/home/.config/mackup"; cp -R config/mackup/applications "$W/home/.config/mackup/applications"

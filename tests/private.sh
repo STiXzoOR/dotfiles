@@ -86,7 +86,8 @@ t "P1.2" "a symlink to the private copy is left where each file was" \
 t "P1.3" "the private dir is a git repo with a .gitignore and a first commit holding the files" \
   'W=$(penv); priv init >/dev/null 2>&1 &&
    [ -f "$W/priv/.gitignore" ] && [ "$(git -C "$W/priv" rev-list --count HEAD)" -eq 1 ] &&
-   git -C "$W/priv" ls-files | grep -qx "profiles/local.zsh" && git -C "$W/priv" ls-files | grep -qx ".gitignore"'
+   tracked=$(git -C "$W/priv" ls-files) &&
+   [ "$(printf "%s\n" "$tracked" | grep -cx "profiles/local.zsh")" -ge 1 ] && [ "$(printf "%s\n" "$tracked" | grep -cx ".gitignore")" -ge 1 ]'
 t "P1.4" "init never creates the GitHub repo: gh is not run, the command is printed" '
   W=$(penv); out=$(priv init 2>&1)
   [ "$(grep -c "^gh" "$W/log")" -eq 0 ] &&

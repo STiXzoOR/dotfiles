@@ -129,7 +129,7 @@ t "E4.9" "the hook dry run still reports what it resolved" '
     bash claude/hooks/index-sessions.sh 2>&1)
   [ "$(printf "%s" "$out" | grep -c "index-sessions: timeout=")" -eq 1 ] &&
   [ "$(printf "%s" "$out" | grep -c "qmd=")" -eq 1 ]'
-t "E4.7" "installer imports the rules into CLAUDE.md idempotently" 'grep -q "link_rule_imports" scripts/install_claude.sh && code_of scripts/install_claude.sh | sed -n "/link_rule_imports()/,/^}/p" | grep -q "claude/rules"'
+t "E4.7" "installer imports the rules into CLAUDE.md idempotently" 'grep -q "link_rule_imports" scripts/install_claude.sh && [ "$(code_of scripts/install_claude.sh | sed -n "/link_rule_imports()/,/^}/p" | grep -c "claude/rules")" -ge 1 ]'
 
 section "E5 — docs"
 t "E5.1" "architecture.md lists no dead package lists" '! grep -qE "brew.list|cask.list|mas.list|tap.list" docs/agents/architecture.md'

@@ -232,7 +232,7 @@ t "M3.4" "packages/npm.list is gone" \
   '[ ! -e packages/npm.list ]'
 
 t "M3.5" "doctor reports on mise" \
-  'code_of bin/dotfiles-doctor | grep -q "mise"'
+  '[ "$(code_of bin/dotfiles-doctor | grep -c "mise")" -ge 1 ]'
 
 # Not "the word fnm never appears": it has to. fnm stays installed behind the
 # guard in system/.fnm until the user removes it, so honest docs name it, say
