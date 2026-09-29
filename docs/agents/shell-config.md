@@ -6,8 +6,14 @@
 `runcom/.zpreztorc`.
 
 **Prompt**: Starship. `system/.starship` initialises it, for rich terminals
-only, and `config/starship/config.toml` configures it. Prezto's own prompt
-theme is `off` in every host.
+only, and `config/starship/config.toml` configures it. Prezto's `prompt`
+module is not loaded at all (`promptinit` scans 18 themes nobody uses, about
+12 ms); `.zshrc` sets `PS1='%# '` after Prezto in `warp` and `dumb` shells so
+they keep the prompt they had, and the `theme 'off'` line stays in
+`.zpreztorc` for tests and a later re-enable. The prompt shows no Node or
+Python version: `nodejs` and `python` are out of `format` (each forked
+`node --version` / `python --version` through the mise shim on every prompt in
+a project directory, 124-187 ms against 7 ms); their symbol tables are kept.
 
 ## Host classification
 
@@ -52,6 +58,21 @@ Set a profile with `export DOTFILES_PROFILE="work"`, or create
 
 Shell init output is cached under `~/.cache/*.zsh`:
 
+| Cache                           | Written by                | Regenerated when older than                     |
+| ------------------------------- | ------------------------- | ----------------------------------------------- |
+| `zoxide-init.zsh`               | `system/.zoxide`          | the `zoxide` binary                             |
+| `pay-respects-init.zsh`         | `system/.pay-respects`     | the `pay-respects` binary                       |
+| `atuin-init-<host>.zsh`         | `system/.atuin`           | the `atuin` binary, or `system/.atuin` itself   |
+| `starship-init.zsh`             | `system/.starship`        | the `starship` binary, `$STARSHIP_CONFIG`, or `system/.starship` |
+| `npm-completion.zsh`, `fzf-*`   | `.completion`, `.fzf`     | their binary                                    |
+
+Two details worth knowing. atuin's init is cached per host because the flags
+differ (`dumb` loads none), and its session id is minted in zsh before the
+cached script is sourced (`ATUIN_SESSION`, 32 hex digits): the init script
+otherwise forks `atuin uuid` on every shell. Starship's cached copy has its
+last line, `PROMPT2="$(starship prompt --continuation)"`, replaced by the
+literal continuation prompt, which is why the config is one of its inputs.
+
 ```bash
 rm ~/.cache/*.zsh     # Clear every cache
 exec $SHELL           # Restart the shell to regenerate
@@ -59,6 +80,34 @@ exec $SHELL           # Restart the shell to regenerate
 
 There is no per-tool refresh helper. `fnm_refresh` was documented here for a
 while and never existed.
+
+The completion dump, `~/.cache/prezto/zcompdump`, is rebuilt by `runcom/.zlogin`
+in its background block once it is older than 8 hours: a detached `zsh -f`
+(with the parent's `fpath` passed through `FPATH`) writes a temp file that
+replaces the dump with one `mv -f`, and the existing `zcompile` follows. Prezto
+would otherwise regenerate it in the foreground after 20 hours, which put about
+25-300 ms in front of the first prompt of the day and of a new machine's first
+shell. This is plain `compinit`, never `compinit -C`, and not `zsh-defer`.
+
+## Startup speed
+
+Measured on the login path (`zsh -l -i -c exit`, `DOTFILES_TERM_HOST` forced,
+wall time, minimum of 40 interleaved runs, load average about 5):
+
+| Host   | Before  | After   |
+| ------ | ------- | ------- |
+| `warp` | 87 ms   | 49.5 ms |
+| `rich` | 120 ms  | 74 ms   |
+| `dumb` | 73 ms   | 49 ms   |
+
+The 2026-09-29 pass did, in order of size: dropped Prezto's `prompt` module,
+cached atuin's and Starship's init, stopped Prezto's `utility` module running
+`ls --version` twice (`ls` is an eza alias, so each was an eza fork; a
+temporary `eza` shim in `.zshrc` answers it in-shell while Prezto loads) and
+cached pay-respects' init. `ssh <TAB>` no longer parses `/etc/hosts`:
+`system/.completion` replaces Prezto's `hosts` style with one that reads
+`known_hosts` and `~/.ssh/config` only (339 ms to 8 ms a lookup with a
+105k-line blocklist in `/etc/hosts`).
 
 ## Key Bindings
 

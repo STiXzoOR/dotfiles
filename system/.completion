@@ -2,13 +2,17 @@
 # Note: compinit is handled by Prezto's completion module
 # HOMEBREW_PREFIX is set by system/.path
 
+# compdef comes from Prezto's completion module; without Prezto (submodule not
+# initialised) the two registrations below are skipped instead of printing
+# `command not found: compdef` on every shell start.
+
 # Dotfiles completion. Keep in sync with sub_help in bin/dotfiles.
 _dotfiles_completions() {
   compadd 'baseline' 'cheatsheet' 'clean' 'configure' 'doctor' 'edit' 'help' \
     'hooks' 'install' 'link' 'open' 'profiler' 'secrets' 'setup' 'test' \
     'unlink' 'update'
 }
-compdef _dotfiles_completions dotfiles
+(( $+functions[compdef] )) && compdef _dotfiles_completions dotfiles
 
 # npm completion - cached, because `npm completion` costs about 90 ms.
 # Both the source and the regeneration live inside the guard: without it an
@@ -43,4 +47,14 @@ _pnpm_completion() {
     _describe 'values' reply
   fi
 }
-compdef _pnpm_completion pnpm
+(( $+functions[compdef] )) && compdef _pnpm_completion pnpm
+
+# ssh/scp/rsync host completion without /etc/hosts. Prezto's style also parses
+# /etc/hosts, which on this setup is a ~105k-line ad blocklist: 306 ms to
+# complete a host against 37 ms without it. Sourced after Prezto, so this
+# replaces its style; known_hosts and ~/.ssh/config are unchanged. `command
+# cat` keeps a `cat` alias (bat) out of completion.
+zstyle -e ':completion:*:hosts' hosts 'reply=(
+  ${=${=${=${${(f)"$(command cat {/etc/ssh/ssh_,~/.ssh/}known_hosts(|2)(N) 2> /dev/null)"}%%[#| ]*}//\]:[0-9]*/ }//,/ }//\[/ }
+  ${=${${${${(@M)${(f)"$(command cat ~/.ssh/config 2> /dev/null)"}:#Host *}#Host }:#*\**}:#*\?*}}
+)'

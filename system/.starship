@@ -4,12 +4,31 @@
 # STARSHIP_CONFIG is needed: starship looks for ~/.config/starship.toml by
 # default, and config/starship/ stows to ~/.config/starship/config.toml.
 #
-# No cache, unlike .zoxide and .fzf: `starship init zsh` costs a few
-# milliseconds, and a cache would be one more thing to invalidate.
+# The init script is cached, like .zoxide and .fzf (about 9 ms a rich shell:
+# `starship init zsh` plus the `starship prompt --continuation` that the init
+# script runs for PROMPT2). The cached copy has that last line replaced by the
+# literal continuation prompt, computed once. It is regenerated when missing,
+# older than the starship binary, older than the config (continuation_prompt
+# lives there) or older than this file. PROMPT and RPROMPT still run starship
+# on every prompt; only the setup is cached.
 export STARSHIP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/starship/config.toml"
 
 if (( $+commands[starship] )); then
-  eval "$(starship init zsh)"
+  _starship_cache="${XDG_CACHE_HOME:-$HOME/.cache}/starship-init.zsh"
+  if [[ ! -s "$_starship_cache" || "$commands[starship]" -nt "$_starship_cache" ||
+        "$STARSHIP_CONFIG" -nt "$_starship_cache" || "${(%):-%x}" -nt "$_starship_cache" ]]; then
+    _starship_init="$(starship init zsh --print-full-init 2>/dev/null)"
+    if [[ -n "$_starship_init" ]]; then
+      _starship_cont="$(starship prompt --continuation 2>/dev/null)"
+      _starship_lines=("${(@f)_starship_init}")
+      _starship_lines=("${(@)_starship_lines/#PROMPT2=*--continuation)\"/PROMPT2=${(qq)_starship_cont}}")
+      mkdir -p "${_starship_cache:h}"
+      print -r -- "${(F)_starship_lines}" >| "$_starship_cache"
+    fi
+    unset _starship_init _starship_cont _starship_lines
+  fi
+  [[ -s "$_starship_cache" ]] && source "$_starship_cache"
+  unset _starship_cache
 
   # starship's init sets RPROMPT to a second `starship prompt --right` process,
   # which zsh runs on every prompt even when the config draws nothing on the

@@ -37,7 +37,6 @@ _pmodules=(
   'ssh'
   'python'
   'completion'
-  'prompt'
   'syntax-highlighting'
   'history-substring-search'
   'autosuggestions'
@@ -61,7 +60,9 @@ unset _pmodules _zle_pmodules
 #
 # None, in every host. Rich terminals get Starship, which .zshrc sources after
 # prezto; Warp draws its own prompt and ignores PS1 (WARP_HONOR_PS1=0); a shell
-# with no terminal has nothing to draw one on (system/.term_host).
+# with no terminal has nothing to draw one on (system/.term_host). The prompt
+# module itself is not loaded: promptinit scans 18 theme files nobody uses
+# (about 12 ms), so the line below is only what tests and a later re-enable read.
 zstyle ':prezto:module:prompt' theme 'off'
 
 #

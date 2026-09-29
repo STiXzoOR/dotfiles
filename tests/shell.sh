@@ -80,7 +80,7 @@ ENVEOF
 # stdin is /dev/null, so a detected class is never rich.
 _zsh_login() {
   # shellcheck disable=SC2086 # ZSHRUN_ENV is a list of NAME=value words
-  env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST \
+  env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST -u ATUIN_SESSION -u ATUIN_SHLVL \
     HOME="$1" ZDOTDIR="$1" XDG_CACHE_HOME="$1/.cache" PATH="$1/.stubs:$PATH" \
     DOTFILES_TERM_HOST="${ZSHRUN_TERM_HOST-rich}" ${ZSHRUN_ENV:-} \
     zsh -l -i -c "$2" </dev/null
@@ -118,7 +118,7 @@ pty_zshrun() {
   local h
   h=${ZSHRUN_HOME:-$(_zsh_sandbox)} || return 1
   # shellcheck disable=SC2086 # ZSHRUN_ENV is a list of NAME=value words
-  ptyrun env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST \
+  ptyrun env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST -u ATUIN_SESSION -u ATUIN_SHLVL \
     HOME="$h" ZDOTDIR="$h" XDG_CACHE_HOME="$h/.cache" PATH="$h/.stubs:$PATH" \
     ${ZSHRUN_ENV:-} zsh -l -i -c "$1"
 }
@@ -149,12 +149,15 @@ bound_elsewhere() { [ -n "$1" ] && [ "${1#\"*\" }" != "$2" ]; }
 write_tool_stubs() {
   cat >"$1/.stubs/starship" <<'STUBEOF'
 #!/bin/sh
+[ -n "$STUB_LOG" ] && echo "starship $*" >> "$STUB_LOG"
+[ "$1 $2" = "prompt --continuation" ] && printf 'CONT> '
 [ "$1" = init ] || exit 0
 cat <<'ZSHEOF'
 prompt_starship_precmd() { :; }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd prompt_starship_precmd
 RPROMPT='$(starship prompt --right)'
+PROMPT2="$(starship prompt --continuation)"
 ZSHEOF
 STUBEOF
   cat >"$1/.stubs/fzf" <<'STUBEOF'
@@ -170,9 +173,16 @@ STUBEOF
   # --disable-ctrl-r.
   cat >"$1/.stubs/atuin" <<'STUBEOF'
 #!/bin/sh
+[ -n "$STUB_LOG" ] && echo "atuin $*" >> "$STUB_LOG"
+[ "$1" = uuid ] && echo 00000000000000000000000000000000
 [ "$1" = init ] || exit 0
 echo "ATUIN_STUB_ARGS='$*'"
+# The session id line of the real init script: a fork of `atuin uuid`.
 cat <<'ZSHEOF'
+if [[ -z $ATUIN_SESSION || $ATUIN_SHLVL != $SHLVL ]]; then
+  export ATUIN_SESSION=$(atuin uuid)
+  export ATUIN_SHLVL=$SHLVL
+fi
 _atuin_precmd() { :; }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _atuin_precmd
@@ -252,14 +262,14 @@ ENV_STATE='
 # itself, and the theme prezto was asked for.
 PROMPT_STATE='print -r -- "PROMPT=${precmd_functions[(r)prompt_starship_precmd]:-none} p10k=$+functions[p10k] theme=$(zstyle -s ":prezto:module:prompt" theme t && print -r -- $t)"'
 # Prezto modules marked loaded: the four line-editor ones, whether their
-# widgets' functions exist, and the other thirteen. "none" when empty, so a
+# widgets' functions exist, and the other twelve. "none" when empty, so a
 # missing line cannot pass for an empty one.
 ZLE_STATE='
   _m=(); for _p in editor syntax-highlighting history-substring-search autosuggestions; do
     zstyle -t ":prezto:module:$_p" loaded && _m+=($_p); done
   print -r -- "ZLE_MODULES=${_m:-none}"
   print -r -- "ZLE_FUNCS=$+functions[_zsh_autosuggest_start]$+functions[_zsh_highlight]"
-  _m=(); for _p in environment terminal history directory spectrum utility git homebrew osx ssh python completion prompt; do
+  _m=(); for _p in environment terminal history directory spectrum utility git homebrew osx ssh python completion; do
     zstyle -t ":prezto:module:$_p" loaded && _m+=($_p); done
   print -r -- "CORE_MODULES=${_m:-none}"
 '
@@ -293,7 +303,7 @@ login_shell_cpu_ms() {
   _zsh_login "$h" true >/dev/null 2>&1   # warm the caches
   # The environment of _zsh_login, spelled out: /usr/bin/time needs a
   # program, not a shell function.
-  o=$( { /usr/bin/time -p env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST \
+  o=$( { /usr/bin/time -p env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST -u ATUIN_SESSION -u ATUIN_SHLVL \
            HOME="$h" ZDOTDIR="$h" XDG_CACHE_HOME="$h/.cache" PATH="$h/.stubs:$PATH" \
            DOTFILES_TERM_HOST="${ZSHRUN_TERM_HOST-rich}" \
            zsh -l -i -c true </dev/null; } 2>&1 >/dev/null )
@@ -424,7 +434,7 @@ t "C6.1" "fzf-tab is sourced after prezto, in rich terminals only" \
    bound_elsewhere "$(pv KEY_TAB warp)" fzf-tab-complete &&
    bound_elsewhere "$(pv KEY_TAB dumb)" fzf-tab-complete'
 t "C6.2" "atuin init is guarded, and Warp gets its recording hooks without bindings" \
-  '[ "$(code_of system/.atuin | grep -c "commands\[atuin\]")" -eq 1 ] &&
+  '[ "$(code_of system/.atuin | grep -c "[+]commands\[atuin\]")" -eq 1 ] &&
    [ "$(pv ATUIN_HOOK warp)" = _atuin_precmd ] &&
    a=" $(pv ATUIN_ARGS warp) " &&
    case "$a" in *" --disable-ctrl-r "*) ;; *) false ;; esac &&
@@ -518,9 +528,9 @@ t "H3.2" "Warp and a shell with no terminal load none of them" \
   '( for h in warp dumb; do
        [ "$(pv ZLE_MODULES $h)" = none ] && [ "$(pv ZLE_FUNCS $h)" = 00 ] || exit 1
      done )'
-t "H3.3" "every host loads the other thirteen modules" \
+t "H3.3" "every host loads the other twelve modules" \
   '( for h in rich warp dumb; do
-       [ "$(pv CORE_MODULES $h)" = "environment terminal history directory spectrum utility git homebrew osx ssh python completion prompt" ] || exit 1
+       [ "$(pv CORE_MODULES $h)" = "environment terminal history directory spectrum utility git homebrew osx ssh python completion" ] || exit 1
      done )'
 
 section "H4 — key bindings and atuin, per host"
@@ -537,5 +547,195 @@ t "H4.3" ".bindings loads in rich terminals only" \
 section "H5 — Powerlevel10k retired"
 t "H5.1" "the Powerlevel10k config is gone" \
   '[ ! -e system/.prompt ]'
+
+# ---------------------------------------------------------------------------
+# P -- shell performance (2026-09-29). Every case drives the host through
+# DOTFILES_TERM_HOST (ZSHRUN_TERM_HOST) and a sandbox HOME, and counts calls
+# to stubs that log their argv.
+# ---------------------------------------------------------------------------
+
+section "P1 — prezto's prompt module is not loaded (promptinit scans 18 themes nobody uses)"
+_PROMPT_PROBE='print -r -- "PROMPTINIT=$+functions[promptinit] SETUPS=${#${(k)functions[(I)prompt_*_setup]}} PS1=$PS1"'
+t "P1.1" "a warp shell has no promptinit, no theme setup functions, and PS1 is %# " \
+  '[ "$(ZSHRUN_TERM_HOST=warp zshrun "$_PROMPT_PROBE")" = "PROMPTINIT=0 SETUPS=0 PS1=%# " ]'
+t "P1.2" "a shell with no terminal has the same" \
+  '[ "$(ZSHRUN_TERM_HOST=dumb zshrun "$_PROMPT_PROBE")" = "PROMPTINIT=0 SETUPS=0 PS1=%# " ]'
+t "P1.3" "a rich terminal still gets the Starship prompt, and no theme functions" \
+  '[ "$(pty_zshrun "$PROMPT_STATE" | sed -n "s/^PROMPT=//p")" = "prompt_starship_precmd p10k=0 theme=off" ] &&
+   [ "$(ZSHRUN_TERM_HOST=rich zshrun "$_PROMPT_PROBE" | grep -c "SETUPS=0")" -eq 1 ]'
+t "P1.4" "the module list no longer names prompt" \
+  '[ "$(code_of runcom/.zpreztorc | grep -cx "[[:space:]]*.prompt.")" -eq 0 ]'
+
+section "P2 — prezto's utility module does not fork eza to ask for its version"
+# An eza that logs its argv. `ls` is aliased to eza, and prezto's utility module
+# runs `ls --version` twice to look for GNU ls.
+_eza_sandbox() {
+  local h
+  h=$(_zsh_sandbox) || return 1
+  printf '#!/bin/sh\necho "$*" >> "%s/eza.log"\n' "$h" >"$h/.stubs/eza"
+  chmod +x "$h/.stubs/eza"; : >"$h/eza.log"
+  printf '%s' "$h"
+}
+_ALIAS_PROBE='print -r -- "$(alias ls ll la lr ld lx)"; print -r -- "EZA=$(whence -w eza)"'
+t "P2.1" "startup never asks eza for its version" \
+  'H=$(_eza_sandbox) && ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(grep -c -e "--version" "$H/eza.log" 2>/dev/null)" -eq 0 ]'
+t "P2.2" "the ls aliases are the same as without the shim, and no eza function is left" \
+  'H=$(_eza_sandbox) && G=$(_eza_sandbox) &&
+   sed -i.bak "/eza-shim:begin/,/eza-shim:end/d" "$G/.zshrc" &&
+   [ "$(grep -c "eza-shim" "$G/.zshrc")" -eq 0 ] &&
+   A=$(ZSHRUN_HOME="$H" zshrun "$_ALIAS_PROBE") && B=$(ZSHRUN_HOME="$G" zshrun "$_ALIAS_PROBE") &&
+   [ -n "$A" ] && [ "$A" = "$B" ] && [ "$(printf "%s\n" "$A" | grep -c "^EZA=eza: command")" -eq 1 ] &&
+   [ "$(grep -c -e "--version" "$G/eza.log")" -gt 0 ] && [ "$(grep -c -e "--version" "$H/eza.log")" -eq 0 ]'
+t "P2.3" "a shell without eza starts as before" \
+  '[ "$(zshrun_all "echo ok")" = ok ]'
+
+section "P3 — atuin's init is cached per host, and the session id is minted in zsh"
+# Two or three login shells in one sandbox, atuin logging every call to
+# $H/stub.log. calls <log> <pattern>: how many logged calls start with it.
+_calls() { [ -f "$1" ] && awk -v p="$2" 'index($0, p) == 1 { n++ } END { print n + 0 }' "$1" || echo 0; }
+_ATUIN_SID='print -r -- "SID=$ATUIN_SESSION ${(t)ATUIN_SESSION} SHLVL=$ATUIN_SHLVL"'
+t "P3.1" "the first shell runs atuin init once; the second runs neither init nor uuid" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin init")" -eq 1 ] && [ "$(_calls "$L" "atuin uuid")" -eq 0 ] &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin init")" -eq 1 ] && [ "$(_calls "$L" "atuin uuid")" -eq 0 ]'
+t "P3.2" "the cache is per host, flags intact, and a newer atuin regenerates it" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_TERM_HOST=warp ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   ZSHRUN_TERM_HOST=rich ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin init")" -eq 2 ] &&
+   [ "$(grep -c -e "--disable-up-arrow --disable-ctrl-r --disable-ai" "$H/.cache/atuin-init-warp.zsh")" -eq 1 ] &&
+   [ "$(grep -c -e "--disable-ctrl-r" "$H/.cache/atuin-init-rich.zsh")" -eq 0 ] &&
+   touch -t 203501010000 "$H/.stubs/atuin" &&
+   ZSHRUN_TERM_HOST=rich ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin init")" -eq 3 ]'
+t "P3.3" "a shell with no terminal neither calls atuin nor writes a cache" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_TERM_HOST=dumb ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin")" -eq 0 ] && [ ! -e "$H/.cache/atuin-init-dumb.zsh" ]'
+t "P3.4" "ATUIN_SESSION is 32 hex digits, exported, differs per shell, and ATUIN_SHLVL is set" \
+  'H=$(_zsh_sandbox) &&
+   A=$(ZSHRUN_HOME="$H" zshrun "$_ATUIN_SID") && B=$(ZSHRUN_HOME="$H" zshrun "$_ATUIN_SID") &&
+   [ "$A" != "$B" ] &&
+   [ "$(printf "%s\n%s\n" "$A" "$B" | grep -cE "^SID=[0-9a-f]{32} scalar-export SHLVL=[0-9]+$")" -eq 2 ]'
+
+section "P4 — starship's init is cached, with the continuation prompt baked in"
+t "P4.1" "the second shell runs neither starship init nor prompt --continuation, and PROMPT2 survives" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   A=$(ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun "print -r -- \"P2=[\$PROMPT2]\"") &&
+   [ "$(_calls "$L" "starship init")" -eq 1 ] && [ "$(_calls "$L" "starship prompt --continuation")" -eq 1 ] &&
+   B=$(ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun "print -r -- \"P2=[\$PROMPT2]\"") &&
+   [ "$(_calls "$L" "starship init")" -eq 1 ] && [ "$(_calls "$L" "starship prompt --continuation")" -eq 1 ] &&
+   [ "$A" = "P2=[CONT> ]" ] && [ "$B" = "$A" ]'
+t "P4.2" "the init is the full one, and the cached file holds a literal PROMPT2" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(grep -c -e "^starship init zsh --print-full-init$" "$L")" -eq 1 ] &&
+   [ "$(grep -c "^PROMPT2=.CONT> .$" "$H/.cache/starship-init.zsh")" -eq 1 ] &&
+   [ "$(grep -c "prompt --continuation" "$H/.cache/starship-init.zsh")" -eq 0 ]'
+t "P4.3" "touching the starship config regenerates the cache" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   mkdir -p "$H/.config/starship" && : >"$H/.config/starship/config.toml" &&
+   touch -t 203501010000 "$H/.config/starship/config.toml" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "starship init")" -eq 2 ]'
+t "P4.4" "a newer starship binary regenerates the cache" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   touch -t 203501010000 "$H/.stubs/starship" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "starship init")" -eq 2 ]'
+t "P4.5" "a shell that gets no Starship never writes the cache" \
+  'H=$(_zsh_sandbox) && ZSHRUN_TERM_HOST=warp ZSHRUN_HOME="$H" zshrun true &&
+   [ ! -e "$H/.cache/starship-init.zsh" ]'
+
+section "P5 — pay-respects' init is cached"
+# The stub goes in $HOME/.local/bin, which system/.path puts ahead of Homebrew:
+# .pay-respects is sourced from .profile, before .local/bin/env has put .stubs
+# first, so a real pay-respects in /opt/homebrew/bin would otherwise win.
+_pr_sandbox() {
+  local h
+  h=$(_zsh_sandbox) || return 1
+  printf '#!/bin/sh\necho "pay-respects $*" >> "%s/stub.log"\necho "alias fix=true"\n' "$h" >"$h/.local/bin/pay-respects"
+  chmod +x "$h/.local/bin/pay-respects"
+  printf '%s' "$h"
+}
+t "P5.1" "the second shell makes no pay-respects call, and fix is still an alias" \
+  'H=$(_pr_sandbox) && L="$H/stub.log" &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "whence -w fix")" = "fix: alias" ] &&
+   [ "$(_calls "$L" "pay-respects zsh --alias fix")" -eq 1 ] &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "whence -w fix")" = "fix: alias" ] &&
+   [ "$(_calls "$L" "pay-respects")" -eq 1 ]'
+t "P5.2" "a newer pay-respects binary regenerates the cache" \
+  'H=$(_pr_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_HOME="$H" zshrun true && touch -t 203501010000 "$H/.local/bin/pay-respects" &&
+   ZSHRUN_HOME="$H" zshrun true && [ "$(_calls "$L" "pay-respects")" -eq 2 ]'
+
+section "P6 — ssh <TAB> does not parse the /etc/hosts blocklist"
+_hosts_sandbox() {
+  local h
+  h=$(_zsh_sandbox) || return 1
+  mkdir -p "$h/.ssh"
+  printf '%s\n' 'alpha.example,10.0.0.1 ssh-rsa AAAA' '[bravo.example]:2222 ssh-ed25519 BBBB' >"$h/.ssh/known_hosts"
+  printf '%s\n' 'Host charlie delta' '  HostName ignored.example' 'Host *' 'Host wild*' >"$h/.ssh/config"
+  printf '%s' "$h"
+}
+_HOSTS_PROBE='zstyle -a ":completion:*:hosts" hosts _h; _w=(${=_h}); _w=(${(o)_w}); print -r -- "HOSTS=${(j:,:)_w}"'
+t "P6.1" "the hosts style is exactly known_hosts plus ssh config, and never /etc/hosts" \
+  'H=$(_hosts_sandbox) &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "$_HOSTS_PROBE")" = "HOSTS=10.0.0.1,alpha.example,bravo.example,charlie,delta" ]'
+t "P6.2" "the style runs the real cat, whatever cat is aliased to" \
+  '[ "$(code_of system/.completion | grep -c "command cat")" -ge 2 ]'
+
+section "P7 — system/.completion needs no compdef when Prezto is absent"
+t "P7.1" "a shell whose Prezto submodule is not initialised starts silently" \
+  'H=$(_zsh_sandbox) && rm -f "$H/.dotfiles/modules" &&
+   [ "$(ZSHRUN_HOME="$H" zshrun_all "echo ok")" = ok ]'
+t "P7.2" "with Prezto present the dotfiles and pnpm completions are still registered" \
+  '[ "$(zshrun "print -r -- \"\${_comps[dotfiles]}|\${_comps[pnpm]}\"")" = "_dotfiles_completions|_pnpm_completion" ]'
+
+section "P8 — the completion dump is rebuilt in the background, never in the foreground"
+# _age_dump <file> <hours> -- set mtime and atime <hours> in the past (perl:
+# GNU and BSD touch have no common relative-time flag).
+_age_dump() { perl -e 'my $t = time - $ARGV[1] * 3600; utime $t, $t, $ARGV[0]' "$1" "$2"; }
+# _dump_sandbox <hours> -- a sandbox whose dump exists (one login shell made it)
+# and is <hours> old. Prezto only regenerates it in the foreground after 20.
+_dump_sandbox() {
+  local h
+  h=$(_zsh_sandbox) || return 1
+  ZSHRUN_HOME="$h" zshrun true || return 1
+  sleep 2  # the first shell's own background zcompile
+  [ -s "$h/.cache/prezto/zcompdump" ] || return 1
+  _age_dump "$h/.cache/prezto/zcompdump" "$1"
+  printf '%s' "$h"
+}
+# _wait_newer <file> <marker> -- true once <file> is newer than <marker>, for up
+# to 20 s.
+_wait_newer() { local i=0; while [ "$i" -lt 40 ]; do [ "$1" -nt "$2" ] && return 0; sleep 0.5; i=$((i + 1)); done; return 1; }
+t "P8.1" "a dump 12 h old is rebuilt in the background, compiled, and leaves no temp file" \
+  'H=$(_dump_sandbox 12) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 11 &&
+   ZSHRUN_HOME="$H" zshrun true && _wait_newer "$D" "$H/marker" &&
+   [ "$(grep -c "^#files:" "$D")" -eq 1 ] && _wait_newer "$D.zwc" "$H/marker" &&
+   [ "$(ls "$H/.cache/prezto" | grep -c "zcompdump[.].*tmp")" -eq 0 ]'
+t "P8.2" "a dump 2 h old is left alone" \
+  'H=$(_dump_sandbox 2) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 1 &&
+   ZSHRUN_HOME="$H" zshrun true && sleep 4 && [ ! "$D" -nt "$H/marker" ]'
+t "P8.3" "the rebuild is a detached zsh -f, and never a bare compinit -C" \
+  '[ "$(code_of runcom/.zlogin | grep -c "zsh -f")" -ge 1 ] &&
+   [ "$(code_of runcom/.zlogin | grep -cE "compinit -C|zsh-defer")" -eq 0 ]'
+
+section "P9 — the Starship prompt shows no runtime versions"
+# The value of the top-level `format`, from its opening """ to the closing one.
+_starship_format() { code_of config/starship/config.toml | awk '/^format = """/ { on = 1 } on { print } on && /"""$/ && !/^format = """$/ { exit }'; }
+t "P9.1" "format is found, and still draws the directory, git and character modules" \
+  'f=$(_starship_format) && [ "$(printf "%s\n" "$f" | grep -c "[$]directory")" -eq 1 ] &&
+   [ "$(printf "%s\n" "$f" | grep -c "[$]git_branch")" -eq 1 ] && [ "$(printf "%s\n" "$f" | grep -c "[$]character")" -eq 1 ]'
+t "P9.2" "format no longer names nodejs or python (each forked its version on every prompt)" \
+  'f=$(_starship_format) && [ -n "$f" ] && [ "$(printf "%s\n" "$f" | grep -cE "[$](nodejs|python)")" -eq 0 ]'
+t "P9.3" "their symbol tables are kept" \
+  '[ "$(code_of config/starship/config.toml | grep -cE "^\[(nodejs|python)\]$")" -eq 2 ]'
 
 finish

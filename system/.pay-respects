@@ -1,9 +1,16 @@
 # pay-respects - command correction (replaces thefuck, whose upstream has been
 # dormant since 2024-07 with 460 open issues; pay-respects is Rust and active).
 #
-# No cache here: thefuck needed one because `thefuck --alias fix` cost 76 ms
-# per shell. pay-respects prints its shell integration in a couple of
-# milliseconds, and a cache would be one more thing to invalidate.
+# The init output is cached, like .zoxide: it is only a few milliseconds, but
+# those are a fork on every login shell, and the cache is regenerated when the
+# binary is newer.
+_pay_respects_cache="${XDG_CACHE_HOME:-$HOME/.cache}/pay-respects-init.zsh"
+
 if (( $+commands[pay-respects] )); then
-  eval "$(pay-respects zsh --alias fix 2>/dev/null)"
+  if [[ ! -s "$_pay_respects_cache" || "$commands[pay-respects]" -nt "$_pay_respects_cache" ]]; then
+    mkdir -p "${_pay_respects_cache:h}"
+    pay-respects zsh --alias fix >| "$_pay_respects_cache" 2>/dev/null
+  fi
+  [[ -s "$_pay_respects_cache" ]] && source "$_pay_respects_cache"
 fi
+unset _pay_respects_cache
