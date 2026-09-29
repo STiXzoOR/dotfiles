@@ -674,4 +674,20 @@ t "P5.2" "a newer pay-respects binary regenerates the cache" \
    ZSHRUN_HOME="$H" zshrun true && touch -t 203501010000 "$H/.local/bin/pay-respects" &&
    ZSHRUN_HOME="$H" zshrun true && [ "$(_calls "$L" "pay-respects")" -eq 2 ]'
 
+section "P6 — ssh <TAB> does not parse the /etc/hosts blocklist"
+_hosts_sandbox() {
+  local h
+  h=$(_zsh_sandbox) || return 1
+  mkdir -p "$h/.ssh"
+  printf '%s\n' 'alpha.example,10.0.0.1 ssh-rsa AAAA' '[bravo.example]:2222 ssh-ed25519 BBBB' >"$h/.ssh/known_hosts"
+  printf '%s\n' 'Host charlie delta' '  HostName ignored.example' 'Host *' 'Host wild*' >"$h/.ssh/config"
+  printf '%s' "$h"
+}
+_HOSTS_PROBE='zstyle -a ":completion:*:hosts" hosts _h; _w=(${=_h}); _w=(${(o)_w}); print -r -- "HOSTS=${(j:,:)_w}"'
+t "P6.1" "the hosts style is exactly known_hosts plus ssh config, and never /etc/hosts" \
+  'H=$(_hosts_sandbox) &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "$_HOSTS_PROBE")" = "HOSTS=10.0.0.1,alpha.example,bravo.example,charlie,delta" ]'
+t "P6.2" "the style runs the real cat, whatever cat is aliased to" \
+  '[ "$(code_of system/.completion | grep -c "command cat")" -ge 2 ]'
+
 finish

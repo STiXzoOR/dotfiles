@@ -44,3 +44,13 @@ _pnpm_completion() {
   fi
 }
 compdef _pnpm_completion pnpm
+
+# ssh/scp/rsync host completion without /etc/hosts. Prezto's style also parses
+# /etc/hosts, which on this setup is a ~105k-line ad blocklist: 306 ms to
+# complete a host against 37 ms without it. Sourced after Prezto, so this
+# replaces its style; known_hosts and ~/.ssh/config are unchanged. `command
+# cat` keeps a `cat` alias (bat) out of completion.
+zstyle -e ':completion:*:hosts' hosts 'reply=(
+  ${=${=${=${${(f)"$(command cat {/etc/ssh/ssh_,~/.ssh/}known_hosts(|2)(N) 2> /dev/null)"}%%[#| ]*}//\]:[0-9]*/ }//,/ }//\[/ }
+  ${=${${${${(@M)${(f)"$(command cat ~/.ssh/config 2> /dev/null)"}:#Host *}#Host }:#*\**}:#*\?*}}
+)'
