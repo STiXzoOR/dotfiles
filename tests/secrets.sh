@@ -262,5 +262,50 @@ t "F3.29" "the runtime warning on an argv value does not recommend a pipe for ps
   [ "$(printf "%s\n" "$out" | grep -ciE "prefer[^.]*pipe")" -eq 0 ] \
     && [ "$(printf "%s\n" "$out" | grep -ci "history")" -ge 1 ]'
 
+#############################################################################
+section "F3g — export into the private repo (Task 7)"
+#############################################################################
+# A private repo is a git working tree, which export refuses on purpose. The
+# one exception is the private dir itself: that is where the encrypted file is
+# meant to be committed. Every other git tree is still refused.
+_priv() { # _priv <W>: a sandbox git repo standing in for the private repo
+  mkdir -p "$1/priv" && git init -q -b main "$1/priv"
+}
+t "F3.30" "export with no file and no private repo is an error naming the missing file" '
+  W=$(box); out=$(DOTFILES_PRIVATE_DIR="$W/none" sec "$W" export 2>&1 </dev/null); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "Output file required")" -ge 1 ]'
+t "F3.31" "export with no file and a private repo passes the argument check (it then wants a terminal)" '
+  W=$(box); _priv "$W"; out=$(DOTFILES_PRIVATE_DIR="$W/priv" sec "$W" export 2>&1 </dev/null); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "Output file required")" -eq 0 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "interactively")" -ge 1 ]'
+t "F3.32" "export with no file writes secrets.age into the private repo" '
+  ! command -v expect >/dev/null 2>&1 || {
+    W=$(box); _priv "$W"; K="$W/p.keychain-db"
+    printf "v\n" | seck "$W" "$K" set p1 >/dev/null 2>&1
+    DOTFILES_PRIVATE_DIR="$W/priv" expect tests/fixtures/secrets-roundtrip.exp export "$W" "$K" - pw >/dev/null 2>&1 &&
+    [ -s "$W/priv/secrets.age" ] && head -c 21 "$W/priv/secrets.age" | grep -q "age-encryption.org"
+  }'
+t "F3.33" "an explicit file inside the private repo is allowed too" '
+  ! command -v expect >/dev/null 2>&1 || {
+    W=$(box); _priv "$W"; K="$W/p.keychain-db"
+    printf "v\n" | seck "$W" "$K" set p1 >/dev/null 2>&1
+    DOTFILES_PRIVATE_DIR="$W/priv" expect tests/fixtures/secrets-roundtrip.exp export "$W" "$K" "$W/priv/secrets.age" pw >/dev/null 2>&1 &&
+    [ -s "$W/priv/secrets.age" ]
+  }'
+t "F3.34" "any other git working tree is still refused, and nothing is written" '
+  ! command -v expect >/dev/null 2>&1 || {
+    W=$(box); _priv "$W"; mkdir -p "$W/other" && git init -q -b main "$W/other"; K="$W/p.keychain-db"
+    printf "v\n" | seck "$W" "$K" set p1 >/dev/null 2>&1
+    ! DOTFILES_PRIVATE_DIR="$W/priv" expect tests/fixtures/secrets-roundtrip.exp export "$W" "$K" "$W/other/x.age" pw >/dev/null 2>&1 &&
+    [ ! -e "$W/other/x.age" ]
+  }'
+t "F3.35" "after an export into the private repo the note says to commit it, not to move it off" '
+  ! command -v expect >/dev/null 2>&1 || {
+    W=$(box); _priv "$W"; K="$W/p.keychain-db"
+    printf "v\n" | seck "$W" "$K" set p1 >/dev/null 2>&1
+    out=$(DOTFILES_PRIVATE_DIR="$W/priv" PATH="$W/bin:$PATH" DOTFILES_SECURITY_STUB_DIR="$W/store" DOTFILES_KEYCHAIN="$K" \
+      expect tests/fixtures/pty-run.exp expect tests/fixtures/secrets-roundtrip.exp export "$W" "$K" - pw 2>&1)
+    [ "$(printf "%s\n" "$out" | grep -c "git -C")" -ge 1 ]
+  }'
 
 finish
