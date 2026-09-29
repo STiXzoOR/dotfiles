@@ -111,7 +111,7 @@ cd ~/.dotfiles
 ./bin/dotfiles install
 ```
 
-> Note: plain `./bin/dotfiles install` bootstraps the machine — Command Line Tools, Homebrew, stow and an SSH key — then lists the remaining steps and offers to run them. It prints its success banner only when every step succeeded, and otherwise names the ones that failed.
+> Note: plain `./bin/dotfiles install` bootstraps the machine — Command Line Tools, Homebrew, stow and an SSH key — sets the repo's git hooks (the gitleaks pre-commit), then lists the remaining steps and offers to run them. It prints its success banner only when every step succeeded, and otherwise names the ones that failed.
 >
 > `./bin/dotfiles install --all` runs the rest in one go, in this order: `--prezto`, `link`, `--node`, `--packages`, `--fonts`, `--launchagents`, `--claude`, `--codex`, `configure`, then `--hosts` last (the blocklist can break downloads made later in a run). A failed step does not stop the run; the closing summary names each one and the exit status is non-zero. `--node` needs `link` to have run first, because mise reads `~/.config/mise`.
 >

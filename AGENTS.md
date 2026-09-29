@@ -10,7 +10,8 @@ this file.
 - **Entry point**: `./bin/dotfiles <command>` — run `./bin/dotfiles help` for the full reference
 - **Test**: `./bin/dotfiles test` and `bash tests/run.sh` (both must pass before committing)
 - **Lint**: `shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 -s bash` (runs in CI and the pre-commit hook)
-- **CI**: GitHub Actions on push and PR — syntax validation, shellcheck over every bash file, both test suites, Brewfile validation
+- **CI**: GitHub Actions on push and PR — syntax validation, shellcheck over every bash file, both test suites, Brewfile validation; every job has `timeout-minutes`
+- **New Mac**: `install` (CLT, git hooks, Homebrew, stow, SSH), then `install --all` runs `--prezto`, `link`, `--node`, `--packages`, `--fonts`, `--launchagents`, `--claude`, `--codex`, `configure`, `--hosts` in that order. See `docs/agents/new-mac.md`
 - **Link method**: GNU Stow — `runcom/` stows to `~/`, `config/` stows to `~/.config/`
 
 ## Critical Context
@@ -52,10 +53,22 @@ These affect nearly every task.
   `DOTFILES_MISE_ACTIVATE=1`.
 - **Packages**: `Brewfile` for brew, cask and Mac App Store.
   `config/mise/config.toml` for Node CLIs. `packages/code.list` for VS Code
-  extensions.
+  extensions. Machine-only additions go in `Brewfile.local` and
+  `packages/code.local.list` (gitignored).
+- **Personal values** (computer name, locale, timezone) live in `macos/local.sh`
+  (gitignored; copy `macos/local.sh.example`), never in `macos/defaults.sh`.
+- **`config/mise/locks/` is tracked.** A fresh clone needs it for `install --node`.
+- **App settings**: `dotfiles apps` backs up and restores them with mackup in
+  copy mode. Never part of `install --all`.
+- **Git hooks**: `core.hooksPath` is repo-local (`.githooks`), set by `install`
+  and checked by `doctor`. There is no global hooks path.
+- **Tests** call `timeout` through the shim in `tests/lib.sh` (no GNU `timeout` on
+  stock macOS or CI).
 - **Backups**: `dotfiles link` backs originals up to
   `~/.dotfiles_backup/<timestamp>`. `install --claude` backs each differing
   file up to `<name>.bak.<epoch>` instead, because it copies rather than stows.
+  A skill it replaces is moved to `~/.claude/backups/skills/<name>.<epoch>`,
+  outside the skills tree, which Claude Code would load a second time.
 - **Claude Code**: `install --claude` bootstraps the binary, marketplaces,
   plugins, rules, hooks, settings and QMD. `dotfiles claude diff` shows what
   has drifted from `~/.claude`. See
