@@ -38,8 +38,14 @@ if (( $+commands[atuin] )); then
 
     _atuin_cache="${XDG_CACHE_HOME:-$HOME/.cache}/atuin-init-${DOTFILES_TERM_HOST}.zsh"
     if [[ ! -s "$_atuin_cache" || "$commands[atuin]" -nt "$_atuin_cache" || "${(%):-%x}" -nt "$_atuin_cache" ]]; then
+      # Generated into a temp file beside the cache and moved into place, so an
+      # interrupted or concurrent first login never leaves a truncated cache.
       mkdir -p "${_atuin_cache:h}"
-      atuin init zsh ${=_atuin_flags} >| "$_atuin_cache" 2>/dev/null
+      if atuin init zsh ${=_atuin_flags} >| "$_atuin_cache.$$" 2>/dev/null && [[ -s "$_atuin_cache.$$" ]]; then
+        command mv -f "$_atuin_cache.$$" "$_atuin_cache"
+      else
+        command rm -f "$_atuin_cache.$$" "$_atuin_cache"
+      fi
     fi
     [[ -s "$_atuin_cache" ]] && source "$_atuin_cache"
     unset _atuin_cache

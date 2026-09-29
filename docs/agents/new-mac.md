@@ -34,7 +34,8 @@ live in the owner's private notes, not here: this repo is public.
    ```
    - It installs the Command Line Tools headlessly (newest label), clones to `~/.dotfiles`, and runs `dotfiles install`.
    - It is safe to re-run: an existing checkout is reused.
-7. **When `install` offers `install --all`, answer no the first time.**
+7. **Set Raycast's hotkey to Cmd-Space before `install --all`.** `configure` turns off Spotlight's Cmd-Space (and Finder search), so until Raycast owns the key nothing answers it. Raycast is a cask in the Brewfile; if it is not on the Mac yet, install it by hand (`brew install --cask raycast`), open it, and set the hotkey in its settings. Raycast's own hotkey is not scriptable.
+8. **When `install` offers `install --all`, answer no the first time.**
    - Copy the gitignored files into `~/.dotfiles/`.
    - Then run `~/.dotfiles/bin/dotfiles install --all`, which works through this order:
      1. Prezto
@@ -48,13 +49,20 @@ live in the owner's private notes, not here: this repo is public.
      9. `configure`
      10. hosts
    - It ends with a summary of any failed steps and exits non-zero if one failed. Fix what it lists and re-run the step (`dotfiles install --<step>`).
-8. **Restore data:**
+9. **Restore data:**
    - Copy your vault to `~/Vault`, then run `dotfiles install --claude` again so QMD registers and indexes it. The installer never creates an empty vault.
    - Restore app settings with `dotfiles apps restore --from <old-mac>` once the apps are installed and quit.
    - `dotfiles secrets import <file>`.
-9. **Log in** to the CLIs and apps you use (gh, Claude Code, Codex, cloud CLIs, Tailscale, …). In Codex, run `/hooks` once and trust the plugin hooks.
-10. **Record a defaults baseline:** `dotfiles baseline capture <macOS version>`, then `dotfiles baseline diff` against the previous one, to see which settings the new macOS dropped or renamed.
-11. **Run `dotfiles doctor`.** It should report no errors.
+10. **Log in** to the CLIs and apps you use (gh, Claude Code, Codex, cloud CLIs, Tailscale, …). In Codex, run `/hooks` once and trust the plugin hooks.
+11. **Record a defaults baseline:** `dotfiles baseline capture <macOS version>`, then `dotfiles baseline diff` against the previous one, to see which settings the new macOS dropped or renamed.
+12. **Run `dotfiles doctor`.** It should report no errors.
+
+## Two Macs
+
+Until the app-settings sync work lands, do not re-run `dotfiles configure` on
+the MacBook. Remote Login and the desktop power settings (restart after power
+loss, no Power Nap, no disk sleep) are declared for the Mac mini and are not yet
+gated by machine role, so a re-run would turn them on for a laptop too.
 
 ## Things that are manual on purpose
 

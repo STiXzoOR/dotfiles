@@ -84,8 +84,8 @@ custom definition if the built-in one misses a path, then run
    file that just says `garbage`), when mackup reports a TCC denial (reported per app), or when
    nothing was staged at all. The previous snapshot is untouched in every case.
 5. Copy the staging tree to `<store>/<machine>/snapshots/<UTC timestamp>` under a
-   `.tmp-` name, verify it with `diff -r`, write a `MANIFEST` (SHA-256, size, path
-   per file) and verify the copy against it, rename it, write the snapshot name to
+   `.tmp-` name, verify it with `diff -r`, write a `MANIFEST` and verify the copy
+   against it, rename it, write the snapshot name to
    `<store>/<machine>/latest` (a plain text file, no symlinks in iCloud), and keep
    the newest 14 snapshots per machine.
 
@@ -95,9 +95,20 @@ custom definition if the built-in one misses a path, then run
 own folder, so two Macs never overwrite each other. iCloud Drive itself must
 already be on; the tool never creates it.
 
+The `MANIFEST` starts with a header line,
+`# dotfiles-apps manifest v1 files=<N> sha256=<hash>`, then one line per file
+(SHA-256, size, path). The header carries the file count and the SHA-256 of the
+body, so a manifest that iCloud truncated or half-synced is refused before any
+file is checked. Only the root `MANIFEST` is left out of the listing; an app file
+named `MANIFEST` deeper in the tree is listed like any other, and a file in the
+snapshot that the manifest does not list is refused.
+
 The **daily agent** (`launchagents/com.stixzoor.dotfiles-apps-backup.plist`,
 installed by `dotfiles install --launchagents`) runs `backup --scheduled` at
 12:30. It prints nothing on success and logs to `~/Library/Logs/dotfiles-apps.log`.
+On a Mac with no `mackup` installed or no iCloud Drive it logs one line,
+`skipped: <reason>`, and exits 0, so a Mac that is not set up yet does not fill
+the log with failures. An interactive `backup` still errors in both cases.
 
 ## Restore and undo
 
@@ -113,8 +124,11 @@ dotfiles apps restore --from macbook 20260929T123000Z
 In order: refuse on overlap or a symlink into storage; `brctl download` the
 snapshot and refuse while any `*.icloud` placeholder remains; validate the
 snapshot and verify every file against its `MANIFEST` (iCloud can leave a
-not-yet-downloaded file under its real name; a snapshot without a manifest is
-refused); refuse while an allowlisted app is running (it lists them; quit them
+not-yet-downloaded file under its real name; a snapshot without a manifest, or
+with a manifest whose header does not match its body, is refused); copy it to
+staging and verify the staged copy against the manifest again, because mackup
+restores from that copy and iCloud may have changed a file since the first
+check; refuse while an allowlisted app is running (it lists them; quit them
 first); take a rescue copy of the current local files (same stage and validate
 path, except that a corrupt local plist is kept as it is instead of blocking the
 restore, since that is often why you are restoring; stored locally under `~/.local/state/dotfiles/mackup/Mackup/rescue/`, never in

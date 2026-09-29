@@ -58,13 +58,19 @@ Set a profile with `export DOTFILES_PROFILE="work"`, or create
 
 Shell init output is cached under `~/.cache/*.zsh`:
 
-| Cache                           | Written by                | Regenerated when older than                     |
-| ------------------------------- | ------------------------- | ----------------------------------------------- |
-| `zoxide-init.zsh`               | `system/.zoxide`          | the `zoxide` binary                             |
-| `pay-respects-init.zsh`         | `system/.pay-respects`     | the `pay-respects` binary                       |
-| `atuin-init-<host>.zsh`         | `system/.atuin`           | the `atuin` binary, or `system/.atuin` itself   |
-| `starship-init.zsh`             | `system/.starship`        | the `starship` binary, `$STARSHIP_CONFIG`, or `system/.starship` |
-| `npm-completion.zsh`, `fzf-*`   | `.completion`, `.fzf`     | their binary                                    |
+| Cache                         | Written by             | Regenerated when older than                                      |
+| ----------------------------- | ---------------------- | ---------------------------------------------------------------- |
+| `zoxide-init.zsh`             | `system/.zoxide`       | the `zoxide` binary                                              |
+| `pay-respects-init.zsh`       | `system/.pay-respects` | the `pay-respects` binary                                        |
+| `atuin-init-<host>.zsh`       | `system/.atuin`        | the `atuin` binary, or `system/.atuin` itself                    |
+| `starship-init.zsh`           | `system/.starship`     | the `starship` binary, `$STARSHIP_CONFIG`, or `system/.starship` |
+| `npm-completion.zsh`, `fzf-*` | `.completion`, `.fzf`  | their binary                                                     |
+
+The atuin, starship and pay-respects caches are written atomically: generated
+into `<cache>.<pid>` beside the cache, checked non-empty (for Starship, the
+continuation prompt too), then moved into place with `mv -f`. A failed or
+interrupted generation leaves no file and nothing is sourced, so a truncated
+cache is never trusted.
 
 Two details worth knowing. atuin's init is cached per host because the flags
 differ (`dumb` loads none), and its session id is minted in zsh before the
@@ -82,7 +88,8 @@ There is no per-tool refresh helper. `fnm_refresh` was documented here for a
 while and never existed.
 
 The completion dump, `~/.cache/prezto/zcompdump`, is rebuilt by `runcom/.zlogin`
-in its background block once it is older than 8 hours: a detached `zsh -f`
+in its background block once it is older than 8 hours (the age test sets
+`extendedglob` locally, so it works without Prezto): a detached `zsh -f`
 (with the parent's `fpath` passed through `FPATH`) writes a temp file that
 replaces the dump with one `mv -f`, and the existing `zcompile` follows. Prezto
 would otherwise regenerate it in the foreground after 20 hours, which put about

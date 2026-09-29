@@ -8,7 +8,7 @@ __pycache__/
 *$py.class
 .Python
 node_modules
-apps/gitkraken/profiles/*/**
+apps/gitkraken/profiles
 # NOTE: the live profile holds userEmail/userName and every local repo path.
 # It is seeded from apps/gitkraken/profile.template by macos/defaults-gitkraken.sh.
 config/karabiner/automatic_backups
@@ -66,4 +66,4 @@ config/gh/hosts.yml
 
 # Editor and agent scratch state
 .idea/
-.superpowers/
+.superpowers

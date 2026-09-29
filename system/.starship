@@ -17,13 +17,20 @@ if (( $+commands[starship] )); then
   _starship_cache="${XDG_CACHE_HOME:-$HOME/.cache}/starship-init.zsh"
   if [[ ! -s "$_starship_cache" || "$commands[starship]" -nt "$_starship_cache" ||
         "$STARSHIP_CONFIG" -nt "$_starship_cache" || "${(%):-%x}" -nt "$_starship_cache" ]]; then
-    _starship_init="$(starship init zsh --print-full-init 2>/dev/null)"
-    if [[ -n "$_starship_init" ]]; then
-      _starship_cont="$(starship prompt --continuation 2>/dev/null)"
+    # Built in a temp file beside the cache and moved into place; nothing is
+    # cached unless both the init script and the continuation prompt came back.
+    if _starship_init="$(starship init zsh --print-full-init 2>/dev/null)" && [[ -n "$_starship_init" ]] &&
+       _starship_cont="$(starship prompt --continuation 2>/dev/null)" && [[ -n "$_starship_cont" ]]; then
       _starship_lines=("${(@f)_starship_init}")
       _starship_lines=("${(@)_starship_lines/#PROMPT2=*--continuation)\"/PROMPT2=${(qq)_starship_cont}}")
       mkdir -p "${_starship_cache:h}"
-      print -r -- "${(F)_starship_lines}" >| "$_starship_cache"
+      if print -r -- "${(F)_starship_lines}" >| "$_starship_cache.$$" && [[ -s "$_starship_cache.$$" ]]; then
+        command mv -f "$_starship_cache.$$" "$_starship_cache"
+      else
+        command rm -f "$_starship_cache.$$" "$_starship_cache"
+      fi
+    else
+      command rm -f "$_starship_cache"
     fi
     unset _starship_init _starship_cont _starship_lines
   fi

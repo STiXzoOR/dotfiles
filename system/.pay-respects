@@ -9,7 +9,12 @@ _pay_respects_cache="${XDG_CACHE_HOME:-$HOME/.cache}/pay-respects-init.zsh"
 if (( $+commands[pay-respects] )); then
   if [[ ! -s "$_pay_respects_cache" || "$commands[pay-respects]" -nt "$_pay_respects_cache" ]]; then
     mkdir -p "${_pay_respects_cache:h}"
-    pay-respects zsh --alias fix >| "$_pay_respects_cache" 2>/dev/null
+    # Temp file, then mv: a truncated cache is never left in place.
+    if pay-respects zsh --alias fix >| "$_pay_respects_cache.$$" 2>/dev/null && [[ -s "$_pay_respects_cache.$$" ]]; then
+      command mv -f "$_pay_respects_cache.$$" "$_pay_respects_cache"
+    else
+      command rm -f "$_pay_respects_cache.$$" "$_pay_respects_cache"
+    fi
   fi
   [[ -s "$_pay_respects_cache" ]] && source "$_pay_respects_cache"
 fi

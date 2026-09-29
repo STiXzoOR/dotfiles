@@ -22,13 +22,18 @@
   # meanwhile reads the old dump or the new one, never half of one. The result
   # matches the foreground dump apart from comments. Plain compinit, not
   # `compinit -C`: the function check is the point.
-  if [[ -s "$zcompdump" && -n "$zcompdump"(#qN.mh+8) ]]; then
+  # The (#qN.mh+8) age test is a glob qualifier and needs EXTENDED_GLOB, which
+  # only Prezto's modules set: without it the test is a plain string test and
+  # the dump is rebuilt on every login. Set it here, local to this function.
+  _zcompdump_stale() { setopt localoptions extendedglob; [[ -n "$zcompdump"(#qN.mh+8) ]]; }
+  if [[ -s "$zcompdump" ]] && _zcompdump_stale; then
     _zcompdump_tmp="$zcompdump.$$.tmp"
     FPATH="${(j.:.)fpath}" zsh -f -c 'autoload -Uz compinit && compinit -i -d "$1"' _ "$_zcompdump_tmp" &>/dev/null
     [[ -s "$_zcompdump_tmp" ]] && command mv -f "$_zcompdump_tmp" "$zcompdump"
     command rm -f "$_zcompdump_tmp"
     unset _zcompdump_tmp
   fi
+  unfunction _zcompdump_stale
 
   if [[ -s "$zcompdump" && (! -s "${zcompdump}.zwc" || "$zcompdump" -nt "${zcompdump}.zwc") ]]; then
     zcompile "$zcompdump"

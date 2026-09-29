@@ -34,7 +34,7 @@ export DOTFILES_DIR
 # launchd's PATH is /usr/bin:/bin:/usr/sbin:/sbin. Homebrew goes first, but
 # only when mackup is not already resolvable, so an interactive shell (and a
 # test with a stub) keeps its own order.
-if ! command -v mackup >/dev/null 2>&1; then
+if ! command -v mackup >/dev/null 2>&1 && [ -z "${DOTFILES_APPS_NO_BREW_PATH:-}" ]; then
   PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 fi
 
@@ -143,8 +143,9 @@ owned_sources_ok() {
       rc=1
     fi
   done
-  if ! BASELINE_OUT=$(baseline_list 2>&1); then
-    err "dotfiles-baseline failed, so the defaults domains are unknown; refusing: $(printf '%s' "$BASELINE_OUT" | head -n 3 | tr '\n' ' ')"
+  mkdir -p "$STATE" || return 1
+  if ! BASELINE_OUT=$(baseline_list 2>"$STATE/baseline.err"); then
+    err "dotfiles-baseline failed, so the defaults domains are unknown; refusing: $(head -n 3 "$STATE/baseline.err" | tr '\n' ' ')"
     BASELINE_OUT=""
     rc=1
   elif [ -z "$(printf '%s\n' "$BASELINE_OUT" | awk -F'\t' 'NF >= 2')" ]; then
@@ -224,7 +225,10 @@ cmd_check() {
   done
 
   owned_sources_ok || return 1
-  targets=$(owned_targets)
+  # Lowercase once, in one awk each, not with a fork per path and target: the
+  # owned list has hundreds of entries, and a tr per pair made every check
+  # take seconds.
+  targets=$(owned_targets | awk -F'\t' 'NF >= 2 { printf "%s\t%s\t%s\n", $1, $2, tolower($2) }')
   for app in $apps; do
     if [ -z "$(app_procs "$app")" ]; then
       err "$app has no process mapping in $PROCS_FILE; restore could not tell whether it is running"
@@ -235,11 +239,10 @@ cmd_check() {
       rc=1
       continue
     fi
-    while IFS= read -r p; do
-      pl=$(lower "${p%/}")
-      while IFS=$'\t' read -r why t; do
+    while IFS=$'\t' read -r p pl; do
+      [ -n "$p" ] || continue
+      while IFS=$'\t' read -r why t tl; do
         [ -n "$t" ] || continue
-        tl=$(lower "$t")
         if overlaps "$pl" "$tl"; then
           err "OVERLAP: $app covers '$p', which the dotfiles own ($why: $t)"
           rc=1
@@ -248,7 +251,7 @@ cmd_check() {
 $targets
 EOF
     done <<EOF
-$paths
+$(printf '%s\n' "$paths" | awk '{ l = tolower($0); sub(/\/$/, "", l); printf "%s\t%s\n", $0, l }')
 EOF
   done
   return "$rc"
@@ -271,10 +274,12 @@ machine_name() {
 
 # The store must already exist as iCloud Drive; it is never created for the
 # user (an absent iCloud Drive means signed out or disabled).
+ICLOUD_ROOT="$HOME/Library/Mobile Documents/com~apple~CloudDocs"
+icloud_missing() { [ -z "${DOTFILES_APPS_STORE:-}" ] && [ ! -d "$ICLOUD_ROOT" ]; }
 store_ready() {
-  local create="${1:-create}" cloud="$HOME/Library/Mobile Documents/com~apple~CloudDocs"
-  if [ -z "${DOTFILES_APPS_STORE:-}" ] && [ ! -d "$cloud" ]; then
-    err "iCloud Drive is not available ($cloud is missing); sign in and turn on iCloud Drive"
+  local create="${1:-create}"
+  if icloud_missing; then
+    err "iCloud Drive is not available ($ICLOUD_ROOT is missing); sign in and turn on iCloud Drive"
     return 1
   fi
   if [ "$create" = no_create ]; then
@@ -447,21 +452,45 @@ snapshot_names() {
   done | sort
 }
 
-# Manifest: one line per file, "sha256<TAB>size<TAB>relative path", covering
-# everything under <dir>/Mackup. iCloud can leave a file under its real name
-# but not downloaded, so restore checks every byte against it.
+# Manifest: a header line, then one line per file, "sha256<TAB>size<TAB>relative
+# path", covering everything under <dir>. The header carries the file count and
+# the SHA-256 of the body ("# dotfiles-apps manifest v1 files=N sha256=H"), so a
+# manifest that iCloud truncated or half-synced is refused instead of trusted.
+# iCloud can leave a file under its real name but not downloaded, so restore
+# checks every byte against it. Only the root MANIFEST is left out of the
+# listing: an app file called MANIFEST deeper in the tree is listed like any
+# other.
 sha_of() { shasum -a 256 "$1" | cut -d' ' -f1; }
 write_manifest() { # write_manifest <tree> <out>
-  local f
-  : >"$2" || return 1
+  local f n=0 body="$2.body"
+  : >"$body" || return 1
   while IFS= read -r f; do
-    printf '%s\t%s\t%s\n' "$(sha_of "$1/$f")" "$(wc -c <"$1/$f" | tr -d ' ')" "$f" >>"$2" || return 1
-  done < <(cd "$1" && find . -type f ! -name MANIFEST | sed 's|^\./||' | sort)
+    printf '%s\t%s\t%s\n' "$(sha_of "$1/$f")" "$(wc -c <"$1/$f" | tr -d ' ')" "$f" >>"$body" || return 1
+    n=$((n + 1))
+  done < <(cd "$1" && find . -type f ! -path ./MANIFEST | sed 's|^\./||' | sort)
+  { printf '# dotfiles-apps manifest v1 files=%s sha256=%s\n' "$n" "$(sha_of "$body")"; command cat "$body"; } >"$2" || return 1
+  rm -f "$body"
 }
 verify_manifest() { # verify_manifest <snapshot dir>
-  local dir="$1" sum size f rc=0 n=0
+  local dir="$1" sum size f rc=0 n=0 header want_n want_sha have_sha actual
   if [ ! -f "$dir/MANIFEST" ]; then
     err "no MANIFEST in $dir (a snapshot from before manifests, or not fully downloaded); refusing"
+    return 1
+  fi
+  header=$(head -n 1 "$dir/MANIFEST")
+  case "$header" in
+    "# dotfiles-apps manifest v1 files="*" sha256="*) ;;
+    *)
+      err "manifest: $dir/MANIFEST has no valid header (an old or damaged manifest); refusing"
+      return 1
+      ;;
+  esac
+  want_n="${header#*files=}"
+  want_n="${want_n%% *}"
+  want_sha="${header##*sha256=}"
+  have_sha=$(tail -n +2 "$dir/MANIFEST" | shasum -a 256 | cut -d' ' -f1)
+  if [ "$have_sha" != "$want_sha" ]; then
+    err "manifest: $dir/MANIFEST does not match the SHA-256 in its header (incomplete or altered); refusing"
     return 1
   fi
   while IFS=$'\t' read -r sum size f; do
@@ -477,11 +506,18 @@ verify_manifest() { # verify_manifest <snapshot dir>
       err "manifest: '$f' does not match its SHA-256"
       rc=1
     fi
-  done <"$dir/MANIFEST"
-  if [ "$n" -eq 0 ]; then
-    err "manifest: $dir/MANIFEST lists no files; refusing"
+  done < <(tail -n +2 "$dir/MANIFEST")
+  if [ "$n" -eq 0 ] || [ "$n" != "$want_n" ]; then
+    err "manifest: $dir/MANIFEST lists $n file(s) but its header says $want_n; refusing"
     rc=1
   fi
+  # Every file that is there must be listed: a file the manifest does not know
+  # about was never verified.
+  while IFS= read -r actual; do
+    err "manifest: '$actual' is in the snapshot but not in the manifest"
+    rc=1
+  done < <(comm -13 <(tail -n +2 "$dir/MANIFEST" | awk -F'\t' '{ print $3 }' | LC_ALL=C sort) \
+    <(cd "$dir" && find . -type f ! -path ./MANIFEST | sed 's|^\./||' | LC_ALL=C sort))
   return "$rc"
 }
 
@@ -518,7 +554,7 @@ publish() {
 #############################################################################
 
 cmd_backup() {
-  local scheduled=0 machine snap arg logf
+  local scheduled=0 machine snap arg logf reason
   for arg in "$@"; do
     case "$arg" in
       --scheduled) scheduled=1 ;;
@@ -530,6 +566,22 @@ cmd_backup() {
     logf="$HOME/Library/Logs/dotfiles-apps.log"
     mkdir -p "$(dirname "$logf")" && exec >>"$logf" 2>&1
     printf '%s backup --scheduled\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
+
+  # The daily agent runs on every Mac, including one with no mackup or no
+  # iCloud Drive yet: that is nothing to report, so log one line and succeed.
+  # An interactive run keeps failing loudly.
+  if [ "$scheduled" -eq 1 ]; then
+    reason=""
+    if ! command -v mackup >/dev/null 2>&1; then
+      reason="mackup is not installed"
+    elif icloud_missing; then
+      reason="iCloud Drive is not available"
+    fi
+    if [ -n "$reason" ]; then
+      printf '%s skipped: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$reason"
+      return 0
+    fi
   fi
 
   machine=$(machine_name) || return 1
@@ -593,15 +645,16 @@ EOF
 }
 
 # Ask iCloud for a snapshot and wait (DOTFILES_APPS_DL_WAIT seconds, default
-# 60) until no *.icloud placeholder remains under it.
+# 60) until no *.icloud placeholder remains under it, polling every
+# DOTFILES_APPS_DL_POLL seconds (default 2). Tests set both to 0.
 materialise() {
-  local dir="$1" wait="${DOTFILES_APPS_DL_WAIT:-60}" waited=0 left
+  local dir="$1" wait="${DOTFILES_APPS_DL_WAIT:-60}" poll="${DOTFILES_APPS_DL_POLL:-2}" waited=0 left
   command -v brctl >/dev/null 2>&1 && brctl download "$dir" >/dev/null 2>&1
   while :; do
     left=$(placeholders "$dir")
     [ -z "$left" ] && return 0
     [ "$waited" -ge "$wait" ] && break
-    sleep 2
+    sleep "$poll"
     waited=$((waited + 2))
   done
   err "iCloud has not finished downloading $dir; these placeholder(s) remain, so nothing was restored (try again shortly):"
@@ -653,6 +706,9 @@ apply_snapshot() {
   rm -rf "$STAGE"
   mkdir -p "$STAGE" || return 1
   cp -R "$dir/." "$STAGE/" || { err "could not stage the snapshot"; return 1; }
+  # mackup restores from this copy, not from iCloud, and iCloud can change a
+  # file between the check above and the copy: verify what will be applied.
+  verify_manifest "$STAGE" || { err "the staged copy does not match the manifest, so nothing was restored"; return 1; }
   # From here local files may have changed, so the preferences daemon must be
   # flushed on EVERY path: it caches plists, and an app that starts now could
   # otherwise see, and later write back, the old values.

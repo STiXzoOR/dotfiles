@@ -9,6 +9,12 @@
 # shellcheck disable=SC2016
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# SHELL_ONLY="P10 P8.4": run only the tests whose id starts with one of these.
+if [ -n "${SHELL_ONLY:-}" ]; then
+  eval "$(declare -f t | sed '1s/^t /_t_real /')"
+  t() { local p; for p in $SHELL_ONLY; do case "$1" in "$p"*) _t_real "$@"; return ;; esac; done; }
+fi
+
 # ---------------------------------------------------------------------------
 # zsh sandbox
 #
@@ -727,6 +733,24 @@ t "P8.3" "the rebuild is a detached zsh -f, and never a bare compinit -C" \
   '[ "$(code_of runcom/.zlogin | grep -c "zsh -f")" -ge 1 ] &&
    [ "$(code_of runcom/.zlogin | grep -cE "compinit -C|zsh-defer")" -eq 0 ]'
 
+# Without Prezto nothing sets EXTENDED_GLOB, and the (#qN.mh+8) age test in
+# .zlogin is then a plain non-empty string test: every login rebuilds the dump.
+_nopz_dump_sandbox() { # _nopz_dump_sandbox <hours> -- no Prezto, a dump <hours> old
+  local h
+  h=$(_zsh_sandbox) || return 1
+  rm -f "$h/.dotfiles/modules"
+  mkdir -p "$h/.cache/prezto"
+  printf '#files: 0\tversion: 5\n' >"$h/.cache/prezto/zcompdump"
+  _age_dump "$h/.cache/prezto/zcompdump" "$1"
+  printf '%s' "$h"
+}
+t "P8.4" "without Prezto a fresh dump is not rebuilt" \
+  'H=$(_nopz_dump_sandbox 2) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 1 &&
+   ZSHRUN_HOME="$H" zshrun true && sleep 4 && [ ! "$D" -nt "$H/marker" ]'
+t "P8.5" "without Prezto an old dump is rebuilt" \
+  'H=$(_nopz_dump_sandbox 12) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 11 &&
+   ZSHRUN_HOME="$H" zshrun true && _wait_newer "$D" "$H/marker" && [ "$(grep -c "^#files:" "$D")" -eq 1 ]'
+
 section "P9 — the Starship prompt shows no runtime versions"
 # The value of the top-level `format`, from its opening """ to the closing one.
 _starship_format() { code_of config/starship/config.toml | awk '/^format = """/ { on = 1 } on { print } on && /"""$/ && !/^format = """$/ { exit }'; }
@@ -737,5 +761,51 @@ t "P9.2" "format no longer names nodejs or python (each forked its version on ev
   'f=$(_starship_format) && [ -n "$f" ] && [ "$(printf "%s\n" "$f" | grep -cE "[$](nodejs|python)")" -eq 0 ]'
 t "P9.3" "their symbol tables are kept" \
   '[ "$(code_of config/starship/config.toml | grep -cE "^\[(nodejs|python)\]$")" -eq 2 ]'
+
+
+section "P10 — init caches are written atomically, and a failed generation leaves nothing"
+# A stub that prints half an init script and exits non-zero, standing in for an
+# interrupted or crashed generator. Nothing of it may be cached or sourced, and
+# no temp file may be left behind.
+_broken_stub() { # _broken_stub <path> <marker var>
+  printf '#!/bin/sh\necho "export %s=1"\nexit 1\n' "$2" >"$1"
+  chmod +x "$1"
+}
+_cache_files() { find "$1/.cache" -maxdepth 1 -type f -name "$2" 2>/dev/null | grep -c .; }
+t "P10.1" "atuin: a failing init leaves no cache, no temp file, and sources nothing" \
+  'H=$(_zsh_sandbox) && _broken_stub "$H/.stubs/atuin" PARTIAL_LOADED &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "print -r -- \${PARTIAL_LOADED:-no}")" = no ] &&
+   [ "$(_cache_files "$H" "atuin-init*")" -eq 0 ]'
+t "P10.2" "atuin: a successful init leaves only the cache, and the second shell makes no call" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_cache_files "$H" "atuin-init*")" -eq 1 ] &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin init")" -eq 1 ]'
+t "P10.3" "starship: a failing init leaves no cache, no temp file, and sources nothing" \
+  'H=$(_zsh_sandbox) && _broken_stub "$H/.stubs/starship" PARTIAL_LOADED &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "print -r -- \${PARTIAL_LOADED:-no}")" = no ] &&
+   [ "$(_cache_files "$H" "starship-init*")" -eq 0 ]'
+t "P10.4" "starship: an empty continuation prompt is never baked into the cache" \
+  'H=$(_zsh_sandbox) &&
+   printf "#!/bin/sh\n[ \"\$1\" = init ] && echo PARTIAL_LOADED=1\nexit 0\n" >"$H/.stubs/starship" &&
+   chmod +x "$H/.stubs/starship" &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "print -r -- \${PARTIAL_LOADED:-no}")" = no ] &&
+   [ "$(_cache_files "$H" "starship-init*")" -eq 0 ]'
+t "P10.5" "starship: a successful run leaves only the cache, and the second shell makes no call" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_cache_files "$H" "starship-init*")" -eq 1 ] &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "starship init")" -eq 1 ]'
+t "P10.6" "pay-respects: a failing init leaves no cache, no temp file, and sources nothing" \
+  'H=$(_pr_sandbox) && _broken_stub "$H/.local/bin/pay-respects" PARTIAL_LOADED &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "print -r -- \${PARTIAL_LOADED:-no}")" = no ] &&
+   [ "$(_cache_files "$H" "pay-respects-init*")" -eq 0 ]'
+t "P10.7" "pay-respects: a successful run leaves only the cache, and the second shell makes no call" \
+  'H=$(_pr_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_HOME="$H" zshrun true && [ "$(_cache_files "$H" "pay-respects-init*")" -eq 1 ] &&
+   ZSHRUN_HOME="$H" zshrun true && [ "$(_calls "$L" "pay-respects")" -eq 1 ]'
+
 
 finish
