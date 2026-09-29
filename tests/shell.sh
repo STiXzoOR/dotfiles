@@ -727,4 +727,15 @@ t "P8.3" "the rebuild is a detached zsh -f, and never a bare compinit -C" \
   '[ "$(code_of runcom/.zlogin | grep -c "zsh -f")" -ge 1 ] &&
    [ "$(code_of runcom/.zlogin | grep -cE "compinit -C|zsh-defer")" -eq 0 ]'
 
+section "P9 — the Starship prompt shows no runtime versions"
+# The value of the top-level `format`, from its opening """ to the closing one.
+_starship_format() { code_of config/starship/config.toml | awk '/^format = """/ { on = 1 } on { print } on && /"""$/ && !/^format = """$/ { exit }'; }
+t "P9.1" "format is found, and still draws the directory, git and character modules" \
+  'f=$(_starship_format) && [ "$(printf "%s\n" "$f" | grep -c "[$]directory")" -eq 1 ] &&
+   [ "$(printf "%s\n" "$f" | grep -c "[$]git_branch")" -eq 1 ] && [ "$(printf "%s\n" "$f" | grep -c "[$]character")" -eq 1 ]'
+t "P9.2" "format no longer names nodejs or python (each forked its version on every prompt)" \
+  'f=$(_starship_format) && [ -n "$f" ] && [ "$(printf "%s\n" "$f" | grep -cE "[$](nodejs|python)")" -eq 0 ]'
+t "P9.3" "their symbol tables are kept" \
+  '[ "$(code_of config/starship/config.toml | grep -cE "^\[(nodejs|python)\]$")" -eq 2 ]'
+
 finish

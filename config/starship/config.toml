@@ -17,8 +17,6 @@ $git_status\
 $package\
 $elixir\
 $golang\
-$nodejs\
-$python\
 $ruby\
 $rust\
 $aws\
