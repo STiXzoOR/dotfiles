@@ -106,6 +106,10 @@ consult() {
   CONSULT_P=${pc% *}
   CONSULT_C=${pc#* }
   CONSULT_VERDICT=$(jev_verdict "$point" "$CONSULT_P" "$CONSULT_C")
+  # Log the confidence the verdict actually used: when Jev gave none, the
+  # derived one (see answer_pc), marked as derived.
+  pc=$(printf '%s' "$ans" | jq -c --arg q "$qid" --argjson c "$CONSULT_C" \
+    'if .[$q].confidence == null then .[$q].confidence = $c | .[$q].confidence_derived = true else . end' 2>/dev/null) && ans="$pc"
   if [ "$mode" = on ]; then
     jev_log "$point" "$mode" "$CONSULT_VERDICT: $ctx" "$ans"
   else
@@ -174,10 +178,11 @@ privacy_hits() { # privacy_hits <added.tsv> <tmp>
   local added="$1" tmp="$2" root
   root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
   # Entries of the private never-send list are used as they are. A host-derived
-  # entry (LocalHostName, an SSH Host alias) is a privacy term only when it holds
-  # a digit or a hyphen (my-mac-mini yes, mediashelf no), so a common word cannot
-  # block an ordinary commit; add it to the never-send list to force it.
-  jev_never_send_map | awk -F'\t' '$1 == "<NEVER-SEND>" || ($1 == "<HOST>" && length($2) >= 5 && $2 ~ /[0-9-]/)' >"$tmp/nsf"
+  # entry (LocalHostName, an SSH Host alias, the computer name) is a privacy
+  # term only when it holds a digit, a hyphen or a space (my-mac-mini yes, a
+  # two-word computer name yes, mediashelf no), so a common word cannot block
+  # an ordinary commit; add it to the never-send list to force it.
+  jev_never_send_map | awk -F'\t' '$1 == "<NEVER-SEND>" || ($1 == "<HOST>" && length($2) >= 5 && $2 ~ /[0-9 -]/)' >"$tmp/nsf"
   public_emails "$root" >"$tmp/emf"
   awk -F'\t' '$1 !~ /^tests\/fixtures\/jev\/replay\//' "$added" |
     awk -v nsf="$tmp/nsf" -v emf="$tmp/emf" -f "$JEV_LIB_DIR/jev-privacy.awk"
@@ -335,6 +340,8 @@ cmd_guard_staged() {
     return "$BLOCKED"
   fi
   if [ "$pmode" != on ] && [ "$smode" != on ] && [ -z "$sync" ]; then
+    # Without a key there is nothing to decide, so no background job either.
+    jev_key >/dev/null 2>&1 || return "$BLOCKED"
     # Shadow decides and logs, changes nothing: do it after the commit has
     # moved on, so it costs the committer no latency.
     GUARD_KEEP=1
@@ -368,14 +375,46 @@ gitleaks_dir() {
   rm -f "$rep"
 }
 
+SCAN_TMP=""
+scan_cleanup() {
+  jev_cleanup
+  [ -n "$SCAN_TMP" ] && rm -rf "$SCAN_TMP"
+  SCAN_TMP=""
+}
+
+# plist_data_own_lines <xml plist> <tmp>: the line of every <data> element whose
+# decoded bytes hold one of the owner's secrets (the caller has loaded them).
+# A secret stored as data is base64 in the XML, so the text scan cannot see it.
+plist_data_own_lines() {
+  local xml="$1" tmp="$2" ln b64
+  [ "${#_JEV_SECRETS[@]}" -gt 0 ] || return 0
+  awk '
+    /<data>/ { indata = 1; start = NR; buf = "" }
+    indata { l = $0; sub(/^.*<data>/, "", l); sub(/<\/data>.*$/, "", l); gsub(/[ \t\r]/, "", l); buf = buf l }
+    indata && /<\/data>/ { print start "\t" buf; indata = 0 }' "$xml" |
+    while IFS=$'\t' read -r ln b64; do
+      [ -n "$b64" ] || continue
+      # BSD base64 decodes with -D, GNU with -d.
+      printf '%s' "$b64" | { base64 -D 2>/dev/null || base64 -d 2>/dev/null; } |
+        LC_ALL=C tr -c '[:print:]\t\n' '\n' >"$tmp/data.decoded"
+      [ -z "$(jev_own_secret_lines "$tmp/data.decoded")" ] || printf '%s\n' "$ln"
+    done
+  return 0
+}
+
 # scan_tree <dir> <verb>: definite hits are reported (verb BLOCK or FOUND);
 # ambiguous ones go through the Jev secrets point. Never prints a value and
 # never edits or deletes anything. Returns 1 when something definite (or a
 # Jev block) was found.
 scan_tree() {
-  local dir="$1" verb="$2" tmp list f rel where cls kind name len classes f3 masked n skipped=0 binary=0 src found=0 gl smode rows own
+  local dir="$1" verb="$2" tmp list f rel xmlplist where cls kind name len classes f3 masked n skipped=0 binary=0 src found=0 gl smode rows own
   [ -d "$dir" ] || { err "no such directory: $dir"; return 2; }
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/jev-scan.XXXXXX") || return 2
+  # The converted plists and the run dir must not outlive an interrupted scan.
+  SCAN_TMP="$tmp"
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap scan_cleanup EXIT
   jev_init || true
   jev_secret_patterns >/dev/null
   jev_load_secrets
@@ -392,6 +431,7 @@ scan_tree() {
       continue
     fi
     src="$f"
+    xmlplist=0
     if ! is_text "$f"; then
       # Binary: app settings are mostly binary plists. A plist is converted to
       # XML by plutil; anything else is read as its printable runs (each
@@ -399,7 +439,9 @@ scan_tree() {
       # token. Line numbers are then positions in that text.
       binary=$((binary + 1))
       src="$tmp/converted"
-      if ! plutil -convert xml1 -o "$src" "$f" >/dev/null 2>&1; then
+      if plutil -convert xml1 -o "$src" "$f" >/dev/null 2>&1; then
+        xmlplist=1
+      else
         LC_ALL=C tr -c '[:print:]\t\n' '\n' <"$f" >"$src"
       fi
     fi
@@ -409,6 +451,11 @@ scan_tree() {
     for n in $(jev_own_secret_lines "$src"); do
       printf '%s\tdefinite\town-secret\t-\t0\t-\t-\t-\n' "$n" >>"$tmp/rows"
     done
+    if [ "$xmlplist" -eq 1 ]; then
+      for n in $(plist_data_own_lines "$src" "$tmp"); do
+        printf '%s\tdefinite\town-secret\t-\t0\t-\t-\t-\n' "$n" >>"$tmp/rows"
+      done
+    fi
     while IFS=$'\t' read -r n cls kind name len classes f3 masked; do
       [ -n "$n" ] || continue
       where="$rel:$n"
@@ -435,8 +482,7 @@ scan_tree() {
   done <"$list"
   [ "$binary" -eq 0 ] || printf 'note: %d binary file(s) read as text (line numbers are positions in that text)\n' "$binary"
   [ "$skipped" -eq 0 ] || printf 'note: %d file(s) not scanned (unreadable)\n' "$skipped"
-  jev_cleanup
-  rm -rf "$tmp"
+  scan_cleanup
   return "$found"
 }
 

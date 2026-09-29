@@ -709,11 +709,18 @@ t "I2" "an own-secret line is dropped whole: the marker carries none of its text
   s=$(ask_state "$W" "before $OWN after")
   [ "$s" = "[masked own-secret line]" ]'
 
+# tp <id> <description> <expression>: t, but skipped visibly (never silently
+# passed) when this machine has no plutil.
+tp() {
+  if command -v plutil >/dev/null 2>&1; then t "$@"
+  else printf "  %sSKIP%s %s %s (needs plutil)\n" "$RED" "$RESET" "$1" "$2"; fi
+}
+
 mkplist() { # mkplist <file> <value>: a BINARY plist holding <value>
   printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>k</key><string>%s</string></dict></plist>' "$2" >"$1.xml"
   plutil -convert binary1 -o "$1" "$1.xml" && command rm -f "$1.xml"
 }
-t "I3" "scan-tree scans a binary plist through plutil: a credential in it is found" '
+tp "I3" "scan-tree scans a binary plist through plutil: a credential in it is found" '
   W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; tok="ghp_$(rand 36 A-Za-z0-9)"
   mkplist "$W/tree/settings.plist" "é$tok"
   bad=; [ "$(head -c 6 "$W/tree/settings.plist")" = bplist ] || bad=1
@@ -732,7 +739,7 @@ t "I5" "only a file that cannot be read is reported as not scanned" '
   W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "x\n" >"$W/tree/locked.txt"; chmod 000 "$W/tree/locked.txt"
   out=$(jtool scan-tree "$W/tree" 2>&1); chmod 600 "$W/tree/locked.txt"
   [ "$(printf "%s\n" "$out" | grep -c "1 file(s) not scanned (unreadable)")" -eq 1 ]'
-t "I6" "a settings backup with a credential inside a binary plist is refused" '
+tp "I6" "a settings backup with a credential inside a binary plist is refused" '
   W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; tok="ghp_$(rand 36 A-Za-z0-9)"
   mkplist "$W/tree/a.plist" "$tok"
   mkdir -p "$W/vault/Claude-Sessions"; cp "$W/tree/a.plist" "$W/vault/Claude-Sessions/a.plist"
@@ -763,15 +770,105 @@ t "I10" "a locked keychain warns once per run that the own-secret check is skipp
   newrepo; stub_locked_keychain "$W"; cp "$W/repo/profiles/local.zsh" "$W/r/profiles/local.zsh"
   gstage "$W" a.txt "we shipped an ordinary line" ; gstage "$W" b.txt "another ordinary line of prose"
   out=$(JENV="TYPESAFE_API_KEY=k1" guard 2>&1); rc=$?
-  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "own-secret check skipped: keychain locked or item unreadable")" -eq 1 ]'
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "own-secret check skipped: keychain locked (security exit 36)")" -eq 1 ]'
 t "I11" "the same warning, once, from scans and from redaction inside jev_ask" '
   W=$(sandbox); mkenv "$W"; stub_locked_keychain "$W"; mkdir -p "$W/tree"; printf "fine\n" >"$W/tree/a.txt"; printf "fine\n" >"$W/tree/b.txt"
   out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
   bad=; [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "own-secret check skipped")" -eq 1 ] || bad=1
   printf "x\n" >"$W/state.txt"
   out2=$(JENV="TYPESAFE_API_KEY=k1" jrun "jev_init; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_cleanup" 2>&1)
-  [ -z "$bad" ] && [ "$(printf "%s\n" "$out2" | grep -c "own-secret check skipped")" -eq 1 ]'
+  [ -z "$bad" ] && [ "$(printf "%s\n" "$out2" | grep -c "own-secret check skipped: keychain locked")" -eq 1 ]'
 t "I12" "docs record the in-memory grep -F match and why it replaces SHA-256 hashes" '
   [ "$(grep -c "grep -F -f <(printf" docs/agents/jev.md)" -ge 1 ] && [ "$(grep -ci "sha-256" docs/agents/jev.md)" -ge 1 ]'
+
+#############################################################################
+section "J -- Task 12: own-secret loading, plist data, temp cleanup, host names, log"
+#############################################################################
+
+# stub_pem_secret <W>: dotfiles.pem_key holds a PEM-armoured multi-line value;
+# every other item is not found (exit 44, like the real tool).
+# The armor lines are assembled at run time so this file holds no PEM header.
+PEM_BEGIN="-----BEGIN PRIV""ATE KEY-----"
+PEM_END="-----END PRIV""ATE KEY-----"
+stub_pem_secret() {
+  cat >"$1/stubs/security" <<STUB
+#!/bin/sh
+case "\$*" in
+  *dotfiles.pem_key*) printf '%s\n' '$PEM_BEGIN' 'MIIEvQIBADANBgkqhki' '----------------' '$PEM_END' ;;
+  *) exit 44 ;;
+esac
+STUB
+  chmod +x "$1/stubs/security"
+  printf 'pem_key() { dotfiles-secrets get pem_key; }\n' >"$1/repo/profiles/local.zsh"
+}
+
+t "J1" "a keychain item that does not exist yet (a fresh Mac) is silent: nothing to compare" '
+  W=$(sandbox); mkenv "$W"; printf "openai_key() { dotfiles-secrets get openai_api_key; }\n" >"$W/repo/profiles/local.zsh"
+  printf "x\n" >"$W/state.txt"
+  out=$(jrun "jev_load_secrets; jev_own_secret_lines state.txt" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ -z "$out" ]'
+t "J2" "a real keychain failure warns, and says whether it is locked or another error" '
+  W=$(sandbox); mkenv "$W"; stub_locked_keychain "$W"
+  o1=$(jrun "jev_load_secrets" 2>&1)
+  printf "#!/bin/sh\nexit 1\n" >"$W/stubs/security"
+  o2=$(jrun "jev_load_secrets" 2>&1)
+  [ "$(printf "%s\n" "$o1" | grep -c "own-secret check skipped: keychain locked (security exit 36)")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$o2" | grep -c "own-secret check skipped: keychain error (security exit 1)")" -eq 1 ]'
+t "J3" "PEM armor and other structural lines of a multi-line secret are not own-secret patterns" '
+  W=$(sandbox); mkenv "$W"; stub_pem_secret "$W"
+  printf "%s\n" "$PEM_BEGIN" "public notes" "$PEM_END" "----------------" "line MIIEvQIBADANBgkqhki here" >"$W/f.txt"
+  out=$(jrun "jev_own_secret_lines f.txt" 2>&1)
+  [ "$out" = 5 ]'
+t "J4" "a scan killed while it converts a plist leaves no temporary directory behind" '
+  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree" "$W/tmp"; printf "\000\001bin" >"$W/tree/a.plist"
+  printf "#!/bin/sh\nprintf \"%%s %%s\" \"\$PPID\" \"\$\$\" >\"\$FAKE_PLUTIL_OUT\"\nexec sleep 20\n" >"$W/stubs/plutil"; chmod +x "$W/stubs/plutil"
+  JENV="TMPDIR=$W/tmp FAKE_PLUTIL_OUT=$W/plutil.out" jtool scan-tree "$W/tree" >/dev/null 2>&1 &
+  bg=$!
+  n=0; while [ "$n" -lt 100 ] && [ ! -s "$W/plutil.out" ]; do sleep 0.1; n=$((n + 1)); done
+  read -r sp cp <"$W/plutil.out"
+  kill -TERM "$sp" 2>/dev/null; kill -TERM "$cp" 2>/dev/null; wait "$bg" 2>/dev/null
+  [ -n "$sp" ] && [ -z "$(ls -A "$W/tmp")" ]'
+# mkdataplist <file> <text>: a BINARY plist whose <data> element holds <text>.
+mkdataplist() {
+  printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>k</key><data>%s</data></dict></plist>' \
+    "$(printf '%s' "$2" | base64 | tr -d '\n')" >"$1.xml"
+  plutil -convert binary1 -o "$1" "$1.xml" && command rm -f "$1.xml"
+}
+tp "J5" "a plist <data> value is decoded: an own secret inside it is found, and neither it nor its base64 is printed" '
+  W=$(sandbox); mkenv "$W"; redact_env "$W"; mkdir -p "$W/tree"
+  mkdataplist "$W/tree/a.plist" "prefix-bytes $OWN and more"
+  mkdataplist "$W/tree/b.plist" "nothing of interest here"
+  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
+  [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK a.plist:[0-9]*: contains the value of one of your own Keychain")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "b.plist")" -eq 0 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c -e "$OWN" -e "$(printf "%s" "$OWN" | base64 | cut -c1-12)")" -eq 0 ]'
+t "J6" "a multi-word computer name is a deterministic block; a blank one is ignored, not a three-space pattern" '
+  newrepo; gstage "$W" a.txt "notes about frobnitz mini and its disk"
+  out=$(JENV="STUB_LOCALHOST=plainhost" T_COMPUTER="Frobnitz Mini" guard 2>&1); rc=$?
+  bad=; [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK privacy: a.txt:1: .*host name: fr\*\*\*")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c -e "frobnitz" -e "disk")" -eq 0 ] || bad=1
+  newrepo; gstage "$W" b.txt "a line   with   wide   spacing"
+  out2=$(JENV="STUB_LOCALHOST=plainhost" T_COMPUTER="   " guard 2>&1); rc2=$?
+  [ -z "$bad" ] && [ "$rc2" -eq 0 ] && [ -z "$out2" ]'
+t "J7" "the owners secrets are read from the keychain once per run, not once per request" '
+  W=$(sandbox); mkenv "$W"; redact_env "$W"; printf "x\n" >"$W/state.txt"
+  JENV="TYPESAFE_API_KEY=k1" jrun "jev_init; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_cleanup"
+  [ "$(calls)" -eq 3 ] && [ "$(grep -c "dotfiles.openai_api_key" "$W/sec/calls.log")" -eq 1 ]'
+t "J8" "shadow mode with no key spawns no background job on a commit" '
+  newrepo; T_SYNC=""; gstage "$W" a.txt "we shipped the Acme onboarding flow for the client"
+  out=$(guard 2>&1); rc=$?
+  sleep 1
+  [ "$rc" -eq 0 ] && [ -z "$out" ] && [ ! -e "$(LOGF)" ]'
+t "J9" "the log stores the confidence the verdict used: Jevs own when given, the derived one when not" '
+  newrepo; gstage "$W" a.txt "we shipped the Acme onboarding flow for the client"
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-noconf.json" guard >/dev/null 2>&1
+  a=$(tail -n 1 "$(LOGF)")
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-high.json" guard >/dev/null 2>&1
+  b=$(tail -n 1 "$(LOGF)")
+  [ "$(printf "%s" "$a" | jq -r .answers.reveals.confidence)" = "0.93" ] && [ "$(printf "%s" "$a" | jq -r .answers.reveals.confidence_derived)" = true ] &&
+  [ "$(printf "%s" "$b" | jq -r .answers.reveals.confidence)" = "0.91" ] && [ "$(printf "%s" "$b" | jq -r .answers.reveals.confidence_derived)" = null ]'
+t "J10" "a plutil-dependent test is skipped visibly, not passed, when plutil is absent" '
+  o=$(PATH=/nonexistent; tp J10-in "needs plutil" false); [ "$(printf "%s\n" "$o" | grep -c "SKIP.*J10-in")" -eq 1 ] &&
+  o2=$(tp J10-in "runs when present" true); [ "$(printf "%s\n" "$o2" | grep -c "✓.*runs when present")" -eq 1 ]'
 
 finish
