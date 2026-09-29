@@ -690,4 +690,11 @@ t "P6.1" "the hosts style is exactly known_hosts plus ssh config, and never /etc
 t "P6.2" "the style runs the real cat, whatever cat is aliased to" \
   '[ "$(code_of system/.completion | grep -c "command cat")" -ge 2 ]'
 
+section "P7 — system/.completion needs no compdef when Prezto is absent"
+t "P7.1" "a shell whose Prezto submodule is not initialised starts silently" \
+  'H=$(_zsh_sandbox) && rm -f "$H/.dotfiles/modules" &&
+   [ "$(ZSHRUN_HOME="$H" zshrun_all "echo ok")" = ok ]'
+t "P7.2" "with Prezto present the dotfiles and pnpm completions are still registered" \
+  '[ "$(zshrun "print -r -- \"\${_comps[dotfiles]}|\${_comps[pnpm]}\"")" = "_dotfiles_completions|_pnpm_completion" ]'
+
 finish
