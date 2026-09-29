@@ -227,15 +227,29 @@ t "F4.1" "no macos script copies the untracked VLC plist" \
 # assertion is eval'd through, a bare $ is an end-of-line anchor and the grep
 # silently matches nothing, which made the first version of this test pass over
 # the very file it was written to catch.
-t "F4.2" "every repo-relative path the macos scripts reference exists on disk" '
-  missing=0
-  # macos/local.sh is an optional, gitignored override: defaults.sh
-  # sources it only when present, so it is not expected to exist.
-  for p in $(grep -hoE "[\$]DOTFILES_DIR/[A-Za-z0-9_./-]+" macos/*.sh |
-    sed "s|[\$]DOTFILES_DIR/||" | sort -u | grep -vx "macos/local.sh"); do
-    [ -e "$p" ] || missing=$((missing + 1))
-  done
-  [ "$missing" -eq 0 ]'
+# _macos_missing_paths <file>... -- the repo-relative paths those scripts
+# mention through $DOTFILES_DIR that neither exist nor are gitignored. A
+# gitignored path (apps/gitkraken/profiles, created at run time by
+# defaults-gitkraken.sh) is absent in every fresh clone, so it cannot be
+# required; a tracked path that is missing is a real bug.
+# macos/local.sh is an optional, gitignored override: defaults.sh sources it
+# only when present.
+_macos_missing_paths() {
+  local p
+  while IFS= read -r p; do
+    [ -e "$p" ] && continue
+    git check-ignore -q "$p" && continue
+    printf '%s\n' "$p"
+  done < <(grep -hoE "[\$]DOTFILES_DIR/[A-Za-z0-9_./-]+" "$@" |
+    sed "s|[\$]DOTFILES_DIR/||" | sort -u | grep -vx "macos/local.sh")
+}
+t "F4.2" "every repo-relative path the macos scripts reference exists on disk, or is gitignored" '
+  [ -z "$(_macos_missing_paths macos/*.sh)" ]'
+t "F4.2b" "a tracked path that is missing is still reported, and a gitignored one is not" '
+  W=$(sandbox) && printf "%s\n" "source \"\$DOTFILES_DIR/apps/nonexistent-tracked/x\"" >"$W/a.sh" &&
+  printf "%s\n" "x=\"\$DOTFILES_DIR/apps/gitkraken/profiles\"" >"$W/b.sh" &&
+  [ "$(_macos_missing_paths "$W/a.sh")" = "apps/nonexistent-tracked/x" ] &&
+  [ -z "$(_macos_missing_paths "$W/b.sh")" ]'
 
 
 #############################################################################
