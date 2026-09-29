@@ -155,10 +155,10 @@ t "S1.1" "behind and clean: fast-forwards the public repo" \
   'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1; [ "$(_head pub)" = "$(_remote pub)" ] && [ "$(command cat "$W/pub/README.md")" = new ]'
 t "S1.2" "after a move both stow packages are simulated first, then restowed, ignoring .DS_Store" \
   'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1
-   grep -qxF -- "stow -n --restow --ignore=\\.DS_Store\$ -t $W/home runcom" "$W/log" &&
-   grep -qxF -- "stow -n --restow --ignore=\\.DS_Store\$ -t $W/home/.config config" "$W/log" &&
-   grep -qxF -- "stow --restow --ignore=\\.DS_Store\$ -t $W/home runcom" "$W/log" &&
-   grep -qxF -- "stow --restow --ignore=\\.DS_Store\$ -t $W/home/.config config" "$W/log"'
+   grep -qxF -- "stow -n --restow --ignore=^\\.DS_Store\$ -t $W/home runcom" "$W/log" &&
+   grep -qxF -- "stow -n --restow --ignore=^\\.DS_Store\$ -t $W/home/.config config" "$W/log" &&
+   grep -qxF -- "stow --restow --ignore=^\\.DS_Store\$ -t $W/home runcom" "$W/log" &&
+   grep -qxF -- "stow --restow --ignore=^\\.DS_Store\$ -t $W/home/.config config" "$W/log"'
 t "S1.2b" "the simulation runs before any real stow" \
   'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1
    [ "$(grep "^stow" "$W/log" | sed -n "1p;2p" | grep -c -- "^stow -n")" -eq 2 ]'
