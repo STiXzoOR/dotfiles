@@ -1,0 +1,22 @@
+# Codex plugins
+# Format: plugin@marketplace
+# Used by: scripts/install_codex.sh  (dotfiles install --codex)
+#
+# The same plugins as claude/plugins.list wherever a Codex version exists.
+# Claude-only, deliberately absent: recall-skill and sync-claude-sessions-skill
+# (personal-os-skills). They ship no Codex plugin and are driven by Claude Code
+# hooks, so parity would not mean anything.
+#
+# Plugin hooks (warp, cc-safety-net) are not trusted on install: open codex,
+# run /hooks and press t on each. The installer prints this reminder.
+# Private entries go in codex/plugins.local.list (gitignored).
+
+# Official OpenAI curated marketplace; no marketplace add needed. The installer
+# falls back to superpowers@openai-curated-remote on a machine where Codex has
+# not synced the curated marketplace yet.
+superpowers@openai-curated
+
+compound-engineering@compound-engineering-plugin
+warp@codex-warp
+# Renamed upstream from safety-net.
+cc-safety-net@cc-marketplace

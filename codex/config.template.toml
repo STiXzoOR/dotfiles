@@ -1,0 +1,15 @@
+# Codex config, seeded into ~/.codex/config.toml only when that file does not
+# exist (scripts/install_codex.sh). Portable keys only: no model name, no
+# [projects] trust table, no notify path, no MCP servers with machine paths.
+
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[tui]
+notification_condition = "always"
+
+[features]
+# Plugin-bundled hooks (warp, cc-safety-net) only run with this on, and after
+# a one-time trust in the TUI: run /hooks and press t.
+hooks = true
