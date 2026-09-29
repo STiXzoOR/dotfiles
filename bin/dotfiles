@@ -567,7 +567,7 @@ sub_install_packages() {
   for file in $brewfiles; do
     while IFS= read -r tap; do
       [[ -n "$tap" ]] || continue
-      if brew tap "$tap"; then
+      if brew tap "$tap" </dev/null; then
         brew trust --tap "$tap" || warn "could not trust tap $tap"
       else
         warn "could not tap $tap"

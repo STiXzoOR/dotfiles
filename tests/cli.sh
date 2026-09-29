@@ -1055,6 +1055,7 @@ _pk_setup() { # _pk_setup <W> -- repo with a Brewfile, code.list and stub brew/c
 #!/bin/bash
 echo "brew $*" >> "$SW/log"
 [ "$1" = bundle ] && exit "${BUNDLE_RC:-0}"
+[ "$1" = tap ] && [ -n "${TAP_EATS_STDIN:-}" ] && cat >/dev/null
 if [ "$1" = trust ] && [ -n "${TRUST_FAIL:-}" ]; then echo "Error: trust nope" >&2; exit 1; fi
 exit 0
 STUB
@@ -1130,6 +1131,10 @@ t "N6.15" "declining the Brewfile prompt skips the step without failing" '
   printf "PATH=\"%s/bin:/usr/bin:/bin\"; HOME=\"%s/h\"; ROOT_DIR=\"%s/repo\"\ncd \"%s\" || exit 1\n. scripts/echos.sh; . \"%s/fn.sh\"\nsub_install_packages\n" "$W" "$W" "$W" "$PWD" "$W" > "$W/run2.sh"
   SW="$W" bash "$W/run2.sh" </dev/null >/dev/null 2>&1; rc=$?
   [ "$rc" -eq 0 ] && [ ! -e "$W/log" ]'
+
+t "N6.16" "a brew that reads stdin cannot swallow the taps still to come" '
+  W=$(sandbox); _pk_setup "$W"; printf "tap \"acme/tools\"\ntap \"beta/tools\"\n" > "$W/repo/Brewfile"
+  _pk_run "$W" TAP_EATS_STDIN=1 >/dev/null 2>&1; grep -q "brew tap beta/tools" "$W/log"'
 
 
 #############################################################################
