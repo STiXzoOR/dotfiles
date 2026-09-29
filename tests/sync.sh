@@ -268,4 +268,97 @@ t "S6.6" "the extra Brewfile.local entries count as declared" \
 t "S7.1" "an unknown argument is a usage error" \
   'W=$(senv); out=$(syn --frobnicate 2>&1); rc=$?; [ "$rc" -eq 2 ] && printf "%s\n" "$out" | grep -q "Usage"'
 
+
+#############################################################################
+section "V -- dotfiles vault migrate (bin/dotfiles-vault)"
+#############################################################################
+# venv: a sandbox HOME with a real local vault and a fake iCloud Drive
+# ($W/icloud is the CloudDocs folder; the vault goes to $W/icloud/Vault). Real
+# /usr/bin/ditto does the copying unless a test puts a stub in front.
+venv() {
+  local w; w=$(sandbox) || return 1
+  mkdir -p "$w/home/Vault/Notes/Sub dir" "$w/home/Vault/.obsidian" "$w/home/Vault/Empty" "$w/bin" "$w/icloud"; : >"$w/log"
+  printf 'one\n' >"$w/home/Vault/Notes/a.md"
+  printf 'two two\n' >"$w/home/Vault/Notes/Sub dir/b c.md"
+  printf '{"a":1}\n' >"$w/home/Vault/.obsidian/app.json"
+  printf 'top\n' >"$w/home/Vault/index.md"
+  # pgrep: Obsidian is "running" while $W/obsidian exists.
+  stub "$w/bin" pgrep '[ "$1" = "-x" ] && [ "$2" = Obsidian ] && [ -f "$STUB_RUNNING" ]'
+  stub "$w/bin" brctl ':'
+  printf '%s' "$w"
+}
+# vmig [VAR=val ...]: dotfiles-vault migrate against the sandbox in $W.
+vmig() {
+  env -i HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" DOTFILES_VAULT_ICLOUD="$W/icloud/Vault" \
+    STUB_LOG="$W/log" STUB_RUNNING="$W/obsidian" "$@" bash "$ROOT_DIR/bin/dotfiles-vault" migrate 2>&1 </dev/null
+}
+# untouched: ~/Vault is still the original real directory, complete, and no
+# staging folder or half copy is left in iCloud Drive.
+untouched() {
+  [ -d "$W/home/Vault" ] && [ ! -L "$W/home/Vault" ] && [ "$(command cat "$W/home/Vault/Notes/a.md")" = one ] &&
+  [ -f "$W/home/Vault/Notes/Sub dir/b c.md" ] && [ -f "$W/home/Vault/.obsidian/app.json" ] &&
+  [ "$(find "$W/home" -maxdepth 1 -name "Vault.local-backup-*" | wc -l | tr -d " ")" -eq 0 ] &&
+  [ "$(find "$W/icloud" -mindepth 1 | wc -l | tr -d " ")" -eq 0 ]
+}
+
+t "V1.1" "migrate copies the vault to iCloud, leaves a symlink at ~/Vault and keeps the original as a backup" '
+  W=$(venv); out=$(vmig); rc=$?
+  [ "$rc" -eq 0 ] && [ -L "$W/home/Vault" ] && [ "$(readlink "$W/home/Vault")" = "$W/icloud/Vault" ] &&
+  [ "$(command cat "$W/icloud/Vault/Notes/Sub dir/b c.md")" = "two two" ] && [ -d "$W/icloud/Vault/Empty" ] &&
+  [ "$(find "$W/home" -maxdepth 1 -name "Vault.local-backup-*" | wc -l | tr -d " ")" -eq 1 ]'
+t "V1.2" "the backup is the untouched original, and the iCloud copy is identical to it" '
+  W=$(venv); vmig >/dev/null; b=$(find "$W/home" -maxdepth 1 -name "Vault.local-backup-*")
+  [ -f "$b/.obsidian/app.json" ] && diff -r "$b" "$W/icloud/Vault" >/dev/null'
+t "V1.3" "no staging folder is left behind after a good run" \
+  'W=$(venv); vmig >/dev/null; [ "$(find "$W/icloud" -maxdepth 1 -name "*.migrating.*" | wc -l | tr -d " ")" -eq 0 ]'
+t "V1.4" "the output says how to undo it, and to use Keep Downloaded" '
+  W=$(venv); out=$(vmig); printf "%s\n" "$out" | grep -q "To undo" && printf "%s\n" "$out" | grep -q "Vault.local-backup-" &&
+  printf "%s\n" "$out" | grep -q "Keep Downloaded"'
+t "V1.5" "the undo command as printed puts the original back" '
+  W=$(venv); vmig >/dev/null; b=$(find "$W/home" -maxdepth 1 -name "Vault.local-backup-*")
+  rm "$W/home/Vault" && mv "$b" "$W/home/Vault" && [ ! -L "$W/home/Vault" ] && [ -f "$W/home/Vault/Notes/a.md" ]'
+t "V2.1" "a running Obsidian refuses, and nothing changes" '
+  W=$(venv); : >"$W/obsidian"; out=$(vmig); rc=$?
+  [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "Obsidian is running" && untouched'
+t "V2.2" "a non-empty iCloud vault folder refuses, and nothing changes" '
+  W=$(venv); mkdir -p "$W/icloud/Vault"; printf "x\n" >"$W/icloud/Vault/other.md"; out=$(vmig); rc=$?
+  [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "not empty" && [ -d "$W/home/Vault" ] && [ ! -L "$W/home/Vault" ] &&
+  [ "$(find "$W/home" -maxdepth 1 -name "Vault.local-backup-*" | wc -l | tr -d " ")" -eq 0 ] && [ "$(ls "$W/icloud/Vault")" = other.md ]'
+t "V2.3" "an existing but empty iCloud vault folder is fine" \
+  'W=$(venv); mkdir -p "$W/icloud/Vault"; vmig >/dev/null && [ -L "$W/home/Vault" ] && [ -f "$W/icloud/Vault/index.md" ]'
+t "V2.4" "no iCloud Drive at all refuses, and nothing changes" '
+  W=$(venv); command rmdir "$W/icloud"; out=$(vmig); rc=$?
+  [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "iCloud Drive is not available" && [ -d "$W/home/Vault" ] && [ ! -L "$W/home/Vault" ]'
+t "V2.5" "already migrated is a no-op that succeeds" '
+  W=$(venv); vmig >/dev/null; n=$(find "$W/home" -maxdepth 1 -name "Vault.local-backup-*" | wc -l | tr -d " ")
+  out=$(vmig); rc=$?; [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -q "already" &&
+  [ "$(find "$W/home" -maxdepth 1 -name "Vault.local-backup-*" | wc -l | tr -d " ")" -eq "$n" ]'
+t "V2.6" "no vault to migrate is an error" \
+  'W=$(venv); command mv "$W/home/Vault" "$W/home/elsewhere"; out=$(vmig); rc=$?; [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "no vault"'
+t "V2.7" "a ~/Vault symlink to somewhere else is refused" '
+  W=$(venv); command mv "$W/home/Vault" "$W/home/elsewhere"; ln -s "$W/home/elsewhere" "$W/home/Vault"; out=$(vmig); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(readlink "$W/home/Vault")" = "$W/home/elsewhere" ]'
+
+# A failure at any step leaves the original vault untouched.
+t "V3.1" "a failing ditto: non-zero, the original is untouched, no partial copy is left" '
+  W=$(venv); stub "$W/bin" ditto "exit 1"; out=$(vmig); rc=$?
+  [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "copy failed" && untouched'
+t "V3.2" "a ditto that leaves a partial copy: the partial copy is removed" '
+  W=$(venv); stub "$W/bin" ditto "mkdir -p \"\$2\"; cp \"\$1/index.md\" \"\$2/\"; exit 1"; vmig >/dev/null; untouched'
+t "V3.3" "a copy that silently drops a file fails the count check: the original is untouched, the copy is removed" '
+  W=$(venv); stub "$W/bin" ditto "/usr/bin/ditto \"\$@\" || exit 1; rm -f \"\$2/index.md\""; out=$(vmig); rc=$?
+  [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "entry count differs" && untouched'
+t "V3.4" "a copy with the same names but different content fails the checksum check" '
+  W=$(venv); stub "$W/bin" ditto "/usr/bin/ditto \"\$@\" || exit 1; printf \"ONE\\n\" >\"\$2/Notes/a.md\""; out=$(vmig); rc=$?
+  [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "does not match" && untouched'
+t "V3.5" "a failing symlink step puts the original back" '
+  W=$(venv); stub "$W/bin" ln "exit 1"; out=$(vmig); rc=$?
+  [ "$rc" -ne 0 ] && [ -d "$W/home/Vault" ] && [ ! -L "$W/home/Vault" ] && [ "$(command cat "$W/home/Vault/Notes/a.md")" = one ] &&
+  [ "$(find "$W/home" -maxdepth 1 -name "Vault.local-backup-*" | wc -l | tr -d " ")" -eq 0 ]'
+t "V3.6" "the only rm in the migrate code removes the staging folder it made" \
+  '[ "$(code_of bin/dotfiles-vault | grep -E "(^|[;&|])[[:space:]]*rm " | grep -vcF "\"\$1\"")" -eq 0 ] &&
+   [ "$(code_of bin/dotfiles-vault | grep -cE "(^|[;&|])[[:space:]]*rm ")" -ge 1 ]'
+t "V4.1" "an unknown subcommand is a usage error" \
+  'W=$(venv); out=$(env -i HOME="$W/home" PATH="/usr/bin:/bin" bash bin/dotfiles-vault frob 2>&1); rc=$?; [ "$rc" -eq 2 ] && printf "%s\n" "$out" | grep -q Usage'
+
 finish
