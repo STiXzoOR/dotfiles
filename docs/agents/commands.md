@@ -32,19 +32,42 @@ default and diffs a later capture against it.
 ## install flags
 
 ```
-install --all           # Everything below
+install                 # Bootstrap: sudo keep-alive, Command Line Tools, Homebrew, stow, SSH key
+install --all           # The steps below in order: prezto, link, node, packages, fonts,
+                        #   launchagents, claude, codex, configure, hosts (last)
 install --claude        # Claude Code: binary, marketplaces, plugins, hooks, rules, settings, QMD
+install --codex         # Codex CLI (runs scripts/install_codex.sh)
 install --fonts         # Local fonts
 install --homebrew      # Homebrew itself
 install --hosts         # Ad-blocking hosts file
-install --launchagents  # LaunchAgents from launchagents/disabled/
-install --node          # fnm and the latest LTS Node
-install --packages      # npm globals and VS Code extensions
-install --passwordless  # sudo without a password
+install --launchagents  # LaunchAgents from launchagents/ (see launchagents/disabled/)
+install --node          # mise, Node and the CLIs in config/mise/config.toml (run link first)
+install --packages      # Brewfile (+ Brewfile.local) and VS Code extensions
 install --prezto        # The zsh framework
 install --ssh           # SSH key (ed25519)
-install --vim           # Vim/Neovim plugins
 ```
+
+Behaviours worth knowing:
+
+- **Failures are collected.** `install` and `install --all` run every step, record
+  each failure, and finish with a summary naming the failed steps and a non-zero
+  exit status. The success banner appears only when nothing failed. A failed
+  Command Line Tools install aborts `install` immediately, since nothing after it
+  can work.
+- **`--node` refuses to run before `link`.** mise reads `~/.config/mise`, which must
+  resolve to `config/mise` in this checkout; pointing `MISE_GLOBAL_CONFIG_FILE` at
+  the repo instead makes mise rewrite the paths in `mise.lock`. It also installs
+  `gnupg`, which the Node download verification needs.
+- **`--packages` never stops halfway.** Each tap is tapped then trusted, a failed
+  bundle is recorded and the VS Code step still runs, missing extensions are found
+  with a single `--list-extensions` call, and the step returns non-zero if
+  anything failed. `Brewfile.local` and `packages/code.local.list` (both
+  gitignored) are read alongside the public files.
+- **`--hosts` backs up once.** `/etc/hosts.backup` is written only if it does not
+  exist, so a re-run cannot replace the pristine file with the blocklist.
+- **Command Line Tools** are installed headlessly by `scripts/lib/clt.sh`
+  (shared by `install`, `setup` and `remote-install.sh`), which picks the highest
+  version `softwareupdate` offers rather than the last one listed.
 
 ## test and configure flags
 
@@ -78,7 +101,8 @@ interpreter or an unreachable binary without doing any work.
 config with the regenerated `config/mise/mise.lock`.
 
 **Add a VS Code extension**: add it to
-`packages/code.list`, run `./bin/dotfiles install --packages`.
+`packages/code.list` (or, for a private one, the gitignored
+`packages/code.local.list`), run `./bin/dotfiles install --packages`.
 
 **Modify a system default**: edit the script in `macos/`, run
 `./bin/dotfiles configure --defaults`. Requires a logout or restart.

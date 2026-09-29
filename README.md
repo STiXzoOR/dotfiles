@@ -93,21 +93,31 @@ Modern terminal features:
 > It's always a good idea to review arbitrary code from the internet before running it on your machine with sudo power!
 > You are responsible for everything this script does to your machine (see LICENSE)
 
-1. Remote Mode: Run this script in Terminal
+1. Remote Mode: Run this script in Terminal. It works on a bare Mac: it installs the
+   Command Line Tools itself (no dialog), then clones the repo and starts `install`.
+   It is safe to re-run: an existing `~/.dotfiles` checkout is continued, not
+   cloned again. Set `DOTFILES_REF` to fetch the tools installer from a tag or
+   commit instead of `main`.
 
 ```shell
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/STiXzoOR/dotfiles/main/remote-install.sh)"
 ```
 
-2. Manual Mode
+2. Manual Mode (needs the Command Line Tools first: `xcode-select --install`)
 
 ```shell
-git clone --recurse-submodules https://github.com/STiXzoOR/dotfiles ~/.dotfiles
+git clone https://github.com/STiXzoOR/dotfiles ~/.dotfiles
 cd ~/.dotfiles
 ./bin/dotfiles install
 ```
 
-> Note: running `./bin/dotfiles install` installs everything — zsh, apps and settings. To do it piece by piece, run `./bin/dotfiles install --help` for the flag list, or `./bin/dotfiles help` for every command.
+> Note: plain `./bin/dotfiles install` bootstraps the machine — Command Line Tools, Homebrew, stow and an SSH key — then lists the remaining steps and offers to run them. It prints its success banner only when every step succeeded, and otherwise names the ones that failed.
+>
+> `./bin/dotfiles install --all` runs the rest in one go, in this order: `--prezto`, `link`, `--node`, `--packages`, `--fonts`, `--launchagents`, `--claude`, `--codex`, `configure`, then `--hosts` last (the blocklist can break downloads made later in a run). A failed step does not stop the run; the closing summary names each one and the exit status is non-zero. `--node` needs `link` to have run first, because mise reads `~/.config/mise`.
+>
+> To do it piece by piece, run `./bin/dotfiles install --help` for the flag list, or `./bin/dotfiles help` for every command.
+>
+> Packages that should not be in a public repo go in two gitignored files: `Brewfile.local` (bundled after `Brewfile`) and `packages/code.local.list` (VS Code extensions, read after `packages/code.list`).
 
 ## Claude Code
 

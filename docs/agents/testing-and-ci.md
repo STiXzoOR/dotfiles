@@ -22,7 +22,7 @@ any suite failed. Arguments are passed through to each suite.
 | `tests/run.sh`             | The runner                                                     |
 | `tests/audit-regressions.sh` | Every regression the earlier audits found, by id (S2.*, S5.*, CB.*, SL.*, S7.*) |
 | `tests/repo.sh`            | Repository hygiene — gitignore, submodules, attributes         |
-| `tests/cli.sh`             | `bin/dotfiles` and the install helpers                         |
+| `tests/cli.sh`             | `bin/dotfiles`, the install helpers, the install flow (see below) |
 | `tests/macos.sh`           | `macos/`, the defaults baseline, LaunchAgents                  |
 | `tests/shell.sh`           | `runcom/`, `system/`, `profiles/`, completions                 |
 | `tests/packages.sh`        | `Brewfile`, `packages/`, `config/`                             |
@@ -53,6 +53,31 @@ Two traps the harness documents and that have already bitten:
 
 Tests must be side-effect free on the real machine: no writes under `$HOME`
 except through `sandbox`, no keychain, no network.
+
+### Install-flow tests (`tests/cli.sh`, sections N1-N11)
+
+These run the real code against stub binaries on a sandbox `PATH`, in a sandbox
+`HOME`, and assert on argv, exit status and output. Patterns to reuse:
+
+- **Function under test extracted with `sed -n "/^name()/,/^}/p"`** and sourced
+  into a small runner script, as the older sections do. `fn_of` and `stub` (N0)
+  wrap this.
+- **Orchestration tests copy `bin/dotfiles` into a sandbox repo** and splice stub
+  step functions in just before the `# Routing.` marker, so `$0 install --prezto`
+  re-executes the copy and reaches the stub. Steps log their name, which gives the
+  order assertions (N4).
+- **Command Line Tools** (N2, N3, N11): stub `xcode-select`, `softwareupdate` and
+  `sudo` (which logs, then runs the rest of argv, so the sentinel `touch` and `rm`
+  hit a sandbox path through `DOTFILES_CLT_SENTINEL`). `remote-install.sh` is run
+  under `env -i` with a stub `curl` that serves this repo's own `clt.sh`.
+- **Seams**, all defaulting to production values: `DOTFILES_CLT_SENTINEL`,
+  `DOTFILES_CLT_RETRY_SLEEP`, `DOTFILES_HOSTS_FILE` (the hosts file the backup and
+  write act on) and `DOTFILES_CODE_BIN_FALLBACK` (the VS Code CLI used when `code`
+  is not on `PATH`). Any test that reaches the packages step must set the last
+  one or stub `code`, otherwise it would launch the real editor.
+
+Mutation-check each assertion: break the code it guards, watch the test fail,
+restore.
 
 ## CI Pipeline
 

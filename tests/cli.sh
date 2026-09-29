@@ -142,8 +142,9 @@ t "A7.1" "every declared tap is trusted before bundle" \
 t "A7.2" "brew bundle install failure is not reported as ok" '
   W=$(sandbox); mkdir -p "$W/bin"
   printf "#!/bin/bash\n[ \"\$1\" = bundle ] && exit 9\nexit 0\n" > "$W/bin/brew"; chmod +x "$W/bin/brew"
+  printf "#!/bin/bash\nexit 0\n" > "$W/bin/code"; chmod +x "$W/bin/code"
   sed -n "/^sub_install_packages()/,/^}/p" bin/dotfiles > "$W/fn.sh"
-  ! (PATH="$W/bin:$PATH"; ROOT_DIR="$PWD"; DOTFILES_YES=1
+  ! (PATH="$W/bin:$PATH"; ROOT_DIR="$PWD"; DOTFILES_YES=1; DOTFILES_CODE_BIN_FALLBACK="$W/none"
      source scripts/echos.sh; source "$W/fn.sh"; sub_install_packages >/dev/null 2>&1)'
 t "A7.2b" "a successful bundle still reports ok" '
   W=$(sandbox); mkdir -p "$W/bin"
@@ -162,7 +163,7 @@ t "A7.4" "doctor names the minimum major version, not just the version string" \
 t "A7.5" "no unguarded recursive delete of the Homebrew system cache" \
   '! grep -q "rm -f -r /Library/Caches/Homebrew" <(code_of bin/dotfiles)'
 t "A7.6" "no blanket quarantine stripping of QuickLook plugins" \
-  '! grep -q "com.apple.quarantine" <(code_of bin/dotfiles)'
+  '! grep -qE "QuickLook|xattr[^|]* -[a-zA-Z]*r" <(code_of bin/dotfiles)'
 t "A7.7" "the packages step warns that mas entries need an App Store login" \
   'grep -q "mas entries need" <(code_of bin/dotfiles)'
 
@@ -194,11 +195,11 @@ t "A8.4b" "print_result reports failure as an error" \
 t "A8.4c" "print_result reports success as ok" \
   '(source scripts/echos.sh; print_result 0 fine) | grep -q "ok"'
 t "A8.5" "CLT install is headless via softwareupdate" \
-  'grep -q "softwareupdate" <(code_of bin/dotfiles) && grep -q "xcode-select -s" <(code_of bin/dotfiles)'
+  'grep -q "softwareupdate" <(code_of scripts/lib/clt.sh) && grep -q "xcode-select -s" <(code_of scripts/lib/clt.sh)'
 t "A8.6" "xcode wait loop is bounded" \
-  '! grep -q "until xcode-select" <(code_of bin/dotfiles)'
+  '! grep -q "until xcode-select" <(code_of bin/dotfiles scripts/lib/clt.sh)'
 t "A8.6b" "xcodebuild -license only runs against a real Xcode" \
-  '! grep -qE "^[[:space:]]*sudo xcodebuild -license$" <(code_of bin/dotfiles)'
+  '! grep -qE "^[[:space:]]*sudo xcodebuild -license$" <(code_of bin/dotfiles scripts/lib/clt.sh)'
 t "A8.7" "closing advice uses -- flags" \
   '! grep -qE "BIN_NAME install (hosts|prezto|vim|fonts|packages|launchagents)\b" <(code_of bin/dotfiles)'
 t "A8.8" "install never killalls Terminal" \
@@ -418,17 +419,18 @@ t "A11.1b" "each delegate still answers --help itself" '
 # `mise install`. The first arm removes mise from PATH entirely so the
 # install-the-manager branch is exercised; the second stubs a mise that fails.
 t "A11.2" "the node step fails when the manager cannot be installed" '
-  W=$(sandbox); mkdir -p "$W/bin"
+  W=$(sandbox); mkdir -p "$W/bin" "$W/xdg"; ln -s "$PWD/config/mise" "$W/xdg/mise"
   printf "#!/bin/bash\n[ \"\$1\" = list ] && exit 1; exit 9\n" > "$W/bin/brew"; chmod +x "$W/bin/brew"
   sed -n "/^sub_install_node()/,/^}/p" bin/dotfiles > "$W/fn.sh"
-  ! (PATH="$W/bin:/usr/bin:/bin"; source scripts/echos.sh; source scripts/requirers.sh; source "$W/fn.sh"
+  ! (PATH="$W/bin:/usr/bin:/bin"; ROOT_DIR="$PWD"; XDG_CONFIG_HOME="$W/xdg"; source scripts/echos.sh; source scripts/requirers.sh; source "$W/fn.sh"
      sub_install_node >/dev/null 2>&1)'
 
 t "A11.2b" "the node step does not print ok after a failed install" '
-  W=$(sandbox); mkdir -p "$W/bin"
+  W=$(sandbox); mkdir -p "$W/bin" "$W/xdg"; ln -s "$PWD/config/mise" "$W/xdg/mise"
   printf "#!/bin/bash\nexit 3\n" > "$W/bin/mise"; chmod +x "$W/bin/mise"
+  printf "#!/bin/bash\nexit 0\n" > "$W/bin/brew"; chmod +x "$W/bin/brew"
   sed -n "/^sub_install_node()/,/^}/p" bin/dotfiles > "$W/fn.sh"
-  ! (PATH="$W/bin:$PATH"; source scripts/echos.sh; source scripts/requirers.sh; source "$W/fn.sh"
+  ! (PATH="$W/bin:$PATH"; ROOT_DIR="$PWD"; XDG_CONFIG_HOME="$W/xdg"; source scripts/echos.sh; source scripts/requirers.sh; source "$W/fn.sh"
      sub_install_node >/dev/null 2>&1)'
 
 #############################################################################
@@ -554,13 +556,13 @@ done
 CURL
   cat > "$W/bin/sudo" <<SUDO
 #!/bin/bash
-if [ "\$1" = "cp" ] && [ "\$3" = "/etc/hosts" ]; then exit 1; fi
+if [ "\$1" = "cp" ] && [ "\$3" = "$W/hosts" ]; then exit 1; fi
 exit 0
 SUDO
   chmod +x "$W/bin/curl" "$W/bin/sudo"
   sed -n "/^sub_install_hosts()/,/^}/p" bin/dotfiles > "$W/fn.sh"
   cat > "$W/run.sh" <<RUN
-PATH="$W/bin:\$PATH"; ROOT_DIR="$W/df"; DOTFILES_YES=1
+PATH="$W/bin:\$PATH"; ROOT_DIR="$W/df"; DOTFILES_YES=1; DOTFILES_HOSTS_FILE="$W/hosts"
 cd "$PWD" || exit 1
 . scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
 sub_install_hosts
@@ -583,19 +585,19 @@ CURL
   cat > "$W/bin/sudo" <<SUDO
 #!/bin/bash
 printf "%s\n" "\$*" >> "$W/sudo.log"
-if [ "\$1" = "cp" ] && [ "\$3" = "/etc/hosts.backup" ]; then exit 1; fi
+if [ "\$1" = "cp" ] && [ "\$3" = "$W/hosts.backup" ]; then exit 1; fi
 exit 0
 SUDO
   chmod +x "$W/bin/curl" "$W/bin/sudo"
   sed -n "/^sub_install_hosts()/,/^}/p" bin/dotfiles > "$W/fn.sh"
   cat > "$W/run.sh" <<RUN
-PATH="$W/bin:\$PATH"; ROOT_DIR="$W/df"; DOTFILES_YES=1
+PATH="$W/bin:\$PATH"; ROOT_DIR="$W/df"; DOTFILES_YES=1; DOTFILES_HOSTS_FILE="$W/hosts"
 cd "$PWD" || exit 1
 . scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
 sub_install_hosts
 RUN
   timeout 60 bash "$W/run.sh" </dev/null >/dev/null 2>&1; rc=$?
-  [ "$rc" -ne 0 ] && ! grep -qE "cp .* /etc/hosts\$" "$W/sudo.log"'
+  [ "$rc" -ne 0 ] && ! grep -qE "cp .* $W/hosts\$" "$W/sudo.log"'
 
 t "A14.3" "the happy path still returns 0" '
   W=$(sandbox); mkdir -p "$W/bin" "$W/df/system"
@@ -613,11 +615,745 @@ CURL
   chmod +x "$W/bin/curl" "$W/bin/sudo"
   sed -n "/^sub_install_hosts()/,/^}/p" bin/dotfiles > "$W/fn.sh"
   cat > "$W/run.sh" <<RUN
-PATH="$W/bin:\$PATH"; ROOT_DIR="$W/df"; DOTFILES_YES=1
+PATH="$W/bin:\$PATH"; ROOT_DIR="$W/df"; DOTFILES_YES=1; DOTFILES_HOSTS_FILE="$W/hosts"
 cd "$PWD" || exit 1
 . scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
 sub_install_hosts
 RUN
   timeout 60 bash "$W/run.sh" </dev/null >/dev/null 2>&1'
+
+
+#############################################################################
+section "N0 — helpers for the new-Mac install-flow tests"
+#############################################################################
+
+# fn_of <name> [file] -- print one top-level function of a script.
+fn_of() { sed -n "/^$1()/,/^}/p" "${2:-bin/dotfiles}"; }
+# stub <dir> <name> <body...> -- write an executable stub into <dir>.
+stub() { local d="$1" n="$2"; shift 2; mkdir -p "$d"; printf '#!/bin/bash\n%s\n' "$*" > "$d/$n"; chmod +x "$d/$n"; }
+
+#############################################################################
+section "N1 — SSH key on a clean machine (1.1)"
+#############################################################################
+
+# The keygen stub mirrors the real one: it cannot save a key into a
+# directory that does not exist.
+_ssh_keygen_stub='f=""; while [ $# -gt 0 ]; do [ "$1" = "-f" ] && f="$2"; shift; done
+[ -d "$(dirname "$f")" ] || { echo "Saving key \"$f\" failed: No such file or directory" >&2; exit 1; }
+: > "$f"; : > "$f.pub"; exit 0'
+_ssh_run() { # _ssh_run <W> -- run sub_install_ssh in a sandbox HOME with no .ssh
+  local W="$1"
+  fn_of sub_install_ssh > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="$W/bin:/usr/bin:/bin"; HOME="$W/h"; USER=tester; ROOT_DIR="$W/df"; DOTFILES_YES=1
+cd "$PWD" || exit 1
+. scripts/echos.sh; . scripts/lib/ssh.sh; . "$W/fn.sh"
+sub_install_ssh
+RUN
+  timeout 20 bash "$W/run.sh" </dev/null
+}
+t "N1.1" "a clean HOME with no .ssh still gets a key, in a 700 directory" '
+  W=$(sandbox); mkdir -p "$W/h" "$W/bin" "$W/df"
+  stub "$W/bin" ssh-keygen "$_ssh_keygen_stub"; stub "$W/bin" ssh-add "exit 0"
+  stub "$W/bin" hostname "echo box"; stub "$W/bin" xcode-select "exit 1"
+  _ssh_run "$W" >/dev/null 2>&1
+  [ -f "$W/h/.ssh/id_ed25519" ] && [ "$(ls -ld "$W/h/.ssh" | cut -c1-10)" = "drwx------" ]'
+t "N1.2" "a failing ssh-keygen returns non-zero and prints no ok" '
+  W=$(sandbox); mkdir -p "$W/h" "$W/bin" "$W/df"
+  stub "$W/bin" ssh-keygen "exit 1"; stub "$W/bin" ssh-add "exit 0"
+  stub "$W/bin" hostname "echo box"; stub "$W/bin" xcode-select "exit 1"
+  out=$(_ssh_run "$W" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && case "$out" in *"01mok"*) false ;; *) true ;; esac'
+t "N1.3" "git is never called for the key comment while the CLT are missing" '
+  W=$(sandbox); mkdir -p "$W/h" "$W/bin" "$W/df/config/git"
+  stub "$W/bin" ssh-keygen "$_ssh_keygen_stub"; stub "$W/bin" ssh-add "exit 0"
+  stub "$W/bin" hostname "echo box"; stub "$W/bin" xcode-select "exit 1"
+  stub "$W/bin" git "echo called >> \"$W/git.log\""
+  _ssh_run "$W" >/dev/null 2>&1
+  [ ! -e "$W/git.log" ] && [ -f "$W/h/.ssh/id_ed25519" ]'
+t "N1.4" "with the CLT present the key comment still comes from git config" '
+  W=$(sandbox); mkdir -p "$W/h" "$W/bin" "$W/df/config/git"
+  printf "[user]\n\temail = someone@example.invalid\n" > "$W/df/config/git/config.local"
+  stub "$W/bin" ssh-keygen "printf \"%s\\n\" \"\$@\" > \"$W/keygen.args\"; f=\"\"; while [ \$# -gt 0 ]; do [ \"\$1\" = -f ] && f=\"\$2\"; shift; done; : > \"\$f\""
+  stub "$W/bin" ssh-add "exit 0"; stub "$W/bin" hostname "echo box"; stub "$W/bin" xcode-select "echo /Library/Developer/CommandLineTools"
+  ln -s "$(command -v git)" "$W/bin/git"
+  _ssh_run "$W" >/dev/null 2>&1
+  grep -q "someone@example.invalid" "$W/keygen.args"'
+
+
+#############################################################################
+section "N2 — shared Command Line Tools installer (1.2)"
+#############################################################################
+
+_clt_line() { printf '* Label: %s\n\tTitle: x, Version: 1, Size: 1KiB, Recommended: YES,\n' "$1"; }
+_clt_pick() { # _clt_pick <label>... -- feed labels to the picker, print its answer
+  local l
+  for l in "$@"; do _clt_line "$l"; done | bash -c '. scripts/lib/clt.sh; dotfiles_clt_pick_label'
+}
+t "N2.1" "picks 27.0 from an ascending, a descending and a shuffled listing" '
+  a="Command Line Tools for Xcode 26.5-26.5"; b="Command Line Tools for Xcode 27.0-27.0"; c="Command Line Tools for Xcode 26.6-26.6"
+  [ "$(_clt_pick "$a" "$b" "$c")" = "$b" ] && [ "$(_clt_pick "$b" "$c" "$a")" = "$b" ] && [ "$(_clt_pick "$c" "$a" "$b")" = "$b" ]'
+t "N2.2" "a stable label beats a beta of the same version" '
+  s="Command Line Tools for Xcode 27.0-27.0"; b="Command Line Tools beta 3 for Xcode-27.0"
+  [ "$(_clt_pick "$b" "$s")" = "$s" ] && [ "$(_clt_pick "$s" "$b")" = "$s" ]'
+t "N2.3" "a beta is still picked when it is the only thing offered" '
+  b="Command Line Tools beta 3 for Xcode-27.0"
+  [ "$(_clt_pick "$b" "Command Line Tools for Xcode 26.6-26.6")" = "$b" ]'
+t "N2.4" "the older listing form without Label: is parsed" '
+  out=$(printf "   * Command Line Tools for Xcode-15.3\n   * Command Line Tools for Xcode-16.0\n" | bash -c ". scripts/lib/clt.sh; dotfiles_clt_pick_label")
+  [ "$out" = "Command Line Tools for Xcode-16.0" ]'
+t "N2.5" "empty input prints nothing and fails" '
+  out=$(printf "" | bash -c ". scripts/lib/clt.sh; dotfiles_clt_pick_label"); rc=$?
+  [ -z "$out" ] && [ "$rc" -ne 0 ]'
+t "N2.6" "unrelated updates are ignored" '
+  out=$(printf "* Label: macOS Tahoe 27.0.1-99\n" | bash -c ". scripts/lib/clt.sh; dotfiles_clt_pick_label")
+  [ -z "$out" ]'
+t "N2.7" "clt.sh has no dependency on echos.sh" '
+  W=$(sandbox); out=$(env -i PATH=/usr/bin:/bin bash -c ". scripts/lib/clt.sh; declare -F dotfiles_install_clt" 2>&1) &&
+  [ "$out" = "dotfiles_install_clt" ]'
+
+# Stubs read $SW at run time, so they are written once.
+_clt_stubs() {
+  local W="$1"; mkdir -p "$W/bin"
+  cat > "$W/bin/xcode-select" <<'STUB'
+#!/bin/bash
+case "$1" in
+  -p | --print-path) [ -e "$SW/clt-installed" ] || exit 1; echo "${CLT_PATH:-/Library/Developer/CommandLineTools}" ;;
+  -s) echo "xcode-select $*" >> "$SW/log"; : > "$SW/clt-installed" ;;
+esac
+STUB
+  cat > "$W/bin/softwareupdate" <<'STUB'
+#!/bin/bash
+case "$1" in
+  --list)
+    n=$(($(cat "$SW/list.n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$SW/list.n"
+    echo "softwareupdate --list (sentinel: $([ -e "$DOTFILES_CLT_SENTINEL" ] && echo present || echo absent))" >> "$SW/log"
+    [ -f "$SW/list.$n" ] && cat "$SW/list.$n" ;;
+  --install) echo "softwareupdate $*" >> "$SW/log"; exit "$(cat "$SW/install.rc" 2>/dev/null || echo 0)" ;;
+esac
+STUB
+  cat > "$W/bin/sudo" <<'STUB'
+#!/bin/bash
+echo "sudo $*" >> "$SW/log"
+case "$1" in -v) exit 0 ;; -n) shift ;; esac
+exec "$@"
+STUB
+  cat > "$W/bin/xcodebuild" <<'STUB'
+#!/bin/bash
+echo "xcodebuild $*" >> "$SW/log"
+STUB
+  chmod +x "$W/bin/"*
+}
+_clt_run() { # _clt_run <W> <shell code> -- run code with clt.sh sourced against the stubs
+  local W="$1"
+  SW="$W" DOTFILES_CLT_SENTINEL="$W/sentinel" DOTFILES_CLT_RETRY_SLEEP=0 PATH="$W/bin:/usr/bin:/bin" \
+    bash -c ". scripts/lib/clt.sh; $2" </dev/null
+}
+_clt_offer() { # _clt_offer <W> <list-call-number> <label>...
+  local W="$1" n="$2" l; shift 2
+  for l in "$@"; do _clt_line "$l"; done > "$W/list.$n"
+}
+t "N2.8" "already installed is a no-op success" '
+  W=$(sandbox); _clt_stubs "$W"; : > "$W/clt-installed"
+  _clt_run "$W" dotfiles_install_clt >/dev/null 2>&1 && [ ! -e "$W/log" ]'
+t "N2.9" "the highest label reaches softwareupdate --install and xcode-select -s runs" '
+  W=$(sandbox); _clt_stubs "$W"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 26.5-26.5" "Command Line Tools for Xcode 27.0-27.0" "Command Line Tools for Xcode 26.6-26.6"
+  _clt_run "$W" dotfiles_install_clt >/dev/null 2>&1 &&
+  grep -q "^softwareupdate --install Command Line Tools for Xcode 27.0-27.0 --agree-to-license" "$W/log" &&
+  grep -q "^sudo xcode-select -s /Library/Developer/CommandLineTools" "$W/log"'
+t "N2.10" "the sentinel exists while softwareupdate lists and is gone afterwards" '
+  W=$(sandbox); _clt_stubs "$W"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+  _clt_run "$W" dotfiles_install_clt >/dev/null 2>&1
+  grep -q "sentinel: present" "$W/log" && [ ! -e "$W/sentinel" ]'
+t "N2.11" "an empty first listing is retried" '
+  W=$(sandbox); _clt_stubs "$W"
+  _clt_offer "$W" 3 "Command Line Tools for Xcode 27.0-27.0"
+  _clt_run "$W" dotfiles_install_clt >/dev/null 2>&1 &&
+  [ "$(grep -c "softwareupdate --list" "$W/log")" -eq 3 ] && grep -q "softwareupdate --install" "$W/log"'
+t "N2.12" "no label after three listings fails, names the manual fallback, removes the sentinel" '
+  W=$(sandbox); _clt_stubs "$W"
+  out=$(_clt_run "$W" dotfiles_install_clt 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(grep -c "softwareupdate --list" "$W/log")" -eq 3 ] && [ ! -e "$W/sentinel" ] &&
+  case "$out" in *"xcode-select --install"*) true ;; *) false ;; esac'
+t "N2.13" "a failed install fails, removes the sentinel and skips xcode-select -s" '
+  W=$(sandbox); _clt_stubs "$W"; echo 1 > "$W/install.rc"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+  out=$(_clt_run "$W" dotfiles_install_clt 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ ! -e "$W/sentinel" ] && [ "$(grep -c "xcode-select -s" "$W/log")" -eq 0 ] &&
+  case "$out" in *"xcode-select --install"*) true ;; *) false ;; esac'
+t "N2.14" "no Xcode licence prompt when only the Command Line Tools are selected" '
+  W=$(sandbox); _clt_stubs "$W"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+  _clt_run "$W" dotfiles_install_clt >/dev/null 2>&1 && [ "$(grep -c xcodebuild "$W/log")" -eq 0 ]'
+t "N2.15" "the licence is accepted when the selected path is inside Xcode.app" '
+  W=$(sandbox); _clt_stubs "$W"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+  CLT_PATH=/Applications/Xcode.app/Contents/Developer _clt_run "$W" dotfiles_install_clt >/dev/null 2>&1
+  grep -q "^sudo xcodebuild -license accept" "$W/log"'
+t "N2.16" "sub_install_clt is a thin wrapper over dotfiles_install_clt" '
+  [ "$(fn_of sub_install_clt | grep -c "dotfiles_install_clt")" -eq 1 ] && [ "$(fn_of sub_install_clt | grep -c softwareupdate)" -eq 0 ]'
+
+
+#############################################################################
+section "N3 — remote-install.sh on a bare Mac (1.3)"
+#############################################################################
+
+_ri_stubs() {
+  local W="$1"; _clt_stubs "$W"; mkdir -p "$W/h"
+  cat > "$W/bin/uname" <<'STUB'
+#!/bin/bash
+[ "$1" = "-m" ] && echo arm64 || echo Darwin
+STUB
+  cat > "$W/bin/curl" <<'STUB'
+#!/bin/bash
+echo "curl $*" >> "$SW/log"
+o=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && o="$2"; shift; done
+cp "$REPO/scripts/lib/clt.sh" "$o"
+STUB
+  cat > "$W/bin/git" <<'STUB'
+#!/bin/bash
+echo "git $*" >> "$SW/log"
+if [ "$1" = "clone" ]; then
+  mkdir -p "$3/.git" "$3/bin"
+  printf '#!/bin/bash\necho "dotfiles $*" >> "%s/log"\n' "$SW" > "$3/bin/dotfiles"
+  chmod +x "$3/bin/dotfiles"
+fi
+STUB
+  chmod +x "$W/bin/"*
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+}
+_ri_run() { # _ri_run <W> [extra env...] -- run remote-install.sh in an empty environment
+  local W="$1"; shift
+  env -i HOME="$W/h" PATH="$W/bin:/usr/bin:/bin" TMPDIR="$W" SW="$W" REPO="$PWD" \
+    DOTFILES_CLT_SENTINEL="$W/sentinel" DOTFILES_CLT_RETRY_SLEEP=0 "$@" \
+    bash remote-install.sh </dev/null
+}
+t "N3.1" "with no CLT it installs them headlessly before anything calls git" '
+  W=$(sandbox); _ri_stubs "$W"
+  _ri_run "$W" >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && grep -q "softwareupdate --install" "$W/log" &&
+  [ "$(grep -c "^git --version" "$W/log")" -eq 0 ] &&
+  [ "$(_first_line "softwareupdate --install" "$W/log")" -lt "$(_first_line "git clone" "$W/log")" ]'
+t "N3.2" "clt.sh is fetched over https from the pinned ref" '
+  W=$(sandbox); _ri_stubs "$W"
+  _ri_run "$W" DOTFILES_REF=abc123 >/dev/null 2>&1
+  grep -q -- "--proto =https" "$W/log" &&
+  grep -q "https://raw.githubusercontent.com/STiXzoOR/dotfiles/abc123/scripts/lib/clt.sh" "$W/log"'
+t "N3.3" "the ref defaults to main" '
+  W=$(sandbox); _ri_stubs "$W"
+  _ri_run "$W" >/dev/null 2>&1
+  grep -q "STiXzoOR/dotfiles/main/scripts/lib/clt.sh" "$W/log"'
+t "N3.4" "the clone is followed by dotfiles install" '
+  W=$(sandbox); _ri_stubs "$W"
+  _ri_run "$W" >/dev/null 2>&1
+  grep -q "^git clone https://github.com/STiXzoOR/dotfiles $W/h/.dotfiles" "$W/log" && grep -q "^dotfiles install$" "$W/log"'
+t "N3.5" "with the CLT present nothing is downloaded or installed" '
+  W=$(sandbox); _ri_stubs "$W"; : > "$W/clt-installed"
+  _ri_run "$W" >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && [ "$(grep -c "^curl\|softwareupdate" "$W/log")" -eq 0 ] && grep -q "^git clone" "$W/log"'
+t "N3.6" "a second run continues the existing checkout: no clone, install still runs" '
+  W=$(sandbox); _ri_stubs "$W"; : > "$W/clt-installed"
+  _ri_run "$W" >/dev/null 2>&1
+  : > "$W/log"
+  out=$(_ri_run "$W" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(grep -c "^git clone" "$W/log")" -eq 0 ] && grep -q "^dotfiles install$" "$W/log" &&
+  case "$out" in *"continuing"*) true ;; *) false ;; esac'
+t "N3.7" "a target that is not a checkout aborts" '
+  W=$(sandbox); _ri_stubs "$W"; : > "$W/clt-installed"; mkdir -p "$W/h/.dotfiles"
+  ! _ri_run "$W" >/dev/null 2>&1 && [ "$(grep -c "^dotfiles install" "$W/log" 2>/dev/null)" -eq 0 ]'
+t "N3.8" "a failed Command Line Tools install aborts before the clone" '
+  W=$(sandbox); _ri_stubs "$W"; echo 1 > "$W/install.rc"
+  ! _ri_run "$W" >/dev/null 2>&1 && [ "$(grep -c "^git clone" "$W/log")" -eq 0 ]'
+t "N3.9" "the script asks for sudo up front" '
+  W=$(sandbox); _ri_stubs "$W"; : > "$W/clt-installed"
+  _ri_run "$W" >/dev/null 2>&1
+  [ "$(head -1 "$W/log")" = "sudo -v" ]'
+t "N3.10" "the script never probes with git --version" \
+  '[ "$(code_of remote-install.sh | grep -c "git --version")" -eq 0 ]'
+
+
+#############################################################################
+section "N4 — install order, failures and summary (1.4)"
+#############################################################################
+
+# A sandbox copy of the repo whose step functions are replaced by stubs that
+# append their name to $LOG. The overrides are spliced in just before the
+# dispatcher, so `$0 install --prezto` re-executes the copy and reaches the
+# stub. FAIL=<step> makes that one step return 1.
+_mk_repo() { # _mk_repo <W> <step>... -- steps listed are NOT stubbed
+  local W="$1"; shift
+  mkdir -p "$W/repo/bin" "$W/h"
+  cp -R scripts "$W/repo/scripts"
+  {
+    echo '_log() { echo "$*" >> "$LOG"; }'
+    echo 'sudo() { :; }'
+    echo 'dotfiles_sudo_keepalive() { _log keepalive; }'
+    echo 'require_brew() { _log "brew:$*"; }'
+    local s keep
+    for s in install_clt install_homebrew install_ssh install_prezto install_node install_packages install_fonts \
+      install_launchagents install_claude install_codex install_hosts link configure; do
+      keep=0; for k in "$@"; do [ "$k" = "$s" ] && keep=1; done
+      [ "$keep" = 1 ] && continue
+      echo "sub_$s() { _log ${s#install_}; case \",\${FAIL:-},\" in *,${s#install_},*) return 1 ;; esac; return 0; }"
+    done
+  } > "$W/ov.sh"
+  awk -v f="$W/ov.sh" '/^# Routing\./ { while ((getline l < f) > 0) print l } { print }' bin/dotfiles > "$W/repo/bin/dotfiles"
+  chmod +x "$W/repo/bin/dotfiles"
+}
+_run_repo() { # _run_repo <W> <args...>
+  local W="$1"; shift
+  env HOME="$W/h" XDG_CONFIG_HOME="$W/h/.config" LOG="$W/log" FAIL="${FAIL:-}" bash "$W/repo/bin/dotfiles" "$@" </dev/null
+}
+_log_line() { tr '\n' ' ' < "$1" | sed -E 's/ +$//'; }
+
+t "N4.1" "plain install runs keep-alive, CLT, Homebrew, stow, then SSH, and no node" '
+  W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install >/dev/null 2>&1
+  [ "$(_log_line "$W/log")" = "keepalive clt homebrew brew:stow ssh" ]'
+t "N4.2" "plain install with every step green prints the banner and the complementary commands" '
+  W=$(sandbox); _mk_repo "$W"; out=$(_run_repo "$W" install 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && case "$out" in *"All done"*"install --node"*"install --codex"*"install --all"*) true ;; *) false ;; esac'
+t "N4.3" "a failed CLT step aborts before Homebrew" '
+  W=$(sandbox); _mk_repo "$W"; FAIL=clt _run_repo "$W" install >/dev/null 2>&1; rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive clt" ]'
+t "N4.4" "a failed SSH step is named, there is no success banner, and the status is non-zero" '
+  W=$(sandbox); _mk_repo "$W"; out=$(FAIL=ssh _run_repo "$W" install 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && case "$out" in *"All done"*) false ;; *ssh*) true ;; *) false ;; esac'
+t "N4.5" "a failed Homebrew step does not stop stow and SSH from being tried" '
+  W=$(sandbox); _mk_repo "$W"; out=$(FAIL=homebrew _run_repo "$W" install 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive clt homebrew brew:stow ssh" ] &&
+  case "$out" in *"All done"*) false ;; *homebrew*) true ;; *) false ;; esac'
+t "N4.6" "install --all runs the steps in the documented order with hosts last" '
+  W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install --all >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] &&
+  [ "$(_log_line "$W/log")" = "keepalive prezto link node packages fonts launchagents claude codex configure hosts" ]'
+t "N4.7" "install --all keeps going after a failure, names it and returns non-zero" '
+  W=$(sandbox); _mk_repo "$W"; out=$(FAIL=packages _run_repo "$W" install --all 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive prezto link node packages fonts launchagents claude codex configure hosts" ] &&
+  case "$out" in *"packages"*) true ;; *) false ;; esac'
+t "N4.8" "install --all names every failed step" '
+  W=$(sandbox); _mk_repo "$W"
+  out=$(FAIL=node,hosts _run_repo "$W" install --all 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && case "$out" in *node*hosts*) true ;; *) false ;; esac'
+t "N4.9" "install --all with every step green reports success" '
+  W=$(sandbox); _mk_repo "$W"; out=$(_run_repo "$W" install --all 2>&1)
+  case "$out" in *"All done"*) true ;; *) false ;; esac'
+t "N4.10" "install --all starts its own sudo keep-alive before the first step" '
+  W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install --all >/dev/null 2>&1
+  [ "$(head -1 "$W/log")" = "keepalive" ]'
+t "N4.11" "the install help lists --codex" \
+  'out=$(bash bin/dotfiles install --help 2>&1); case "$out" in *"--codex"*) true ;; *) false ;; esac'
+t "N4.12" "install --codex errors clearly when scripts/install_codex.sh is missing" '
+  W=$(sandbox); _mk_repo "$W" install_codex; command rm -f "$W/repo/scripts/install_codex.sh"
+  out=$(DOTFILES_YES=1 _run_repo "$W" install --codex 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && case "$out" in *"install_codex.sh is missing"*) true ;; *) false ;; esac'
+t "N4.13" "install --codex runs scripts/install_codex.sh and propagates its status" '
+  W=$(sandbox); _mk_repo "$W" install_codex
+  printf "#!/bin/bash\necho ran >> \"$W/codex.log\"\nexit 0\n" > "$W/repo/scripts/install_codex.sh"
+  DOTFILES_YES=1 _run_repo "$W" install --codex >/dev/null 2>&1 && [ -f "$W/codex.log" ] &&
+  printf "#!/bin/bash\nexit 4\n" > "$W/repo/scripts/install_codex.sh" &&
+  ! DOTFILES_YES=1 _run_repo "$W" install --codex >/dev/null 2>&1'
+
+#############################################################################
+section "N5 — mise runs after link, with gpg (1.5)"
+#############################################################################
+
+_node_run() { # _node_run <W> -- run sub_install_node against stubs
+  local W="$1"
+  fn_of sub_install_node > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="$W/bin:/usr/bin:/bin"; HOME="$W/h"; XDG_CONFIG_HOME="$W/xdg"; ROOT_DIR="$PWD"; BIN_NAME=dotfiles
+unset MISE_GLOBAL_CONFIG_FILE
+cd "$PWD" || exit 1
+. scripts/echos.sh; . scripts/requirers.sh; . "$W/fn.sh"
+sub_install_node
+RUN
+  timeout 20 bash "$W/run.sh" </dev/null
+}
+_node_stubs() { # _node_stubs <W> <brew-list-exit>
+  local W="$1"
+  stub "$W/bin" mise 'echo "mise $* GLOBAL=${MISE_GLOBAL_CONFIG_FILE-unset}" >> "'"$W"'/log"'
+  stub "$W/bin" brew '[ "$1" = list ] && exit '"$2"'; echo "brew $*" >> "'"$W"'/log"; exit 0'
+  mkdir -p "$W/h" "$W/xdg"
+}
+t "N5.1" "unlinked: fails, says to run link, and never calls mise" '
+  W=$(sandbox); _node_stubs "$W" 0
+  out=$(_node_run "$W" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ ! -e "$W/log" ] && case "$out" in *"link"*) true ;; *) false ;; esac'
+t "N5.2" "a copied (not symlinked) ~/.config/mise does not count as linked" '
+  W=$(sandbox); _node_stubs "$W" 0; cp -R config/mise "$W/xdg/mise"
+  ! _node_run "$W" >/dev/null 2>&1 && [ ! -e "$W/log" ]'
+t "N5.3" "linked: mise install runs without MISE_GLOBAL_CONFIG_FILE" '
+  W=$(sandbox); _node_stubs "$W" 0; ln -s "$PWD/config/mise" "$W/xdg/mise"
+  _node_run "$W" >/dev/null 2>&1 && grep -q "^mise install GLOBAL=unset$" "$W/log"'
+t "N5.4" "gnupg is installed when brew does not have it" '
+  W=$(sandbox); _node_stubs "$W" 1; ln -s "$PWD/config/mise" "$W/xdg/mise"
+  _node_run "$W" >/dev/null 2>&1; grep -q "^brew install gnupg" "$W/log"'
+t "N5.5" "gnupg is left alone when brew already has it" '
+  W=$(sandbox); _node_stubs "$W" 0; ln -s "$PWD/config/mise" "$W/xdg/mise"
+  _node_run "$W" >/dev/null 2>&1; [ "$(grep -c "^brew install" "$W/log")" -eq 0 ]'
+t "N5.6" "a failing gnupg install stops the step before mise runs" '
+  W=$(sandbox); _node_stubs "$W" 1; stub "$W/bin" brew "[ \"\$1\" = list ] && exit 1; exit 9"
+  ln -s "$PWD/config/mise" "$W/xdg/mise"
+  ! _node_run "$W" >/dev/null 2>&1 && [ ! -e "$W/log" ]'
+t "N5.7" "plain install no longer runs the node step" \
+  '[ "$(fn_of sub_install | grep -c "sub_install_node")" -eq 0 ]'
+
+
+#############################################################################
+section "N4b — the Homebrew step reports, and never exits the whole run"
+#############################################################################
+
+_brew_step_run() { # _brew_step_run <W> -- run sub_install_homebrew against stubs, print "after" if it returned
+  local W="$1"
+  fn_of sub_install_homebrew > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="$W/bin:$PWD/bin:/usr/bin:/bin"; HOME="$W/h"; HOMEBREW_PREFIX="$W"; DOTFILES_YES=1
+cd "$PWD" || exit 1
+. scripts/echos.sh; . scripts/requirers.sh; . "$W/fn.sh"
+sub_install_homebrew; rc=\$?
+echo "after rc=\$rc"
+RUN
+  timeout 20 bash "$W/run.sh" </dev/null
+}
+t "N4b.1" "brew doctor warnings do not fail the Homebrew step" '
+  W=$(sandbox); mkdir -p "$W/h"; stub "$W/bin" brew "[ \"\$1\" = doctor ] && exit 1; exit 0"
+  out=$(_brew_step_run "$W" 2>&1); case "$out" in *"after rc=0"*) true ;; *) false ;; esac'
+t "N4b.2" "a failed Homebrew install returns to the caller instead of exiting the script" '
+  W=$(sandbox); mkdir -p "$W/h"; stub "$W/bin" curl "echo exit 1"
+  out=$(_brew_step_run "$W" 2>&1); case "$out" in *"after rc=0"*) false ;; *"after rc="*) true ;; *) false ;; esac'
+
+#############################################################################
+section "N6 — the packages step never aborts halfway (1.6)"
+#############################################################################
+
+_pk_setup() { # _pk_setup <W> -- repo with a Brewfile, code.list and stub brew/code
+  local W="$1"; mkdir -p "$W/repo/packages" "$W/repo/scripts/lib" "$W/bin" "$W/h"; cp scripts/lib/lists.sh "$W/repo/scripts/lib/"
+  printf 'tap "acme/tools"\nbrew "thing"\nmas "Some App", id: 1\n' > "$W/repo/Brewfile"
+  printf '# editors\na.one\nb.two\nc.three\n' > "$W/repo/packages/code.list"
+  cat > "$W/bin/brew" <<'STUB'
+#!/bin/bash
+echo "brew $*" >> "$SW/log"
+[ "$1" = bundle ] && exit "${BUNDLE_RC:-0}"
+if [ "$1" = trust ] && [ -n "${TRUST_FAIL:-}" ]; then echo "Error: trust nope" >&2; exit 1; fi
+exit 0
+STUB
+  cat > "$W/bin/code" <<'STUB'
+#!/bin/bash
+echo "code $*" >> "$SW/log"
+case "$1" in
+  --list-extensions) printf 'a.one\nB.Two\n' ;;
+  --install-extension) [ "$2" = "${FAILEXT:-}" ] && exit 1; exit 0 ;;
+esac
+STUB
+  chmod +x "$W/bin/brew" "$W/bin/code"
+}
+_pk_run() { # _pk_run <W> [env...] -- run sub_install_packages; env assignments follow
+  local W="$1"; shift
+  fn_of sub_install_packages > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="$W/bin:/usr/bin:/bin"; HOME="$W/h"; ROOT_DIR="$W/repo"; DOTFILES_YES=1
+DOTFILES_CODE_BIN_FALLBACK="$W/no-such-code"
+cd "$PWD" || exit 1
+. scripts/echos.sh; . scripts/requirers.sh; . "$W/fn.sh"
+sub_install_packages
+RUN
+  env SW="$W" "$@" timeout 30 bash "$W/run.sh" </dev/null
+}
+t "N6.1" "each tap is tapped and then trusted" '
+  W=$(sandbox); _pk_setup "$W"; _pk_run "$W" >/dev/null 2>&1
+  [ "$(_first_line "brew tap acme/tools" "$W/log")" -gt 0 ] &&
+  [ "$(_first_line "brew tap acme/tools" "$W/log")" -lt "$(_first_line "brew trust --tap acme/tools" "$W/log")" ]'
+t "N6.2" "a failed tap trust shows the brew message and the step carries on" '
+  W=$(sandbox); _pk_setup "$W"; out=$(_pk_run "$W" TRUST_FAIL=1 2>&1)
+  case "$out" in *"trust nope"*) grep -q "bundle install" "$W/log" ;; *) false ;; esac'
+t "N6.3" "the extension step still runs after a failed bundle, and the step returns non-zero" '
+  W=$(sandbox); _pk_setup "$W"; _pk_run "$W" BUNDLE_RC=1 >/dev/null 2>&1; rc=$?
+  [ "$rc" -ne 0 ] && grep -q "code --install-extension c.three" "$W/log"'
+t "N6.4" "the installed extensions are listed exactly once" '
+  W=$(sandbox); _pk_setup "$W"; _pk_run "$W" >/dev/null 2>&1
+  [ "$(grep -c "code --list-extensions" "$W/log")" -eq 1 ]'
+t "N6.5" "only the missing extensions are installed (ids compare case-insensitively)" '
+  W=$(sandbox); _pk_setup "$W"; _pk_run "$W" >/dev/null 2>&1
+  [ "$(grep -c "code --install-extension" "$W/log")" -eq 1 ] && grep -q "code --install-extension c.three" "$W/log"'
+t "N6.6" "a failed extension install is counted, named and fails the step" '
+  W=$(sandbox); _pk_setup "$W"; out=$(_pk_run "$W" FAILEXT=c.three 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && case "$out" in *"c.three"*) true ;; *) false ;; esac'
+t "N6.7" "Brewfile.local is bundled after Brewfile when it exists" '
+  W=$(sandbox); _pk_setup "$W"; printf "brew \"private-thing\"\n" > "$W/repo/Brewfile.local"
+  _pk_run "$W" >/dev/null 2>&1
+  [ "$(_first_line "bundle install --file=Brewfile" "$W/log")" -gt 0 ] &&
+  [ "$(_first_line "bundle install --file=Brewfile" "$W/log")" -lt "$(_first_line "bundle install --file=Brewfile.local" "$W/log")" ]'
+t "N6.8" "Brewfile.local is not bundled when absent" '
+  W=$(sandbox); _pk_setup "$W"; _pk_run "$W" >/dev/null 2>&1
+  [ "$(grep -c "Brewfile.local" "$W/log")" -eq 0 ]'
+t "N6.9" "a Brewfile.local tap is trusted too" '
+  W=$(sandbox); _pk_setup "$W"; printf "tap \"private/tap\"\n" > "$W/repo/Brewfile.local"
+  _pk_run "$W" >/dev/null 2>&1; grep -q "brew trust --tap private/tap" "$W/log"'
+t "N6.10" "packages/code.local.list extensions are installed too" '
+  W=$(sandbox); _pk_setup "$W"; printf "d.four\n" > "$W/repo/packages/code.local.list"
+  _pk_run "$W" >/dev/null 2>&1; grep -q "code --install-extension d.four" "$W/log"'
+t "N6.11" "the mas sign-in warning is printed even when the bundle failed" '
+  W=$(sandbox); _pk_setup "$W"; out=$(_pk_run "$W" BUNDLE_RC=1 2>&1)
+  case "$out" in *"mas entries need"*) true ;; *) false ;; esac'
+t "N6.12" "brew cleanup still runs after a failed bundle" '
+  W=$(sandbox); _pk_setup "$W"; _pk_run "$W" BUNDLE_RC=1 >/dev/null 2>&1; grep -q "brew cleanup" "$W/log"'
+t "N6.13" "a missing code CLI fails the step and does not claim the extensions were installed" '
+  W=$(sandbox); _pk_setup "$W"; command rm -f "$W/bin/code"
+  out=$(_pk_run "$W" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && case "$out" in *"extensions installed"*) false ;; *"VS Code"*) true ;; *) false ;; esac'
+t "N6.14" "the happy path returns 0" '
+  W=$(sandbox); _pk_setup "$W"; _pk_run "$W" >/dev/null 2>&1'
+t "N6.15" "declining the Brewfile prompt skips the step without failing" '
+  W=$(sandbox); _pk_setup "$W"
+  fn_of sub_install_packages > "$W/fn.sh"
+  printf "PATH=\"%s/bin:/usr/bin:/bin\"; HOME=\"%s/h\"; ROOT_DIR=\"%s/repo\"\ncd \"%s\" || exit 1\n. scripts/echos.sh; . \"%s/fn.sh\"\nsub_install_packages\n" "$W" "$W" "$W" "$PWD" "$W" > "$W/run2.sh"
+  SW="$W" bash "$W/run2.sh" </dev/null >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && [ ! -e "$W/log" ]'
+
+
+#############################################################################
+section "N7 — submodules and Prezto runcoms (1.7)"
+#############################################################################
+
+# Runs one bin/dotfiles function with dotfiles_ensure_submodule replaced by a
+# logger, so no submodule is ever fetched.
+_sm_run() { # _sm_run <W> <function> -- ROOT_DIR/DOTFILES_DIR are $W/df
+  local W="$1" fn="$2"
+  fn_of "$fn" > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="/usr/bin:/bin"; HOME="$W/h"; ROOT_DIR="$W/df"; DOTFILES_DIR="$W/df"; DOTFILES_YES=1
+cd "$PWD" || exit 1
+. scripts/echos.sh; . scripts/lib/fs.sh
+dotfiles_ensure_submodule() { echo "ensure \$1" >> "$W/log"; [ "\$1" != "\${FAIL_SM:-}" ]; }
+. "$W/fn.sh"
+$fn
+RUN
+  timeout 20 bash "$W/run.sh" </dev/null
+}
+t "N7.1" "install --prezto also initialises modules/fzf-tab" '
+  W=$(sandbox); mkdir -p "$W/df/scripts" "$W/h"; printf "exit 0\n" > "$W/df/scripts/install_prezto.zsh"
+  _sm_run "$W" sub_install_prezto >/dev/null 2>&1
+  grep -q "^ensure modules/prezto$" "$W/log" && grep -q "^ensure modules/fzf-tab$" "$W/log"'
+t "N7.2" "configure --defaults initialises every apps/* submodule listed in .gitmodules, and only those" '
+  W=$(sandbox); mkdir -p "$W/df/macos" "$W/h"
+  printf "[submodule \"apps/a/one\"]\n\tpath = apps/a/one\n[submodule \"apps/b/two\"]\n\tpath = apps/b/two\n[submodule \"modules/prezto\"]\n\tpath = modules/prezto\n" > "$W/df/.gitmodules"
+  printf "echo defaults >> \"%s/log\"\n" "$W" > "$W/df/macos/defaults-x.sh"
+  _sm_run "$W" sub_configure_defaults >/dev/null 2>&1
+  grep -q "^ensure apps/a/one$" "$W/log" && grep -q "^ensure apps/b/two$" "$W/log" &&
+  [ "$(grep -c "modules/" "$W/log")" -eq 0 ]'
+t "N7.3" "the submodules are initialised before the defaults scripts run" '
+  W=$(sandbox); mkdir -p "$W/df/macos" "$W/h"
+  printf "[submodule \"apps/a/one\"]\n\tpath = apps/a/one\n" > "$W/df/.gitmodules"
+  printf "echo defaults >> \"%s/log\"\n" "$W" > "$W/df/macos/defaults-x.sh"
+  _sm_run "$W" sub_configure_defaults >/dev/null 2>&1
+  [ "$(_first_line "ensure apps/a/one" "$W/log")" -gt 0 ] &&
+  [ "$(_first_line "ensure apps/a/one" "$W/log")" -lt "$(_first_line defaults "$W/log")" ]'
+t "N7.4" "a submodule that cannot be initialised warns and the defaults still run" '
+  W=$(sandbox); mkdir -p "$W/df/macos" "$W/h"
+  printf "[submodule \"apps/a/one\"]\n\tpath = apps/a/one\n[submodule \"apps/b/two\"]\n\tpath = apps/b/two\n" > "$W/df/.gitmodules"
+  printf "echo defaults >> \"%s/log\"\n" "$W" > "$W/df/macos/defaults-x.sh"
+  out=$(FAIL_SM=apps/a/one _sm_run "$W" sub_configure_defaults 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && grep -q "^defaults$" "$W/log" && grep -q "^ensure apps/b/two$" "$W/log" &&
+  case "$out" in *warning*"apps/a/one"*) true ;; *) false ;; esac'
+t "N7.5" "no apps/* path is hardcoded in bin/dotfiles" \
+  '[ "$(code_of bin/dotfiles | grep -c "ensure_submodule apps/")" -eq 0 ]'
+
+_pz_setup() { # _pz_setup <W> -- fake DOTFILES_DIR with a prezto runcoms dir and the runcoms the repo ships
+  local W="$1"; mkdir -p "$W/df/modules/prezto/runcoms" "$W/df/runcom" "$W/h"
+  : > "$W/df/modules/prezto/init.zsh"
+  local f; for f in zshenv zlogout zshrc zprofile zpreztorc zlogin zextra README.md; do : > "$W/df/modules/prezto/runcoms/$f"; done
+  for f in .zshrc .zprofile .zpreztorc .zlogin; do : > "$W/df/runcom/$f"; done
+}
+_pz_run() { env -u ZDOTDIR DOTFILES_DIR="$1/df" HOME="$1/h" zsh scripts/install_prezto.zsh; }
+t "N7.6" "install_prezto.zsh links the runcoms the repo does not ship" '
+  W=$(sandbox); _pz_setup "$W"; _pz_run "$W" >/dev/null 2>&1
+  [ -L "$W/h/.zshenv" ] && [ -L "$W/h/.zextra" ]'
+t "N7.7" "install_prezto.zsh leaves alone every runcom the repo ships" '
+  W=$(sandbox); _pz_setup "$W"; _pz_run "$W" >/dev/null 2>&1
+  [ ! -e "$W/h/.zshrc" ] && [ ! -e "$W/h/.zprofile" ] && [ ! -e "$W/h/.zpreztorc" ] && [ ! -e "$W/h/.zlogin" ]'
+t "N7.8" "install_prezto.zsh never links zlogout (it prints a quote on every shell exit)" '
+  W=$(sandbox); _pz_setup "$W"; _pz_run "$W" >/dev/null 2>&1
+  [ ! -e "$W/h/.zlogout" ] && [ ! -L "$W/h/.zlogout" ]'
+t "N7.9" "install_prezto.zsh does not link README.md" '
+  W=$(sandbox); _pz_setup "$W"; _pz_run "$W" >/dev/null 2>&1; [ ! -e "$W/h/.README.md" ]'
+
+#############################################################################
+section "N8 — /etc/hosts is backed up once (1.8)"
+#############################################################################
+
+_hosts_setup() { # _hosts_setup <W> -- stubs for a run against a sandbox hosts file
+  local W="$1"; mkdir -p "$W/bin" "$W/df/system"
+  cat > "$W/bin/curl" <<'STUB'
+#!/bin/bash
+o=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && o="$2"; shift; done
+{ echo "# Title: StevenBlack/hosts"; echo "# BLOCKLIST"; awk "BEGIN{for(i=0;i<10001;i++) print \"0.0.0.0 e\" i \".example\"}"; } > "$o"
+STUB
+  cat > "$W/bin/sudo" <<'STUB'
+#!/bin/bash
+echo "sudo $*" >> "$SW/log"
+exec "$@"
+STUB
+  printf '#!/bin/bash\nexit 0\n' > "$W/bin/dscacheutil"; printf '#!/bin/bash\nexit 0\n' > "$W/bin/killall"
+  chmod +x "$W/bin/"*
+  printf '127.0.0.1 localhost\n# PRISTINE\n' > "$W/hosts"
+}
+_hosts_run() { # _hosts_run <W>
+  local W="$1"
+  fn_of sub_install_hosts > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="$W/bin:/usr/bin:/bin"; ROOT_DIR="$W/df"; DOTFILES_YES=1; DOTFILES_HOSTS_FILE="$W/hosts"; TMPDIR="$W"
+cd "$PWD" || exit 1
+. scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
+sub_install_hosts
+RUN
+  SW="$W" timeout 60 bash "$W/run.sh" </dev/null
+}
+t "N8.1" "the first run backs up the pristine hosts file" '
+  W=$(sandbox); _hosts_setup "$W"; _hosts_run "$W" >/dev/null 2>&1
+  grep -q PRISTINE "$W/hosts.backup" && grep -q BLOCKLIST "$W/hosts"'
+t "N8.2" "a re-run does not overwrite the backup with the blocklist" '
+  W=$(sandbox); _hosts_setup "$W"; _hosts_run "$W" >/dev/null 2>&1; _hosts_run "$W" >/dev/null 2>&1
+  grep -q PRISTINE "$W/hosts.backup" && ! grep -q BLOCKLIST "$W/hosts.backup"'
+t "N8.3" "a re-run does not even attempt the backup copy" '
+  W=$(sandbox); _hosts_setup "$W"; _hosts_run "$W" >/dev/null 2>&1; : > "$W/log"; _hosts_run "$W" >/dev/null 2>&1
+  [ "$(grep -c "^sudo cp $W/hosts $W/hosts.backup" "$W/log")" -eq 0 ]'
+
+#############################################################################
+section "N9 — LaunchAgents lose their quarantine attribute (1.9)"
+#############################################################################
+
+_la_run() { # _la_run <W> -- install one plist against stub xattr/launchctl
+  local W="$1"; mkdir -p "$W/bin" "$W/df/launchagents" "$W/h"
+  : > "$W/df/launchagents/com.example.job.plist"
+  printf '#!/bin/bash\necho "xattr $*" >> "%s/log"\nexit "${XATTR_RC:-0}"\n' "$W" > "$W/bin/xattr"
+  printf '#!/bin/bash\necho "launchctl $*" >> "%s/log"\nexit 0\n' "$W" > "$W/bin/launchctl"
+  chmod +x "$W/bin/xattr" "$W/bin/launchctl"
+  fn_of sub_install_launchagents > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="$W/bin:/usr/bin:/bin"; HOME="$W/h"; DOTFILES_DIR="$W/df"; DOTFILES_YES=1
+cd "$PWD" || exit 1
+. scripts/echos.sh; . "$W/fn.sh"
+sub_install_launchagents
+RUN
+  timeout 20 bash "$W/run.sh" </dev/null
+}
+t "N9.1" "the copied plist has com.apple.quarantine removed before launchctl bootstrap" '
+  W=$(sandbox); _la_run "$W" >/dev/null 2>&1
+  grep -q "^xattr -d com.apple.quarantine $W/h/Library/LaunchAgents/com.example.job.plist$" "$W/log" &&
+  [ "$(_first_line "xattr -d" "$W/log")" -lt "$(_first_line "launchctl bootstrap" "$W/log")" ]'
+t "N9.2" "a plist without the attribute (xattr fails) is not an error" '
+  W=$(sandbox); XATTR_RC=1 _la_run "$W" >/dev/null 2>&1 && grep -q "launchctl bootstrap" "$W/log"'
+
+
+#############################################################################
+section "N10 — the doctor tells the truth (1.10)"
+#############################################################################
+
+_has() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+
+# A sandbox repo and HOME the doctor can inspect without touching the real
+# ones. xcode-select and git are stubs: git logs every call, so a test can
+# see whether the doctor ran it while the Command Line Tools were missing.
+_doc_setup() { # _doc_setup <W> <clt: yes|no>
+  local W="$1" clt="$2"; mkdir -p "$W/bin" "$W/h/.config" "$W/df/modules/prezto" "$W/df/modules/fzf-tab" "$W/df/apps/x/y" "$W/df/runcom" "$W/df/config/mise"
+  : > "$W/df/modules/prezto/init.zsh"; : > "$W/df/modules/fzf-tab/f"
+  printf '[submodule "modules/prezto"]\n\tpath = modules/prezto\n[submodule "modules/fzf-tab"]\n\tpath = modules/fzf-tab\n[submodule "apps/x/y"]\n\tpath = apps/x/y\n' > "$W/df/.gitmodules"
+  : > "$W/df/runcom/.zshrc"; : > "$W/df/runcom/.zprofile"
+  ln -s "$W/df/runcom/.zshrc" "$W/h/.zshrc"; ln -s "$W/df/runcom/.zprofile" "$W/h/.zprofile"
+  ln -s "$W/df/config/mise" "$W/h/.config/mise"
+  if [ "$clt" = yes ]; then stub "$W/bin" xcode-select 'echo /Library/Developer/CommandLineTools'; else stub "$W/bin" xcode-select 'exit 1'; fi
+  stub "$W/bin" git 'echo "git $*" >> "$SW/log"; exit 0'
+  stub "$W/bin" brew 'case "$1" in --version) echo "Homebrew 7.0.0" ;; esac; exit 0'
+}
+_doc_run() { # _doc_run <W> [doctor args...]
+  local W="$1"; shift
+  env SW="$W" HOME="$W/h" XDG_CONFIG_HOME="$W/h/.config" DOTFILES_DIR="$W/df" PATH="$W/bin:/usr/bin:/bin" SHELL=/bin/zsh XDG_CACHE_HOME="$W/cache" TERM=dumb \
+    zsh bin/dotfiles-doctor "$@" </dev/null
+}
+t "N10.1" "no phantom submodules: prezto-contrib and stevenblack-hosts are never mentioned" '
+  W=$(sandbox); _doc_setup "$W" yes; out=$(_doc_run "$W" 2>&1)
+  case "$out" in *prezto-contrib*|*stevenblack*) false ;; *) true ;; esac'
+t "N10.2" "the submodule list comes from .gitmodules: an uninitialised one is named, initialised ones pass" '
+  W=$(sandbox); _doc_setup "$W" yes; out=$(_doc_run "$W" 2>&1)
+  _has "$out" "apps/x/y not initialized" && _has "$out" "modules/fzf-tab initialized"'
+t "N10.3" "with every submodule initialised the doctor reports no error at all" '
+  W=$(sandbox); _doc_setup "$W" yes; : > "$W/df/apps/x/y/f"
+  _doc_run "$W" >/dev/null 2>&1'
+t "N10.4" "no warning about ~/.vimrc or ~/.gitconfig, which runcom/ does not ship" '
+  W=$(sandbox); _doc_setup "$W" yes; out=$(_doc_run "$W" 2>&1)
+  case "$out" in *.vimrc*|*.gitconfig*) false ;; *) true ;; esac'
+t "N10.5" "expected symlinks come from runcom/: a shipped file that is not linked is reported" '
+  W=$(sandbox); _doc_setup "$W" yes; : > "$W/df/runcom/.zlogin"; out=$(_doc_run "$W" 2>&1)
+  case "$out" in *".zlogin not found"*) true ;; *) false ;; esac'
+t "N10.6" "a linked runcom file is reported as linked" '
+  W=$(sandbox); _doc_setup "$W" yes; out=$(_doc_run "$W" 2>&1)
+  case "$out" in *".zshrc →"*) true ;; *) false ;; esac'
+t "N10.7" "without the Command Line Tools git is never run" '
+  W=$(sandbox); _doc_setup "$W" no; _doc_run "$W" >/dev/null 2>&1; [ ! -e "$W/log" ]'
+t "N10.8" "without the Command Line Tools git is not reported as installed" '
+  W=$(sandbox); _doc_setup "$W" no; out=$(_doc_run "$W" 2>&1)
+  case "$out" in *"git (Version control)"*) false ;; *) true ;; esac'
+t "N10.9" "with the Command Line Tools the git identity is still checked" '
+  W=$(sandbox); _doc_setup "$W" yes; _doc_run "$W" >/dev/null 2>&1; grep -q "^git config" "$W/log"'
+t "N10.10" "an unlinked ~/.config/mise is a warning, a linked one is ok" '
+  W=$(sandbox); _doc_setup "$W" yes; out=$(_doc_run "$W" 2>&1)
+  _has "$out" "mise config is linked" &&
+  { command rm -f "$W/h/.config/mise"; out=$(_doc_run "$W" 2>&1); _has "$out" "mise config is not linked"; }'
+t "N10.11" "--fix initialises submodules shallowly" '
+  W=$(sandbox); _doc_setup "$W" yes; _doc_run "$W" --fix >/dev/null 2>&1
+  grep -q "^git submodule update --init --depth 1" "$W/log"'
+t "N10.12" "--fix does not init recursively without a depth" \
+  '[ "$(code_of bin/dotfiles-doctor | grep -c "submodule update --init --recursive")" -eq 0 ]'
+
+#############################################################################
+section "N11 — the setup wizard (1.11)"
+#############################################################################
+
+# The wizard runs from a sandbox repo copy whose bin/dotfiles is a stub, so
+# every delegated step is only logged.
+_wiz_setup() { # _wiz_setup <W> <clt: yes|no>
+  local W="$1" clt="$2"; _clt_stubs "$W"; mkdir -p "$W/repo/bin" "$W/repo/scripts/lib" "$W/h"
+  cp bin/dotfiles-setup "$W/repo/bin/dotfiles-setup"; cp scripts/lib/clt.sh "$W/repo/scripts/lib/clt.sh"
+  stub "$W/repo/bin" dotfiles 'echo "dotfiles $*" >> "$SW/log"; [ "$*" = "link" ] && exit "${LINK_RC:-0}"; exit 0'
+  cat > "$W/bin/uname" <<'STUB'
+#!/bin/bash
+case "$1" in -m) echo arm64 ;; *) echo Darwin ;; esac
+STUB
+  stub "$W/bin" git 'echo "git $*" >> "$SW/log"; echo "git version 9.9.9"'
+  stub "$W/bin" clear 'exit 0'
+  chmod +x "$W/bin/uname"
+  [ "$clt" = yes ] && : > "$W/clt-installed"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+}
+_wiz_run() { # _wiz_run <W> <answers> -- feed answers, one per prompt
+  local W="$1"
+  printf '%b' "$2" | env SW="$W" HOME="$W/h" TMPDIR="$W" SHELL=/bin/zsh PATH="$W/bin:/usr/bin:/bin" TERM=dumb \
+    DOTFILES_CLT_SENTINEL="$W/sentinel" DOTFILES_CLT_RETRY_SLEEP=0 bash "$W/repo/bin/dotfiles-setup"
+}
+# Prompts, in order: Ready?, Prezto?, Link?, macOS defaults?, Dock?, Node?
+_wiz_yes_link="y\nn\ny\nn\nn\nn\n"
+_wiz_no_link="y\nn\nn\nn\nn\nn\n"
+t "N11.1" "the Command Line Tools are installed first, before any delegated step" '
+  W=$(sandbox); _wiz_setup "$W" no; _wiz_run "$W" "$_wiz_yes_link" >/dev/null 2>&1
+  [ "$(_first_line "softwareupdate --install" "$W/log")" -gt 0 ] &&
+  [ "$(_first_line "softwareupdate --install" "$W/log")" -lt "$(_first_line "dotfiles " "$W/log")" ]'
+t "N11.2" "a failed Command Line Tools install stops the wizard before git or any step runs" '
+  W=$(sandbox); _wiz_setup "$W" no; echo 1 > "$W/install.rc"
+  ! _wiz_run "$W" "$_wiz_yes_link" >/dev/null 2>&1 &&
+  [ "$(grep -c "^git \|^dotfiles " "$W/log")" -eq 0 ]'
+t "N11.3" "with the tools present nothing is installed and the wizard carries on" '
+  W=$(sandbox); _wiz_setup "$W" yes; _wiz_run "$W" "$_wiz_yes_link" >/dev/null 2>&1
+  [ "$(grep -c "softwareupdate" "$W/log")" -eq 0 ] && grep -q "^dotfiles install --ssh" "$W/log"'
+t "N11.4" "an accepted, successful link is reported as linked" '
+  W=$(sandbox); _wiz_setup "$W" yes; out=$(_wiz_run "$W" "$_wiz_yes_link" 2>&1)
+  case "$out" in *"Configuration linked"*) true ;; *) false ;; esac'
+t "N11.5" "a declined link is not reported as linked" '
+  W=$(sandbox); _wiz_setup "$W" yes; out=$(_wiz_run "$W" "$_wiz_no_link" 2>&1)
+  case "$out" in *"Configuration linked"*) false ;; *"Setup Complete"*) true ;; *) false ;; esac'
+t "N11.6" "a failed link is not reported as linked" '
+  W=$(sandbox); _wiz_setup "$W" yes; out=$(LINK_RC=1 _wiz_run "$W" "$_wiz_yes_link" 2>&1)
+  case "$out" in *"Configuration linked"*) false ;; *"Setup Complete"*) true ;; *) false ;; esac'
 
 finish
