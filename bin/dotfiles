@@ -854,10 +854,16 @@ GITLOCAL
   local movelog stow_out
   movelog=$(mktemp "${TMPDIR:-/tmp}/dotfiles-link.XXXXXX") || return 1
   export DOTFILES_STOW_MOVELOG="$movelog"
+  # Ctrl-C or a TERM mid-link must not strand the moved files in the backup.
+  # shellcheck disable=SC2064
+  trap "dotfiles_link_abort INT \"$movelog\" \"$backup_dir\"" INT
+  # shellcheck disable=SC2064
+  trap "dotfiles_link_abort TERM \"$movelog\" \"$backup_dir\"" TERM
   if ! { dotfiles_backup_stow_targets "$ROOT_DIR/runcom" "$HOME" "$backup_dir" &&
     dotfiles_backup_stow_targets "$ROOT_DIR/config" "$XDG_CONFIG_HOME" "$backup_dir/.config"; }; then
     dotfiles_undo_backup_moves "$movelog" "$backup_dir"
     unset DOTFILES_STOW_MOVELOG
+    trap - INT TERM
     command rm -f "$movelog"
     error "could not back up the files in the way; nothing was changed"
     return 1
@@ -869,6 +875,7 @@ GITLOCAL
     printf '%s\n' "$stow_out" >&2
     dotfiles_undo_backup_moves "$movelog" "$backup_dir"
     unset DOTFILES_STOW_MOVELOG
+    trap - INT TERM
     command rm -f "$movelog"
     error "stow would conflict; nothing was linked and everything moved was put back"
     return 1
@@ -881,12 +888,14 @@ GITLOCAL
     printf '%s\n' "$stow_out" >&2
     dotfiles_undo_backup_moves "$movelog" "$backup_dir"
     unset DOTFILES_STOW_MOVELOG
+    trap - INT TERM
     command rm -f "$movelog"
     error "stow failed; the files it had moved were put back"
     return 1
   fi
   [[ -n "$stow_out" ]] && printf '%s\n' "$stow_out"
   unset DOTFILES_STOW_MOVELOG
+  trap - INT TERM
   command rm -f "$movelog"
 
   # Files the repo ignores (gh's hosts.yml login) went into the backup with

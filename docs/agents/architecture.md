@@ -38,9 +38,11 @@ To restore: `./bin/dotfiles unlink <timestamp>`
 Link is all-or-nothing: links the repo already owns are never dropped (restow
 replaces them), both packages are simulated (`stow -n`) before any link changes,
 and if the simulation or the real run fails every file moved to the backup is put
-back and the command exits non-zero. Both `link` and `dotfiles-sync` call the one
-helper `dotfiles_stow_all` in `scripts/lib/fs.sh`, which passes
-`--ignore='\.DS_Store$'` so Finder litter can never abort a stow; sync records
+back and the command exits non-zero. Ctrl-C or a TERM mid-link rolls back the
+same way (`dotfiles_link_abort`), then re-raises the signal. Both `link` and
+`dotfiles-sync` call the one helper `dotfiles_stow_all` in `scripts/lib/fs.sh`, which passes
+`--ignore='^\.DS_Store$'` (anchored: a real `notes.DS_Store` is still linked) so
+Finder litter can never abort a stow; sync records
 "stow conflict: ..." as an attention item and leaves `$HOME` untouched.
 
 Note that `install --claude` does **not** stow. It copies `claude/hooks/`,

@@ -515,6 +515,7 @@ t "A13.4" "DOTFILES_YES skips the git identity prompt and warns instead" '
   cat > "$W/run.sh" <<RUN
 PATH="$W/bin:\$PATH"; HOME="$W/h"; XDG_CONFIG_HOME="$W/xdg"; ROOT_DIR="$W/df"; DOTFILES_YES=1
 cd "$PWD" || exit 1
+echo \$\$ >"$W/pid"
 . scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
 sub_link
 RUN
@@ -1517,6 +1518,7 @@ STOW
   cat > "$W/run.sh" <<RUN
 PATH="$W/bin:\$PATH"; HOME="$W/h"; XDG_CONFIG_HOME="$W/h/.config"; ROOT_DIR="$W/repo"; DOTFILES_YES=1
 cd "$PWD" || exit 1
+echo \$\$ >"$W/pid"
 . scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
 sub_link
 RUN
@@ -1581,6 +1583,7 @@ _lk_env() {
   cat >"$W/run.sh" <<RUN
 PATH="$W/bin:\$PATH"; HOME="$W/h"; XDG_CONFIG_HOME="$W/h/.config"; ROOT_DIR="$W/repo"; DOTFILES_YES=1
 cd "$PWD" || exit 1
+echo \$\$ >"$W/pid"
 . scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
 sub_link
 RUN
@@ -1630,11 +1633,36 @@ t "L4.1" "the shared helper passes the .DS_Store ignore to stow, simulated or no
   W=$(sandbox); mkdir -p "$W/bin" "$W/repo/runcom" "$W/repo/config"; : >"$W/log"
   printf "#!/bin/bash\necho \"\$*\" >>\"$W/log\"\n" >"$W/bin/stow"; chmod +x "$W/bin/stow"
   (PATH="$W/bin:$PATH"; source scripts/lib/fs.sh; dotfiles_stow_all -n "$W/repo" "$W/h" "$W/x"; dotfiles_stow_all - "$W/repo" "$W/h" "$W/x")
-  [ "$(grep -cF -- "--ignore=\\.DS_Store\$" "$W/log")" -eq 4 ] && [ "$(grep -c -- "^-n " "$W/log")" -eq 2 ]'
+  [ "$(grep -cF -- "--ignore=^\\.DS_Store\$" "$W/log")" -eq 4 ] && [ "$(grep -c -- "^-n " "$W/log")" -eq 2 ]'
 
 t "L4.2" "link and sync both go through the helper (no bare stow --restow left)" '
   ! grep -q "stow --restow" <(code_of bin/dotfiles bin/dotfiles-sync) &&
   grep -q dotfiles_stow_all <(code_of bin/dotfiles) && grep -q dotfiles_stow_all <(code_of bin/dotfiles-sync)'
 
+
+t "L5.1" "a Finder-litter lookalike is linked: the ignore matches the whole name" '
+  _have_stow || return 0
+  W=$(sandbox); _lk_env "$W"; : >"$W/repo/runcom/keep.DS_Store"; : >"$W/repo/runcom/.DS_Store"
+  _lk_run "$W" && [ -L "$W/h/keep.DS_Store" ] && [ ! -e "$W/h/.DS_Store" ]'
+
+t "L5.2" "a real directory nested under ~/.config is put back when the real stow fails" '
+  _have_stow || return 0
+  W=$(sandbox); _lk_env "$W" "case \"\$*\" in *-n*) ;; *config*) echo \"stow: real run failed\"; exit 1;; esac"
+  (cd "$W/repo" && command stow --restow -t "$W/h" runcom)
+  mkdir -p "$W/h/.config/git/sub/deep"; echo MINE >"$W/h/.config/git/sub/deep/file"
+  before=$(_lk_state "$W")
+  _lk_run "$W"; rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_lk_state "$W")" = "$before" ] &&
+  [ "$(command cat "$W/h/.config/git/sub/deep/file")" = MINE ] && [ ! -e "$W/h/.dotfiles_backup" ]'
+
+t "L5.3" "a TERM while stow runs rolls back what the sweep moved and stops link" '
+  _have_stow || return 0
+  W=$(sandbox); _lk_env "$W" "case \"\$*\" in *-n*) ;; *) kill -TERM \$(command cat $W/pid); sleep 1; exit 0;; esac"
+  (cd "$W/repo" && command stow --restow -t "$W/h" runcom && command stow --restow -t "$W/h/.config" config)
+  rm "$W/h/.hushlogin"; echo MINE >"$W/h/.hushlogin"
+  before=$(_lk_state "$W")
+  _lk_run "$W"; rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_lk_state "$W")" = "$before" ] && [ "$(command cat "$W/h/.hushlogin")" = MINE ] &&
+  [ "$(ls "$W"/dotfiles-link.* 2>/dev/null | wc -l)" -eq 0 ]'
 
 finish
