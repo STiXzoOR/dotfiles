@@ -31,6 +31,7 @@ jobs:
   lint:
     name: Lint Shell Scripts
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -79,6 +80,7 @@ jobs:
   syntax:
     name: Validate Zsh Syntax
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -97,6 +99,7 @@ jobs:
   secrets:
     name: Scan for Credentials
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -125,6 +128,7 @@ jobs:
   test:
     name: Run Tests
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -190,6 +194,7 @@ jobs:
   brewfile:
     name: Validate Brewfile
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v5
