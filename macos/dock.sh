@@ -10,10 +10,11 @@ DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
 
 source "$DOTFILES_DIR/scripts/echos.sh"
 
-# Apps.app replaced Launchpad in macOS 26 Tahoe. Spark and Notion were dropped
-# because neither is installed; dockutil exits non-zero on a missing bundle and
-# the old loop swallowed that, leaving a Dock short three icons while the run
-# still reported success.
+# Apps.app replaced Launchpad in macOS 26 Tahoe. Notion was dropped because it
+# is not installed; dockutil exits non-zero on a missing bundle and the old
+# loop swallowed that, leaving a Dock short while the run still reported
+# success. Spark Mail comes from Setapp (the `setapp` cask), so it lives under
+# /Applications/Setapp and is skipped with a warning until Setapp installs it.
 Icons=(
   "/System/Applications/Apps.app"
   "/Applications/Brave Browser.app"
@@ -25,6 +26,7 @@ Icons=(
   "/Applications/WebStorm.app"
   "/Applications/Warp.app"
   "/System/Applications/System Settings.app"
+  "/Applications/Setapp/Spark Mail.app"
 )
 
 if ! command -v dockutil >/dev/null 2>&1; then

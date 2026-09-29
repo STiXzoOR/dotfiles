@@ -1,0 +1,5 @@
+# Atuin config. Only the settings that differ from atuin's defaults are set here;
+# see https://docs.atuin.sh/configuration/config/ for the rest.
+
+# Enter runs the selected command straight away (Tab still lets you edit it).
+enter_accept = true

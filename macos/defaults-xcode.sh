@@ -19,17 +19,31 @@ else
   error "could not create $XCODE_THEME_DIR"
 fi
 
+# The theme is a git submodule. When it has not been checked out the source is
+# missing, and linking to it would create a dangling symlink that reports ok.
+XCODE_THEME_SRC="$DOTFILES_DIR/apps/xcode/nord_theme/src/Nord.xccolortheme"
+XCODE_THEME_OK=0
+
 running "Install nord theme"
-rm -f "$XCODE_THEME_DIR/Nord.xccolortheme" 2>/dev/null
-if ln -sf "$DOTFILES_DIR/apps/xcode/nord_theme/src/Nord.xccolortheme" "$XCODE_THEME_DIR/Nord.xccolortheme"; then
-  ok
+if [ ! -f "$XCODE_THEME_SRC" ]; then
+  warn "Nord theme not found at $XCODE_THEME_SRC (git submodule update --init --recursive); skipped"
 else
-  error "could not link the Nord theme into $XCODE_THEME_DIR"
+  rm -f "$XCODE_THEME_DIR/Nord.xccolortheme" 2>/dev/null
+  if ln -sf "$XCODE_THEME_SRC" "$XCODE_THEME_DIR/Nord.xccolortheme"; then
+    XCODE_THEME_OK=1
+    ok
+  else
+    error "could not link the Nord theme into $XCODE_THEME_DIR"
+  fi
 fi
 
 running "Change theme to nord"
-defaults write com.apple.dt.Xcode XCFontAndColorCurrentTheme -string Nord.xccolortheme
-ok
+if [ "$XCODE_THEME_OK" = 1 ]; then
+  defaults write com.apple.dt.Xcode XCFontAndColorCurrentTheme -string Nord.xccolortheme
+  ok
+else
+  skip "the theme is not installed"
+fi
 
 running "Trim trailing whitespace"
 defaults write com.apple.dt.Xcode DVTTextEditorTrimTrailingWhitespace -bool true

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# Machine-specific values for macos/defaults.sh. This repo is public, so the
+# real values live in macos/local.sh, which is gitignored:
+#
+#   cp macos/local.sh.example macos/local.sh
+#
+# then edit it. Each block in defaults.sh runs only when its variable is set;
+# leave a line out (or commented) to leave that setting alone.
+# Sourced, never executed.
+
+# Computer name; also sets LocalHostName, HostName and the SMB NetBIOS name.
+DOTFILES_COMPUTER_NAME="my-mac"
+
+# Preferred languages, space-separated, most preferred first.
+DOTFILES_LANGUAGES="en-US fr-FR"
+
+# Region / text formats, e.g. en_US, en_GB@currency=GBP.
+DOTFILES_LOCALE="en_US@currency=USD"
+
+# Centimeters or Inches. Centimeters also turns metric units on.
+DOTFILES_MEASUREMENT_UNITS="Centimeters"
+
+# See `sudo systemsetup -listtimezones`.
+DOTFILES_TIMEZONE="UTC"

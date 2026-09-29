@@ -11,16 +11,20 @@ source "$DOTFILES_DIR/scripts/requirers.sh"
 bot "Visual Studio Code"
 ###############################################################################
 
-running "Install settings"
-if [ ! -d "$HOME/Library/Application Support/Code/User" ]; then
-  mkdir -p "$HOME/Library/Application Support/Code/User"
+VSCODE_USER_DIR="$HOME/Library/Application Support/Code/User"
+if [ ! -d "$VSCODE_USER_DIR" ]; then
+  mkdir -p "$VSCODE_USER_DIR"
 fi
 
-rm -f "$HOME/Library/Application Support/Code/User/settings.json" 2>/dev/null
-if ln -sf "$DOTFILES_DIR/apps/vscode/settings.json" "$HOME/Library/Application Support/Code/User/settings.json"; then
-  ok
-else
-  error "could not link the VS Code settings"
-fi
+for _vscode_file in settings keybindings; do
+  running "Install $_vscode_file"
+  rm -f "$VSCODE_USER_DIR/$_vscode_file.json" 2>/dev/null
+  if ln -sf "$DOTFILES_DIR/apps/vscode/$_vscode_file.json" "$VSCODE_USER_DIR/$_vscode_file.json"; then
+    ok
+  else
+    error "could not link the VS Code $_vscode_file"
+  fi
+done
+unset _vscode_file
 
 killall "Code" >/dev/null 2>&1
