@@ -67,3 +67,6 @@ config/gh/hosts.yml
 # Editor and agent scratch state
 .idea/
 .superpowers
+
+# Per-Mac launcher choice (never synced; see macos/machine.local.sh.example)
+macos/machine.local.sh

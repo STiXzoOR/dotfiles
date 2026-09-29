@@ -77,8 +77,21 @@ with `systemsetup -getremotelogin`, and a Mac where it is still off gets an
   `AppleKeyboardUIMode` 3, Finder info panes written with `-dict-add`). Change a
   value in the script, not on the machine, or the next run reverts it.
 - The Spotlight (Cmd-Space), Finder search and screenshot symbolic hotkeys are
-  disabled because Raycast and Shottr replace them. Set Raycast's own hotkey in
-  Raycast.
+  disabled because the launcher (Tinycast or Raycast) and Shottr replace them.
+- The launcher block (`dotfiles_launcher`, see [new-mac.md](new-mac.md#launcher))
+  runs after them. On a Tinycast Mac it first reads the stored hotkey and switch
+  (raw, through PlistBuddy: `defaults read` quotes and escapes strings) and does
+  nothing when both are already right. Otherwise it says so, quits a running
+  Tinycast (skipping with a warning if it will not quit), writes
+  `hotkey.togglePalette` (Cmd-Space,
+  `{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}`) and
+  `settingsFileEnabled` to `com.tinycast.app`, and reads both back the same way;
+  a hotkey mismatch is an error and a switch mismatch a warning, neither
+  ignored. The hotkey format is documented upstream as not stable, so this is
+  best-effort with Tinycast > Settings > General as the
+  fallback. If Raycast.app is still installed it warns once and names
+  `brew uninstall --cask raycast`; nothing is uninstalled. On a Raycast Mac the
+  block does nothing: Raycast's hotkey is set inside Raycast.
 - Theme blocks (Xcode, GitKraken, Terminal.app, Warp) skip with a warning when
   the theme submodule has not been checked out
   (`git submodule update --init --recursive`), and never remove installed themes

@@ -15,6 +15,18 @@
   `config/mise/config.toml`, run `./bin/dotfiles install --node`, commit the
   config and the regenerated `config/mise/mise.lock`
 - **VS Code extension**: Add to `packages/code.list`, run `./bin/dotfiles install --packages`
+- **Launcher**: exactly one of Raycast or Tinycast, picked per Mac by
+  `dotfiles_launcher` (see [new-mac.md](new-mac.md#launcher)). `dotfiles install
+  --packages` exports the choice as `HOMEBREW_DOTFILES_LAUNCHER` (brew bundle
+  hides every other variable from the Brewfile) and the Brewfile picks
+  `cask "raycast"` or the `abue-ammar/tinycast` tap plus
+  `cask "abue-ammar/tinycast/tinycast"`; unset means Tinycast. The tap line is
+  indented in the Brewfile, so the generic trust loop skips it, and
+  `sub_install_packages` taps and trusts it only when the launcher is Tinycast.
+  `dotfiles sync` exports it too (`dotfiles_export_launcher`). With the
+  variable unset, a bare `brew bundle` falls back to the first
+  `DOTFILES_LAUNCHER=` line in `macos/machine.local.sh`, then `macos/local.sh`,
+  next to the Brewfile.
 - **Homebrew tap**: Add to `Brewfile`. There is no `packages/tap.list`; taps, formulae, casks and Mac App Store apps all live in the `Brewfile`.
 
 ## Install Helpers

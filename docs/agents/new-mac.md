@@ -34,7 +34,7 @@ live in the owner's private notes, not here: this repo is public.
    ```
    - It installs the Command Line Tools headlessly (newest label), clones to `~/.dotfiles`, and runs `dotfiles install`.
    - It is safe to re-run: an existing checkout is reused.
-7. **Set Raycast's hotkey to Cmd-Space before `install --all`.** `configure` turns off Spotlight's Cmd-Space (and Finder search), so until Raycast owns the key nothing answers it. Raycast is a cask in the Brewfile; if it is not on the Mac yet, install it by hand (`brew install --cask raycast`), open it, and set the hotkey in its settings. Raycast's own hotkey is not scriptable.
+7. **Pick the launcher.** The default is Tinycast, and then there is nothing to do before `install --all`: `--packages` installs it from its tap, `--link` stows `config/tinycast/settings.json`, and `configure` sets Cmd-Space and switches its settings file on (see [Launcher](#launcher)). A Mac that keeps Raycast says so first, in `macos/machine.local.sh` (`cp macos/machine.local.sh.example macos/machine.local.sh`, `DOTFILES_LAUNCHER="raycast"`). Until the launcher owns Cmd-Space nothing answers it, because `configure` turns off Spotlight's.
 8. **When `install` offers `install --all`, answer no the first time.**
    - Copy the gitignored files into `~/.dotfiles/`.
    - Then run `~/.dotfiles/bin/dotfiles install --all`, which works through this order:
@@ -56,6 +56,49 @@ live in the owner's private notes, not here: this repo is public.
 10. **Log in** to the CLIs and apps you use (gh, Claude Code, Codex, cloud CLIs, Tailscale, …). In Codex, run `/hooks` once and trust the plugin hooks.
 11. **Record a defaults baseline:** `dotfiles baseline capture <macOS version>`, then `dotfiles baseline diff` against the previous one, to see which settings the new macOS dropped or renamed.
 12. **Run `dotfiles doctor`.** It should report no errors.
+
+## Launcher
+
+`scripts/lib/machine.sh` gives `dotfiles_launcher`, which prints `tinycast` or
+`raycast`: `DOTFILES_LAUNCHER` from the environment, else from
+`macos/machine.local.sh`, else from `macos/local.sh`, else `tinycast`. Any other
+value warns and means `tinycast`. Use `macos/machine.local.sh` (gitignored,
+never linked or synced), because `macos/local.sh` is shared between the Macs
+through the private repo.
+
+After `install --all` on a Tinycast Mac:
+
+1. **Open Tinycast once and grant Accessibility** (System Settings, Privacy & Security). Snippet expansion and the window commands need it. Grants can be asked for again if Tinycast's signing identity changes.
+2. **Check the hotkey and the settings file.** `configure` writes Cmd-Space to the `hotkey.togglePalette` default and turns on `settingsFileEnabled`, then reads the hotkey back. Both are best-effort: upstream documents the hotkey JSON as not a stable format, and it is written only while Tinycast is not running (`configure` quits a running one). If `configure` reported a mismatch or skipped, set Cmd-Space in Tinycast > Settings > General and switch on Settings > Backup > Settings File by hand. The file is `~/.config/tinycast/settings.json`, stowed from `config/tinycast/`; Tinycast follows and keeps the symlink.
+3. **Bring your Raycast setup over.** On the old Mac, Raycast > Settings > Extensions > Export Settings & Data (`.rayconfig`; the passphrase is in the login keychain item `Raycast/export_passphrase`). In Tinycast, use Import from Raycast and enter it. That brings settings, hotkeys, clipboard history, snippets and quicklinks; script commands have their own importer.
+4. **Test the extensions that sign in with OAuth: GitHub, Linear, Slack, Zoom.** Tinycast runs Raycast extensions but not Raycast's OAuth proxy, so these may fail or need a token. Keep Raycast on the old Mac until they work.
+
+Tinycast has no cloud sync. Its settings file travels through this repo; its
+snippets and notes folders (`snippets.folder`, `notes.folder` in the settings
+file) can point at a synced folder. Extension installs and the shortcuts outside
+window management do not travel.
+
+Stowing `config/tinycast` on a Raycast Mac is harmless: the file is only read
+while Tinycast's settings file is switched on, which a Raycast Mac never does.
+
+**Keeping Raycast:** `DOTFILES_LAUNCHER="raycast"` in `macos/machine.local.sh`.
+`--packages` then installs the Raycast cask and neither taps nor trusts the
+Tinycast tap; `configure` leaves Raycast's hotkey to Raycast.
+
+**Switching a Raycast Mac to Tinycast:** remove the `raycast` line, run
+`dotfiles install --packages` then `dotfiles configure --defaults`, do the steps
+above, and once Tinycast works `brew uninstall --cask raycast`. `configure` warns
+while Raycast.app is still installed, because it also claims Cmd-Space; it never
+uninstalls anything.
+
+**Risks, two lines:** Tinycast is young (first commit 2026-06-29, 0.x, about one
+release a day) and has one main maintainer. Its build is self-signed rather than
+notarised while its Developer ID move completes; the cask strips the quarantine flag.
+
+**Blender.** The Brewfile installs the Blender cask (the `blender` MCP needs
+Blender 5.1+). The add-on is manual: in Blender, Edit > Preferences > Add-ons >
+Install from Disk, with `mcp-1.0.3.zip` from the v1.0.3 release of the official
+MCP project at projects.blender.org (see [claude-bootstrap.md](claude-bootstrap.md)).
 
 ## Two Macs
 
