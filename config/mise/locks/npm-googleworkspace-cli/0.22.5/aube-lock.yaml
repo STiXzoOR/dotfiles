@@ -1,0 +1,24 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@googleworkspace/cli':
+        specifier: 0.22.5
+        version: 0.22.5
+
+packages:
+
+  '@googleworkspace/cli@0.22.5':
+    resolution: {integrity: sha512-Cej4nnkjphwRF+i7KWx4esp0p41yZ7Rv7A+P9hmFQrMStcngTASZBpeN/Lptk58oXxnSHvEcvM69S0e0y/GlvA==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+snapshots:
+
+  '@googleworkspace/cli@0.22.5': {}

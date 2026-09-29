@@ -15,8 +15,9 @@ running "Show the main window when launching Activity Monitor"
 defaults write com.apple.ActivityMonitor OpenMainWindow -bool true
 ok
 
-running "Visualize CPU usage in the Activity Monitor Dock icon"
-defaults write com.apple.ActivityMonitor IconType -int 5
+# IconType: 0 app icon, 2 network usage, 3 disk activity, 5 CPU usage, 6 CPU history.
+running "Visualize disk activity in the Activity Monitor Dock icon"
+defaults write com.apple.ActivityMonitor IconType -int 3
 ok
 
 # Show processes in Activity Monitor

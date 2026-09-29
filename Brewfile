@@ -18,9 +18,8 @@
 # Taps
 # ============================================================================
 
-tap "datadog-labs/pack"             # pup (Datadog CLI)
 tap "goreleaser/tap"                # goreleaser
-tap "lotyp/formulae"                # dockutil
+tap "runpod/runpodctl"              # runpodctl
 tap "timescam/tap"                  # pay-respects
 tap "artginzburg/tap"               # sudo-touchid
 
@@ -65,13 +64,17 @@ brew "timescam/tap/pay-respects"    # Command correction (replaces thefuck)
 brew "wget"                         # HTTP client
 brew "httpie"                       # Modern HTTP client
 brew "mosh"                         # Roaming-tolerant SSH
-brew "tailscale"                    # Tailnet CLI (GUI app installed separately)
+# Tailscale is the App Store app (see the Mac App Store section), not the
+# formula: the formula's CLI talks to a daemon that never runs here.
+# system/.alias points `tailscale` at the app's own binary.
 
 # Security
 brew "age"                          # Modern file encryption
 brew "gitleaks"                     # Secret scanner for git history
+brew "gnupg"                        # GPG (mise verifies node downloads with it)
 
 # Development tools
+brew "git"                          # Real git (Apple's /usr/bin/git is an xcrun shim, ~7 ms per call)
 brew "git-delta"                    # Better git diff
 brew "difftastic"                   # Structural (syntax-aware) diff
 brew "lazygit"                      # Terminal UI for git
@@ -81,8 +84,9 @@ brew "shellcheck"                   # Shell script linter
 brew "bats-core"                    # Bash testing framework
 brew "ast-grep"                     # Structural code search
 brew "circleci"                     # CircleCI CLI
+brew "runpod/runpodctl/runpodctl"   # Runpod CLI
 brew "awscli"                       # AWS CLI
-brew "datadog-labs/pack/pup"        # Datadog CLI
+brew "pup"                          # Datadog CLI
 brew "tmux"                         # Terminal multiplexer
 brew "neovim"                       # Editor (config in config/nvim)
 
@@ -119,7 +123,7 @@ brew "grip"                         # GitHub markdown preview
 brew "pandoc"                       # Document converter
 brew "cliclick"                     # CLI mouse/keyboard control
 brew "libimobiledevice"             # iOS device communication
-brew "lotyp/formulae/dockutil"      # Dock management
+brew "dockutil"                     # Dock management
 brew "artginzburg/tap/sudo-touchid" # TouchID for sudo (writes /etc/pam.d/sudo_local once)
 
 # ============================================================================
@@ -141,12 +145,16 @@ cask "ngrok"
 cask "kaleidoscope"
 cask "goreleaser/tap/goreleaser"     # fully qualified: needs its tap trusted
 cask "codexbar"                     # Codex menubar client
+cask "termius"                      # SSH client
+cask "chatgpt"                      # ChatGPT desktop
+cask "claude"                       # Claude desktop
 
 # Design
 cask "adobe-creative-cloud"
 cask "figma"
 cask "autodesk-fusion"
 cask "prusaslicer"
+cask "bambu-studio"                 # Bambu Lab slicer
 
 # Communication
 cask "discord"
@@ -154,6 +162,8 @@ cask "slack"
 cask "telegram"
 cask "zoom"
 cask "notion"
+cask "proton-mail"
+cask "proton-mail-bridge"
 
 # Utilities
 cask "raycast"                      # Spotlight replacement
@@ -167,6 +177,10 @@ cask "obsidian"                     # Knowledge base / vault
 cask "setapp"                       # App subscription
 cask "balenaetcher"                 # Flash OS images to SD/USB
 cask "basictex"                     # Minimal TeX distribution
+cask "paragon-ntfs"                 # NTFS read/write (needs a kernel/system extension approval)
+# OpenEmu (retro game emulator) is installed by hand from openemu.org: its cask
+# was disabled in homebrew-cask on 2026-09-01 (fails the Gatekeeper check), and
+# a disabled cask fails the whole `brew bundle` run.
 
 # Media
 cask "spotify"
@@ -220,13 +234,19 @@ cask "font-roboto-mono-nerd-font"
 # `mas` cannot sign in to the App Store on modern macOS and `mas install`
 # only works for apps already in the purchase history: sign in by hand first.
 
+mas "Amphetamine", id: 937984704
+mas "Apple Configurator", id: 1037126344
+mas "Canva", id: 897446215
+mas "DaisyDisk", id: 411643860
 mas "Emby", id: 992180193
-mas "LastPass", id: 926036361
+mas "Infuse", id: 1136220934
 mas "LocalSend", id: 1661733229
 mas "Magnet", id: 441258766
-mas "Messenger", id: 1480068668
 mas "SponsorBlock", id: 1573461917
+mas "Tailscale", id: 1475387142
+mas "UTM", id: 1538878817
 mas "Windows App", id: 1295203466
+mas "Xcode", id: 497799835
 
 # ============================================================================
 # VS Code Extensions (managed separately via code.list)

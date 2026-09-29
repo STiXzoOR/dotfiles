@@ -24,7 +24,6 @@
     untrackedCache = true
     pager = delta
     ignorecase = false
-    hooksPath = .githooks
 
 [credential]
     helper = osxkeychain

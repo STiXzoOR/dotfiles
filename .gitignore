@@ -53,9 +53,17 @@ system/hosts.local
 # Private defaults captures (the committed baselines are reviewed by hand)
 macos/baselines/*.local.tsv
 
-# mise's per-package dependency locks. `mise lock` regenerates this whole tree
-# on every install, and ~/.config/mise is a symlink to config/mise, so leaving
-# it untracked would otherwise keep the working tree permanently dirty. The
-# tracked pin is config/mise/mise.lock, which carries the tool versions,
-# per-platform URLs and checksums.
-config/mise/locks/
+# Machine-specific values for macos/defaults.sh (computer name, locale,
+# timezone). Copy macos/local.sh.example.
+macos/local.sh
+
+# Private package additions, read by `dotfiles install --packages`
+Brewfile.local
+packages/code.local.list
+
+# gh's login lives in hosts.yml; config.yml is tracked, this never is
+config/gh/hosts.yml
+
+# Editor and agent scratch state
+.idea/
+.superpowers/

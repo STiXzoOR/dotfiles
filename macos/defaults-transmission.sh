@@ -20,11 +20,12 @@ running "Use ~/Downloads to store completed downloads"
 defaults write org.m0k.transmission DownloadLocationConstant -bool true
 ok
 
-# A magnet: link on any web page starts a download the moment it is clicked
-# when these are false. Confirming first is the whole point of the dialog.
-running "Prompt for confirmation before downloading"
-defaults write org.m0k.transmission DownloadAsk -bool true
-defaults write org.m0k.transmission MagnetOpenAsk -bool true
+# Deliberate: with these false a magnet: link on any web page starts a download
+# the moment it is clicked. This matches the live setting, so a rebuilt machine
+# behaves like the one it replaces.
+running "Do not prompt for confirmation before downloading"
+defaults write org.m0k.transmission DownloadAsk -bool false
+defaults write org.m0k.transmission MagnetOpenAsk -bool false
 ok
 
 running "Don’t prompt for confirmation before removing non-downloading active transfers"

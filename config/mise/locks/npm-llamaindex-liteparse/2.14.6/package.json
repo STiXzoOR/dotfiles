@@ -1,0 +1,7 @@
+{
+  "name": "mise-npm-install",
+  "private": true,
+  "dependencies": {
+    "@llamaindex/liteparse": "2.14.6"
+  }
+}

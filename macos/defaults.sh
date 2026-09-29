@@ -3,12 +3,21 @@
 # Sourced by `dotfiles configure --defaults`, never executed: no `set -e`.
 
 DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
-COMPUTER_NAME="STiXzoOR-MB"
-LANGUAGES=("en-CY" "el-CY")
-LOCALE="en_CY@currency=EUR"
-TIMEZONE="Europe/Athens"
-MEASUREMENT_UNITS="Centimeters"
 SCREENSHOTS_FOLDER="${HOME}/Desktop/Screenshots"
+
+# Personal values (this machine's name, languages, locale, units, timezone) do
+# not live here: this repo is public. Copy macos/local.sh.example to
+# macos/local.sh (gitignored) and set DOTFILES_COMPUTER_NAME, DOTFILES_LANGUAGES
+# (space-separated), DOTFILES_LOCALE, DOTFILES_MEASUREMENT_UNITS and
+# DOTFILES_TIMEZONE. A block whose variable is unset is skipped, so a machine
+# without a local file keeps whatever it already has.
+# shellcheck disable=SC1091
+[ -f "$DOTFILES_DIR/macos/local.sh" ] && source "$DOTFILES_DIR/macos/local.sh"
+
+# Absolute-path binaries, overridable so the tests can stub them.
+FIREWALL_CTL="${DOTFILES_SOCKETFILTERFW:-/usr/libexec/ApplicationFirewall/socketfilterfw}"
+ACTIVATE_SETTINGS="${DOTFILES_ACTIVATE_SETTINGS:-/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings}"
+LSREGISTER="${DOTFILES_LSREGISTER:-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister}"
 
 source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
@@ -49,22 +58,38 @@ bot "Security"
 ###############################################################################
 # Gatekeeper: kept enabled for security
 # To allow individual unsigned apps, use: sudo xattr -r -d com.apple.quarantine /path/to/app
-#
-# Every `systemsetup` call below needs Full Disk Access for the terminal that
-# runs it. Without it they fail, and until this block reported real exit
-# statuses that failure was invisible. Grant it in System Settings, Privacy &
-# Security, Full Disk Access, and revoke it afterwards: a standing grant lets
-# every script run from that terminal bypass TCC.
+
+# `systemsetup` and the firewall control both need Full Disk Access for the
+# terminal that runs this script. Without it they exit 0 or fail silently
+# while changing nothing. Grant it in System Settings, Privacy & Security,
+# Full Disk Access, and revoke it afterwards: a standing grant lets every
+# script run from that terminal bypass TCC.
+warn "systemsetup and the firewall need Full Disk Access for the terminal running this install (System Settings, Privacy & Security, Full Disk Access). Without it they fail or silently change nothing."
 
 running "Disable remote apple events"
 sudo systemsetup -setremoteappleevents off >/dev/null 2>&1
 print_result $?
 
-running "Disable remote login"
-# -f suppresses the confirmation prompt. Without it this blocks forever: the
-# prompt is written to a stream that goes to /dev/null while stdin is still
-# the terminal. See `man systemsetup`, -setremotelogin [-f] on | off.
-sudo systemsetup -setremotelogin -f off >/dev/null 2>&1
+# Remote Login (SSH) is ON: this machine is reached remotely. -f suppresses the
+# confirmation prompt, which would otherwise block forever because it is
+# written to a stream that goes to /dev/null while stdin is still the
+# terminal. See `man systemsetup`, -setremotelogin [-f] on | off.
+running "Enable remote login"
+sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
+print_result $?
+
+# Power. Apple silicon ignores `standbydelay` (it reads back absent), so it is
+# not written.
+running "Restart automatically after a power failure"
+sudo pmset -a autorestart 1
+print_result $?
+
+running "Disable Power Nap"
+sudo pmset -a powernap 0
+print_result $?
+
+running "Never sleep the disks"
+sudo pmset -a disksleep 0
 print_result $?
 
 running "Disable wake-on LAN"
@@ -77,49 +102,106 @@ print_result $?
 
 # The application firewall. /Library/Preferences/com.apple.alf.plist was
 # removed in macOS 15, so `defaults write com.apple.alf ...` is dead code and
-# socketfilterfw is the only supported control. It needs the same Full Disk
-# Access grant as systemsetup above.
+# socketfilterfw is the only supported control. The setters exit 0 even when
+# they change nothing (no Full Disk Access), so each result is read back.
 #
 # Adding and removing individual applications through socketfilterfw has been
 # unreliable since macOS 15 and --listapps no longer prints paths, so do not
 # build per-app firewall rules on top of this.
 
 running "Turn the application firewall on"
-sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on >/dev/null 2>&1
+sudo "$FIREWALL_CTL" --setglobalstate on >/dev/null 2>&1
 print_result $?
 
 running "Turn stealth mode on (no reply to unsolicited probes)"
-sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on >/dev/null 2>&1
+sudo "$FIREWALL_CTL" --setstealthmode on >/dev/null 2>&1
 print_result $?
 
 running "Let built-in signed software receive incoming connections"
-sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsigned on >/dev/null 2>&1
+sudo "$FIREWALL_CTL" --setallowsigned on >/dev/null 2>&1
 print_result $?
 
 running "Do not auto-allow downloaded signed software"
-sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsignedapp off >/dev/null 2>&1
+sudo "$FIREWALL_CTL" --setallowsignedapp off >/dev/null 2>&1
 print_result $?
+
+running "Verify the firewall is really on"
+if "$FIREWALL_CTL" --getglobalstate 2>/dev/null | grep -q "State = 1"; then
+  ok
+else
+  error "the application firewall is still off: grant Full Disk Access to this terminal and run again"
+fi
+
+running "Verify stealth mode is really on"
+if "$FIREWALL_CTL" --getstealthmode 2>/dev/null | grep -q "enabled"; then
+  ok
+else
+  error "stealth mode is still off: grant Full Disk Access to this terminal and run again"
+fi
+
+# Lock the screen with a password immediately after sleep or the screensaver.
+# The defaults keys below are the declarative half; on current macOS they are
+# not reliably honoured, and `sysadminctl -screenLock` is the supported way.
+# It asks for the account password (`-password -` reads it from the terminal),
+# so it only runs when a person is there to type it.
+running "Require a password immediately after sleep or screen saver"
+defaults write com.apple.screensaver askForPassword -int 1
+defaults write com.apple.screensaver askForPasswordDelay -int 0
+ok
+
+if [ -t 0 ] && [ "${DOTFILES_YES:-0}" != "1" ]; then
+  running "Set the screen lock delay to immediate (sysadminctl asks for your account password)"
+  sysadminctl -screenLock immediate -password -
+  print_result $?
+else
+  warn "not run here (no terminal, or DOTFILES_YES is set). To finish the screen lock, run: sysadminctl -screenLock immediate -password -"
+fi
 
 ################################################
 bot "General UI/UX"
 ################################################
-running "Set computer name (as done via System Preferences → Sharing)"
-sudo scutil --set ComputerName "$COMPUTER_NAME" &&
-  sudo scutil --set HostName "$COMPUTER_NAME" &&
-  sudo scutil --set LocalHostName "$COMPUTER_NAME" &&
-  sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "$COMPUTER_NAME"
-print_result $?
+# Each block below runs only when its variable is set (see macos/local.sh).
+if [ -n "${DOTFILES_COMPUTER_NAME:-}" ]; then
+  running "Set computer name (as done via System Preferences → Sharing)"
+  sudo scutil --set ComputerName "$DOTFILES_COMPUTER_NAME" &&
+    sudo scutil --set HostName "$DOTFILES_COMPUTER_NAME" &&
+    sudo scutil --set LocalHostName "$DOTFILES_COMPUTER_NAME" &&
+    sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "$DOTFILES_COMPUTER_NAME"
+  print_result $?
+else
+  skip "computer name: DOTFILES_COMPUTER_NAME is not set (macos/local.sh)"
+fi
 
-running "Set language and text formats (english/CY)"
-defaults write NSGlobalDomain AppleLanguages -array "${LANGUAGES[@]}"
-defaults write NSGlobalDomain AppleLocale -string "$LOCALE"
-defaults write NSGlobalDomain AppleMeasurementUnits -string "$MEASUREMENT_UNITS"
-defaults write NSGlobalDomain AppleMetricUnits -bool true
-ok
+if [ -n "${DOTFILES_LANGUAGES:-}" ]; then
+  running "Set languages"
+  # Unquoted on purpose: the list is space-separated.
+  # shellcheck disable=SC2086
+  defaults write NSGlobalDomain AppleLanguages -array $DOTFILES_LANGUAGES
+  print_result $?
+fi
 
-running "Set timezone to $TIMEZONE;" #see `sudo systemsetup -listtimezones` for other values
-sudo systemsetup -settimezone "$TIMEZONE" >/dev/null 2>&1
-print_result $?
+if [ -n "${DOTFILES_LOCALE:-}" ]; then
+  running "Set text formats (locale)"
+  defaults write NSGlobalDomain AppleLocale -string "$DOTFILES_LOCALE"
+  print_result $?
+fi
+
+if [ -n "${DOTFILES_MEASUREMENT_UNITS:-}" ]; then
+  running "Set measurement units"
+  defaults write NSGlobalDomain AppleMeasurementUnits -string "$DOTFILES_MEASUREMENT_UNITS"
+  if [ "$DOTFILES_MEASUREMENT_UNITS" = "Centimeters" ]; then
+    defaults write NSGlobalDomain AppleMetricUnits -bool true
+  else
+    defaults write NSGlobalDomain AppleMetricUnits -bool false
+  fi
+  print_result $?
+fi
+
+if [ -n "${DOTFILES_TIMEZONE:-}" ]; then
+  running "Set timezone to $DOTFILES_TIMEZONE;" #see `sudo systemsetup -listtimezones` for other values
+  sudo systemsetup -settimezone "$DOTFILES_TIMEZONE" >/dev/null 2>&1
+  print_result $?
+fi
 
 # Boot sound: On macOS 11+ (Big Sur), control via System Settings > Sound > "Play sound on startup"
 # The nvram commands only worked on Intel Macs running macOS 10.15 or earlier
@@ -128,9 +210,8 @@ running "Restart automatically if the computer freezes"
 sudo systemsetup -setrestartfreeze on >/dev/null 2>&1
 print_result $?
 
-running "Set standby delay to 24 hours (default is 1 hour)"
-sudo pmset -a standbydelay 86400
-print_result $?
+# Note: `pmset standbydelay` is not written: Apple silicon ignores it (it reads
+# back absent). Power settings live in the Security block above.
 
 # Note: Sudden Motion Sensor (sms) setting removed - only relevant for HDDs, not SSDs
 # All modern Macs use SSDs, so this setting is obsolete
@@ -142,8 +223,20 @@ ok
 # Note: Battery percentage setting removed - deprecated in macOS Big Sur+
 # Now controlled via System Settings > Control Center > Battery
 
-running "Set highlight color to steel blue"
-defaults write NSGlobalDomain AppleHighlightColor -string "0.172549019607843 0.349019607843137 0.501960784313725"
+# Note: AppleHighlightColor removed - it has had no effect since macOS Tahoe.
+
+running "Use the dark appearance"
+defaults write NSGlobalDomain AppleInterfaceStyle -string Dark
+ok
+
+running "Use 24-hour time, do not minimize on title-bar double-click, enable the Web Inspector"
+defaults write NSGlobalDomain AppleICUForce24HourTime -bool true
+defaults write NSGlobalDomain AppleMiniaturizeOnDoubleClick -bool false
+defaults write NSGlobalDomain WebKitDeveloperExtras -bool true
+ok
+
+running "Use the Blow sound as the alert beep"
+defaults write NSGlobalDomain com.apple.sound.beep.sound -string "/System/Library/Sounds/Blow.aiff"
 ok
 
 running "Set sidebar icon size to medium"
@@ -189,7 +282,7 @@ ok
 # To bypass for a specific app: xattr -d com.apple.quarantine /path/to/app
 
 running "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)"
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
+"$LSREGISTER" -kill -r -domain local -domain system -domain user
 print_result $?
 
 running "Show control characters"
@@ -244,7 +337,7 @@ defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
 ok
 
 running "Enable full keyboard access for all controls (e.g. enable Tab in modal dialogs)"
-defaults write NSGlobalDomain AppleKeyboardUIMode -int 2
+defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
 ok
 
 running "Disable press-and-hold for keys in favor of key repeat"
@@ -252,8 +345,30 @@ defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
 ok
 
 running "Set a blazingly fast keyboard repeat rate"
-defaults write NSGlobalDomain KeyRepeat -int 1
+defaults write NSGlobalDomain KeyRepeat -int 2
 defaults write NSGlobalDomain InitialKeyRepeat -int 15
+ok
+
+# Symbolic hotkeys. Disabled because other apps take these over: Spotlight
+# (64, Cmd-Space) and Finder search (65) by Raycast, the built-in screenshot
+# shortcuts (28-31) by Shottr. Raycast's own hotkey is set inside Raycast, not
+# here. Arguments per key: id, ascii code, key code, modifier mask.
+_disable_hotkey() {
+  defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add "$1" \
+    "<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>$2</integer><integer>$3</integer><integer>$4</integer></array><key>type</key><string>standard</string></dict></dict>"
+}
+
+running "Disable the Spotlight, Finder search and screenshot keyboard shortcuts"
+_disable_hotkey 64 32 49 1048576
+_disable_hotkey 65 32 49 1572864
+_disable_hotkey 28 51 20 1179648
+_disable_hotkey 29 51 20 1441792
+_disable_hotkey 30 52 21 1179648
+_disable_hotkey 31 52 21 1441792
+# Apply without a logout.
+if [ -x "$ACTIVATE_SETTINGS" ]; then
+  "$ACTIVATE_SETTINGS" -u
+fi
 ok
 
 # Note: BezelServices keyboard illumination settings removed - deprecated in modern macOS
@@ -369,8 +484,14 @@ ok
 
 # Note: QLEnableTextSelection removed - text selection is now enabled by default in Quick Look
 
-# POSIX path in title: Broken on Sequoia (Finder title bar redesign).
-# Use ShowPathbar instead (enabled above).
+running "Show the full POSIX path in the Finder title bar"
+# Live and working on the current macOS, alongside the path bar above.
+defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
+ok
+
+running "Empty the Trash automatically after 30 days"
+defaults write com.apple.finder FXRemoveOldTrashItems -bool true
+ok
 
 running "Keep folders on top when sorting by name"
 defaults write com.apple.finder _FXSortFoldersFirst -bool true
@@ -434,11 +555,15 @@ running "Show the /Volumes folder"
 sudo chflags nohidden /Volumes
 print_result $?
 
-running "Expand the following File Info panes: General, Open with, and Sharing & Permissions"
-defaults write com.apple.finder FXInfoPanesExpanded -dict \
+# -dict-add, not -dict: a whole-dict write replaces the panes already open.
+running "Expand every File Info pane: General, Open with, Sharing & Permissions, Comments, More Info, Name"
+defaults write com.apple.finder FXInfoPanesExpanded -dict-add \
   General -bool true \
   OpenWith -bool true \
-  Privileges -bool true
+  Privileges -bool true \
+  Comments -bool true \
+  MetaData -bool true \
+  Name -bool true
 ok
 
 ###############################################################################
@@ -475,6 +600,11 @@ running "Remove the auto-hiding Dock delay"
 defaults write com.apple.dock autohide-delay -float 0
 ok
 
+running "Group Mission Control windows by application, and speed up the animation"
+defaults write com.apple.dock expose-group-apps -bool true
+defaults write com.apple.dock expose-animation-duration -float 0.1
+ok
+
 running "Make Dock icons of hidden applications translucent"
 defaults write com.apple.dock showhidden -bool true
 ok
@@ -498,21 +628,17 @@ defaults write com.apple.WindowManager EnableTilingByEdgeDrag -bool false
 defaults write com.apple.WindowManager EnableTopTilingByEdgeDrag -bool false
 ok
 
-running "Hide desktop widgets"
-defaults write com.apple.WindowManager StandardHideWidgets -bool true
+running "Show desktop widgets, hide desktop items"
+defaults write com.apple.WindowManager StandardHideWidgets -bool false
+defaults write com.apple.WindowManager HideDesktop -bool true
 ok
 
 # Launchpad reset removed: macOS 26 Tahoe replaced Launchpad with Apps.app and
 # ~/Library/Application Support/Dock no longer exists, so the old `find -delete`
 # had nothing to act on.
 
-running "Symlink the iOS Simulator into /Applications"
-if [[ -d "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" ]]; then
-  sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" "/Applications/Simulator.app"
-  print_result $?
-else
-  skip "Xcode is not installed"
-fi
+# The iOS Simulator symlink into /Applications is gone: Xcode 27 no longer ships
+# the app at that path, so the block could only report "Xcode is not installed".
 
 bot "Hot corners"
 # Possible values:

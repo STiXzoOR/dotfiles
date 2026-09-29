@@ -1,0 +1,70 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@stripe/cli':
+        specifier: 1.51.0
+        version: 1.51.0
+
+packages:
+
+  '@stripe/cli-darwin-arm64@1.51.0':
+    resolution: {integrity: sha512-O/9FlRJSQmFdblveyy1SLCvc9cT3KQHGItp5dBEU9HXnWyLJU+XAthZaxUQdtCQFhawNrdearc/I508q+nS1ug==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@stripe/cli-darwin-x64@1.51.0':
+    resolution: {integrity: sha512-idOIJSGOqgS4LME85SZuKJkLBhZvRuzb8N3QwkPSF4AdjIk62liapv4m7q8Bnp/zsRMIy4uSOdSiUgfcc9Ei9g==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@stripe/cli-linux-arm64@1.51.0':
+    resolution: {integrity: sha512-Y6h6k0wLy+fxY6zz3Cvk1KrLaBJPpfbxSatyQ3WLO3Bl28P1P/P4uxvthXuzIVuZYjPeUsyTU1mmt5wVyRoq6A==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@stripe/cli-linux-x64@1.51.0':
+    resolution: {integrity: sha512-iejERlUcnGEiq/Wds7Most55gE/RFtMXl9kkjZZF+Xp3AKfKYrTR+nod5vLY0oPqP1AfTRIMMiqP2r370NuuzA==}
+    cpu: [x64]
+    os: [linux]
+
+  '@stripe/cli-win32-x64@1.51.0':
+    resolution: {integrity: sha512-FHRlj++96tqFi0FDpLRHgKFYzl8DdccWcFk7i7XJJ68m0RA5b9ITXSa8M0fIvoZ5BZIY6+ej/mTXKnvEvIPczw==}
+    cpu: [x64]
+    os: [win32]
+
+  '@stripe/cli@1.51.0':
+    resolution: {integrity: sha512-y6Gfk4q0/vBWXRIsOUMr/A5icH6OZe5yKqppdD18OG/7U4IqpyqfW1HkDeqQXf4/VNEj7Ju/YbUqI61FeL28lA==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
+snapshots:
+
+  '@stripe/cli-darwin-arm64@1.51.0':
+    optional: true
+
+  '@stripe/cli-darwin-x64@1.51.0':
+    optional: true
+
+  '@stripe/cli-linux-arm64@1.51.0':
+    optional: true
+
+  '@stripe/cli-linux-x64@1.51.0':
+    optional: true
+
+  '@stripe/cli-win32-x64@1.51.0':
+    optional: true
+
+  '@stripe/cli@1.51.0':
+    optionalDependencies:
+      '@stripe/cli-darwin-arm64': 1.51.0
+      '@stripe/cli-darwin-x64': 1.51.0
+      '@stripe/cli-linux-arm64': 1.51.0
+      '@stripe/cli-linux-x64': 1.51.0
+      '@stripe/cli-win32-x64': 1.51.0

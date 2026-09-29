@@ -16,7 +16,9 @@ bierner.markdown-preview-github-styles
 bierner.markdown-yaml-preamble
 biomejs.biome
 bradlc.vscode-tailwindcss
-bwya77.islands-dark
+# bwya77.islands-dark is not on the VS Code marketplace or Open VSX (it is
+# sideloaded from https://github.com/bwya77/vscode-dark-islands), so listing it
+# made the extension step report a failure on every run. Install it by hand.
 charliermarsh.ruff
 christian-kohler.npm-intellisense
 christian-kohler.path-intellisense

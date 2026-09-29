@@ -1,0 +1,32 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@posthog/cli':
+        specifier: 0.18.3
+        version: 0.18.3
+
+packages:
+
+  '@posthog/cli@0.18.3':
+    resolution: {integrity: sha512-aJyvIRLDaZbJ/4R0I7vTk/uvO53c4aFQkWsgtuev73Rkc0/+GRSParP6j8aHX2ROQXviiOuiqyIds4dMPOt2fQ==}
+    engines: {node: '>=14.14', npm: '>=6'}
+    hasBin: true
+
+  detect-libc@2.1.2:
+    resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
+    engines: {node: '>=8'}
+
+snapshots:
+
+  '@posthog/cli@0.18.3':
+    dependencies:
+      detect-libc: 2.1.2
+
+  detect-libc@2.1.2: {}

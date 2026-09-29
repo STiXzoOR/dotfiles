@@ -1,0 +1,14 @@
+// Place your key bindings in this file to override the defaults.
+// ctrl+d: duplicate the line, or the selection when there is one.
+[
+  {
+    "key": "ctrl+d",
+    "command": "editor.action.copyLinesDownAction",
+    "when": "editorTextFocus && !editorReadonly && !editorHasSelection"
+  },
+  {
+    "key": "ctrl+d",
+    "command": "editor.action.duplicateSelection",
+    "when": "editorTextFocus && !editorReadonly && editorHasSelection"
+  }
+]

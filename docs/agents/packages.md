@@ -46,3 +46,35 @@ needs a build declares `allow_builds = true` for itself.
 what makes the tools reachable from git hooks, SessionEnd hooks and GUI apps.
 The old manager stays installed behind a guard in `system/.fnm` until it is
 removed by hand.
+
+## Private additions
+
+`Brewfile.local` (brew, cask, mas lines) and `packages/code.local.list` (VS Code
+extensions) are gitignored companions to `Brewfile` and `packages/code.list`.
+Put anything private or work-only there; this repo is public.
+
+## Notes on specific entries
+
+- **Tailscale** is the Mac App Store app, not the `tailscale` formula (its CLI
+  talks to a daemon that never runs). `system/.alias` defines
+  `tailscale` as the app's bundled binary when the app exists and no
+  `tailscale` is on PATH.
+- **git and gnupg** are declared: Apple's `/usr/bin/git` is an `xcrun` shim
+  (~7 ms per call, and Starship calls git twice per prompt), and mise verifies
+  Node downloads with GPG.
+- **dockutil** and **pup** come from homebrew-core; their third-party taps are
+  gone.
+- **OpenEmu** is installed by hand: its cask is disabled in homebrew-cask.
+- **`bwya77.islands-dark`** is not on the marketplace or Open VSX; install it by
+  hand from its GitHub releases.
+- A `mas` entry only installs an app already in your purchase history, and each
+  id must resolve at `https://itunes.apple.com/lookup?id=<id>` (LastPass and
+  Messenger did not, and were removed).
+
+## The mise lock tree
+
+`config/mise/locks/` is **tracked**. `mise.lock` holds `aube = { path = ... }`
+entries that point into it, and on a fresh clone `mise install` fails for every
+npm tool ("dependency sidecar ...: No such file or directory") if the tree is
+missing. `tests/mise.sh` checks that every path in `mise.lock` exists. When
+`mise lock` regenerates it, commit the tree with the lockfile.
