@@ -336,18 +336,29 @@ t "G1.5" "local file: languages, locale, units and timezone carry the fixture va
   _logged "$LOC" "systemsetup -settimezone Etc/Fixture"'
 t "G1.6" "Inches does not also declare metric units" \
   '_logged "$LOC" "defaults write NSGlobalDomain AppleMetricUnits -bool false"'
-t "G1.7" "defaults.sh carries no computer name, locale or timezone literal" \
-  '[ "$(code_of macos/defaults.sh | grep -cE "STiXzoOR|en_CY|el-CY|Europe/Athens")" -eq 0 ]'
-t "G1.8" "local.sh is gitignored and only the example is tracked" \
-  'git -c core.excludesFile=/dev/null check-ignore -q macos/local.sh && [ ! -e macos/local.sh ] && [ -f macos/local.sh.example ]'
+# Structural, so this file never has to name the private values it keeps out:
+# every write of a personal value must take its DOTFILES_* variable.
+_g_personal_bad() { # prints "<writes lacking their variable> <writes seen>"
+  code_of macos/defaults.sh | awk '
+    /scutil --set/ || /NetBIOSName/ { n++; if ($0 !~ /"\$DOTFILES_COMPUTER_NAME"/) bad++ }
+    /AppleLanguages/                 { n++; if ($0 !~ /\$DOTFILES_LANGUAGES/) bad++ }
+    /AppleLocale/                    { n++; if ($0 !~ /"\$DOTFILES_LOCALE"/) bad++ }
+    /AppleMeasurementUnits/          { n++; if ($0 !~ /"\$DOTFILES_MEASUREMENT_UNITS"/) bad++ }
+    /-settimezone/                   { n++; if ($0 !~ /"\$DOTFILES_TIMEZONE"/) bad++ }
+    END { print bad + 0, n + 0 }'
+}
+t "G1.7" "every personal-value write in defaults.sh takes its DOTFILES_* variable, never a literal" \
+  '[ "$(_g_personal_bad)" = "0 8" ]'
+t "G1.8" "local.sh is gitignored and local.sh.example is tracked" \
+  'git -c core.excludesFile=/dev/null check-ignore -q macos/local.sh && [ -n "$(git ls-files macos/local.sh.example)" ]'
 t "G1.9" "the example sets every variable the script reads" '
   bad=0
   for v in DOTFILES_COMPUTER_NAME DOTFILES_LANGUAGES DOTFILES_LOCALE DOTFILES_MEASUREMENT_UNITS DOTFILES_TIMEZONE; do
     grep -q "^$v=" macos/local.sh.example || bad=$((bad + 1))
   done
   [ "$bad" -eq 0 ]'
-t "G1.10" "the example holds placeholders, not a real name" \
-  '[ "$(grep -ci "stix" macos/local.sh.example)" -eq 0 ] && grep -q "^DOTFILES_COMPUTER_NAME=\"my-mac\"" macos/local.sh.example'
+t "G1.10" "the example computer name is the generic placeholder" \
+  'grep -q "^DOTFILES_COMPUTER_NAME=\"my-mac\"" macos/local.sh.example'
 
 #############################################################################
 section "G2 -- the repo reproduces the owner's live settings"
