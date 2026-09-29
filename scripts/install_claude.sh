@@ -11,6 +11,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CLAUDE_DIR="$ROOT_DIR/claude"
 CLAUDE_HOME="$HOME/.claude"
+# The skills CLI runs with the owner's credentials on every install, so it is
+# pinned; bump it here after reading its changelog.
+SKILLS_CLI_VERSION="1.7.0"
 VAULT_DIR="${VAULT_DIR:-$HOME/Vault}"
 # shellcheck source=lib/vault.sh
 source "$SCRIPT_DIR/lib/vault.sh"
@@ -54,6 +57,7 @@ try_or_track() {
   shift
   if ! "$@"; then
     FAILURES+=("$label")
+    return 1
   fi
 }
 
@@ -288,7 +292,7 @@ install_plugins() {
     local plugin_name="${line%%@*}"
 
     # Skip already-installed plugins silently
-    if echo "$CLAUDE_PLUGINS_CACHE" | grep -Fq "$plugin_name"; then
+    if list_has_token "$CLAUDE_PLUGINS_CACHE" "$plugin_name"; then
       skipped=$((skipped + 1))
       continue
     fi
@@ -301,18 +305,25 @@ install_plugins() {
     ok "$skipped plugins already installed, skipped"
   fi
 
-  warn_duplicate_safety_net
+  migrate_legacy_safety_net
 }
 
 # The plugin was renamed safety-net -> cc-safety-net. A Mac that has the old one
-# and gets the new one runs both hooks. Warn with the exact command; never
-# uninstall anything here.
-warn_duplicate_safety_net() {
-  local installed
-  installed="$(claude plugin list --json 2>/dev/null || true)"
-  if printf '%s' "$installed" | grep -Eq '(^|[^-[:alnum:]])safety-net@cc-marketplace' &&
-    printf '%s' "$installed" | grep -Fq 'cc-safety-net@cc-marketplace'; then
-    warn "two Safety Net plugins are installed (the legacy safety-net and cc-safety-net); remove the legacy one with: claude plugin uninstall safety-net@cc-marketplace"
+# and gets the new one would run both hooks, so the old one is uninstalled, but
+# only when cc-safety-net is listed for install and did not fail to install:
+# a failed install must never leave the machine without a Safety Net.
+migrate_legacy_safety_net() {
+  local legacy="safety-net@cc-marketplace" current="cc-safety-net@cc-marketplace" f
+  for f in ${FAILURES[@]+"${FAILURES[@]}"}; do
+    [[ "$f" == "plugin: $current" ]] && return 0
+  done
+  read_list "$CLAUDE_DIR" plugins | grep -Fqx "$current" || return 0
+  list_has_token "$(claude plugin list --json 2>/dev/null || true)" "$legacy" || return 0
+
+  if claude plugin uninstall "$legacy" >>"$CLAUDE_INSTALL_LOG" 2>&1; then
+    ok "uninstalled the legacy safety-net plugin (renamed to cc-safety-net)"
+  else
+    warn "could not uninstall the legacy safety-net plugin; remove it with: claude plugin uninstall $legacy"
   fi
   return 0
 }
@@ -389,8 +400,11 @@ install_skills() {
   action "Installing Claude Code skills"
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "${line// /}" ]] && continue
+    # No globbing: a `*` in the list must reach the CLI, not the directory.
+    set -f
     # shellcheck disable=SC2086
     set -- $line
+    set +f
     source="${1:-}" skill="${2:-}"
     if [[ -z "$source" || -z "$skill" ]]; then
       warn "skills.list: ignoring '$line' (expected: source skill)"
@@ -427,7 +441,7 @@ install_skills() {
     fi
 
     running "skill $skill"
-    if npx -y skills add "$source" --skill "$skill" -g -a claude-code -a codex -y >>"$CLAUDE_INSTALL_LOG" 2>&1; then
+    if npx -y "skills@$SKILLS_CLI_VERSION" add "$source" --skill "$skill" -g -a claude-code -a codex -y >>"$CLAUDE_INSTALL_LOG" 2>&1; then
       ok "skill $skill installed"
     else
       warn "failed to install skill $skill"
@@ -870,8 +884,11 @@ main() {
   # verify_settings_refs and merge_settings were rewritten to produce, so a
   # settings file pointing at a missing hook, or a merge that failed outright,
   # still printed "bootstrap complete!" and exited 0.
-  try_or_track "claude binary" install_claude_binary
-  try_or_track "release verification" verify_claude_install
+  # Without the binary there is nothing to verify: one missing binary is one
+  # failure, not two.
+  if try_or_track "claude binary" install_claude_binary; then
+    try_or_track "release verification" verify_claude_install
+  fi
   register_marketplaces
   install_plugins
   register_mcp_servers

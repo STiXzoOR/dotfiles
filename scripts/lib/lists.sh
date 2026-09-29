@@ -25,3 +25,15 @@ read_list() {
 count_list() {
   read_list "$1" "$2" | grep -c . || true
 }
+
+# Does <haystack> (a JSON listing, say) contain <token> as a whole name?
+# A plain `grep -F` also matched "safety-net" inside "cc-safety-net" and
+# "org/tools" inside "org/tools-extras". The token may be preceded by anything
+# but a name character (a "/" is fine: it is the owner/repo form inside a URL)
+# and followed by anything but one, or by a ".git" suffix.
+# Usage: list_has_token <haystack> <token>
+list_has_token() {
+  local esc
+  esc=$(printf '%s' "$2" | sed 's/[][\.*^$+?(){}|]/\\&/g')
+  grep -Eq "(^|[^[:alnum:]_.-])${esc}(\\.git)?([^[:alnum:]_.-]|\$)" <<<"$1"
+}
