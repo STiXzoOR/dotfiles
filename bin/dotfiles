@@ -1142,7 +1142,7 @@ case $COMMAND_NAME in
 "" | "help")
   sub_help
   ;;
-"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "apps" | "private" | "sync" | "vault")
+"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "private" | "sync" | "vault" | "apps")
   shift
   sub_"$COMMAND_NAME" "$@"
   ;;
