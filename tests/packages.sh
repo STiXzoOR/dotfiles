@@ -159,8 +159,13 @@ t "D6.12" "the private package lists Task 1 reads are gitignored" \
   'git -c core.excludesFile=/dev/null check-ignore -q Brewfile.local && git -c core.excludesFile=/dev/null check-ignore -q packages/code.local.list'
 t "D6.13" "the sideloaded islands-dark theme is not in the marketplace list" \
   '[ "$(code_of packages/code.list | grep -c "^bwya77.islands-dark")" -eq 0 ] && grep -q "islands-dark" packages/code.list'
-t "D6.14" ".idea and .superpowers are ignored at the repo level" \
-  'git -c core.excludesFile=/dev/null check-ignore -q .idea/x && git -c core.excludesFile=/dev/null check-ignore -q .superpowers/x'
+# Checked in a scratch repo that holds only this .gitignore, so the owner's
+# .git/info/exclude cannot answer for it, and .superpowers is a symlink there
+# (as it is in a worktree): a pattern with a trailing slash does not match one.
+t "D6.14" ".idea (a directory) and .superpowers (a directory or a symlink) are ignored at the repo level" \
+  'W=$(sandbox) && git init -q "$W" && cp .gitignore "$W/.gitignore" && mkdir "$W/.idea" && ln -s "$W" "$W/.superpowers" &&
+   git -C "$W" -c core.excludesFile=/dev/null check-ignore -q .idea/x && git -C "$W" -c core.excludesFile=/dev/null check-ignore -q .superpowers &&
+   rm "$W/.superpowers" && mkdir "$W/.superpowers" && git -C "$W" -c core.excludesFile=/dev/null check-ignore -q .superpowers/x'
 
 section "D4 — Neovim only"
 t "D4.1" "no setup_handlers" \
