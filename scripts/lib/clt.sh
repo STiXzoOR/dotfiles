@@ -13,6 +13,7 @@
 # Test seams (production values are the defaults):
 #   DOTFILES_CLT_SENTINEL      the on-demand sentinel path
 #   DOTFILES_CLT_RETRY_SLEEP   seconds between `softwareupdate --list` retries
+#   DOTFILES_CLT_KEEPALIVE_INTERVAL  seconds between sudo timestamp refreshes
 
 _dotfiles_clt_say() { # _dotfiles_clt_say <ok|error|action|warn> <message>
   if declare -F "$1" >/dev/null 2>&1; then
@@ -39,8 +40,11 @@ dotfiles_clt_pick_label() {
     [[ -n "$label" ]] || continue
     label=$(printf '%s' "$label" | sed -E 's/[[:space:]]+$//')
     # The version is the trailing number after the last "-" or space:
-    # "...Xcode 27.0-27.0" and "...Xcode-27.0" both give 27.0.
-    ver=$(printf '%s' "$label" | sed -E -n 's/.*[- ]([0-9]+(\.[0-9]+)*)$/\1/p')
+    # "...Xcode 27.0-27.0" and "...Xcode-27.0" both give 27.0. A trailing
+    # "beta 3" counter is dropped first, or it would read as version 3.
+    ver=$(printf '%s' "$label" |
+      sed -E -e 's/[[:space:]-]*[Bb]eta[[:space:]-]*[0-9]*$//' \
+        -n -e 's/.*[- ]([0-9]+(\.[0-9]+)*)$/\1/p')
     [[ -n "$ver" ]] || ver=0
     entries="${entries}${ver}${tab}${label}"$'\n'
   done
@@ -65,7 +69,30 @@ dotfiles_clt_pick_label() {
 
 # Install the Command Line Tools without the GUI dialog. Success when they are
 # already there. Returns non-zero, naming `xcode-select --install` as the
-# manual fallback, on any failure. The sentinel is removed on every path.
+# manual fallback, on any failure. The sentinel is removed on every path,
+# including an interrupt, and sudo is kept alive meanwhile: a long download can
+# outlast the sudo timestamp and stall on a password prompt nobody sees.
+_DOTFILES_CLT_SENTINEL_PATH=""
+_DOTFILES_CLT_KEEPALIVE_PID=""
+
+_dotfiles_clt_cleanup() {
+  if [[ -n "$_DOTFILES_CLT_KEEPALIVE_PID" ]]; then
+    kill "$_DOTFILES_CLT_KEEPALIVE_PID" 2>/dev/null || true
+    wait "$_DOTFILES_CLT_KEEPALIVE_PID" 2>/dev/null || true
+    _DOTFILES_CLT_KEEPALIVE_PID=""
+  fi
+  if [[ -n "$_DOTFILES_CLT_SENTINEL_PATH" ]]; then
+    sudo rm -f "$_DOTFILES_CLT_SENTINEL_PATH"
+    _DOTFILES_CLT_SENTINEL_PATH=""
+  fi
+}
+
+_dotfiles_clt_on_signal() { # _dotfiles_clt_on_signal <signal>
+  _dotfiles_clt_cleanup
+  trap - INT TERM
+  kill -s "$1" "$$"
+}
+
 dotfiles_install_clt() {
   if xcode-select -p >/dev/null 2>&1; then
     _dotfiles_clt_say ok "Command Line Tools already installed"
@@ -81,8 +108,25 @@ dotfiles_install_clt() {
     _dotfiles_clt_say error "could not create $sentinel; run: xcode-select --install"
     return 1
   }
+  _DOTFILES_CLT_SENTINEL_PATH="$sentinel"
+  trap '_dotfiles_clt_on_signal INT' INT
+  trap '_dotfiles_clt_on_signal TERM' TERM
+  # stdio is detached so a caller's `$(...)` does not wait on the sleep, and
+  # TERM takes the sleep down with the loop.
+  (
+    nap=""
+    trap 'kill "$nap" 2>/dev/null; exit 0' TERM
+    while :; do
+      sleep "${DOTFILES_CLT_KEEPALIVE_INTERVAL:-30}" &
+      nap=$!
+      wait "$nap"
+      sudo -n true 2>/dev/null || exit 0
+    done
+  ) >/dev/null 2>&1 </dev/null &
+  _DOTFILES_CLT_KEEPALIVE_PID=$!
   _dotfiles_clt_install_locked || rc=1
-  sudo rm -f "$sentinel"
+  _dotfiles_clt_cleanup
+  trap - INT TERM
   return "$rc"
 }
 

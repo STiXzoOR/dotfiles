@@ -729,7 +729,7 @@ case "$1" in
     n=$(($(cat "$SW/list.n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$SW/list.n"
     echo "softwareupdate --list (sentinel: $([ -e "$DOTFILES_CLT_SENTINEL" ] && echo present || echo absent))" >> "$SW/log"
     [ -f "$SW/list.$n" ] && cat "$SW/list.$n" ;;
-  --install) echo "softwareupdate $*" >> "$SW/log"; exit "$(cat "$SW/install.rc" 2>/dev/null || echo 0)" ;;
+  --install) echo "softwareupdate $*" >> "$SW/log"; [ -e "$SW/install.sleep" ] && sleep "$(cat "$SW/install.sleep")"; exit "$(cat "$SW/install.rc" 2>/dev/null || echo 0)" ;;
 esac
 STUB
   cat > "$W/bin/sudo" <<'STUB'
@@ -794,6 +794,25 @@ t "N2.15" "the licence is accepted when the selected path is inside Xcode.app" '
   grep -q "^sudo xcodebuild -license accept" "$W/log"'
 t "N2.16" "sub_install_clt is a thin wrapper over dotfiles_install_clt" '
   [ "$(fn_of sub_install_clt | grep -c "dotfiles_install_clt")" -eq 1 ] && [ "$(fn_of sub_install_clt | grep -c softwareupdate)" -eq 0 ]'
+
+t "N2.17" "a trailing beta counter is not read as the version" '
+  b="Command Line Tools for Xcode 27.0 beta 3"; s="Command Line Tools for Xcode 26.6-26.6"
+  [ "$(_clt_pick "$b" "$s")" = "$b" ] && [ "$(_clt_pick "$s" "$b")" = "$b" ]'
+t "N2.18" "sudo is kept alive while softwareupdate runs and stops afterwards" '
+  W=$(sandbox); _clt_stubs "$W"; echo 1 > "$W/install.sleep"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+  DOTFILES_CLT_KEEPALIVE_INTERVAL=0.1 _clt_run "$W" dotfiles_install_clt >/dev/null 2>&1 &&
+  [ "$(grep -c "^sudo -n true" "$W/log")" -ge 2 ] &&
+  n=$(grep -c "^sudo -n true" "$W/log") && sleep 0.5 && [ "$(grep -c "^sudo -n true" "$W/log")" -eq "$n" ]'
+t "N2.19" "a TERM during the install removes the sentinel and stops the keep-alive" '
+  W=$(sandbox); _clt_stubs "$W"; echo 2 > "$W/install.sleep"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+  DOTFILES_CLT_KEEPALIVE_INTERVAL=0.1 _clt_run "$W" "echo \$\$ > \"\$SW/pid\"; dotfiles_install_clt" >/dev/null 2>&1 &
+  bgpid=$!
+  i=0; while [ ! -e "$W/sentinel" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$W/sentinel" ]; kill -TERM "$(cat "$W/pid")"; wait "$bgpid" 2>/dev/null
+  [ ! -e "$W/sentinel" ] &&
+  n=$(grep -c "^sudo -n true" "$W/log") && sleep 0.5 && [ "$(grep -c "^sudo -n true" "$W/log")" -eq "$n" ]'
 
 
 #############################################################################
