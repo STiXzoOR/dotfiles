@@ -80,7 +80,7 @@ ENVEOF
 # stdin is /dev/null, so a detected class is never rich.
 _zsh_login() {
   # shellcheck disable=SC2086 # ZSHRUN_ENV is a list of NAME=value words
-  env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST \
+  env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST -u ATUIN_SESSION -u ATUIN_SHLVL \
     HOME="$1" ZDOTDIR="$1" XDG_CACHE_HOME="$1/.cache" PATH="$1/.stubs:$PATH" \
     DOTFILES_TERM_HOST="${ZSHRUN_TERM_HOST-rich}" ${ZSHRUN_ENV:-} \
     zsh -l -i -c "$2" </dev/null
@@ -118,7 +118,7 @@ pty_zshrun() {
   local h
   h=${ZSHRUN_HOME:-$(_zsh_sandbox)} || return 1
   # shellcheck disable=SC2086 # ZSHRUN_ENV is a list of NAME=value words
-  ptyrun env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST \
+  ptyrun env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST -u ATUIN_SESSION -u ATUIN_SHLVL \
     HOME="$h" ZDOTDIR="$h" XDG_CACHE_HOME="$h/.cache" PATH="$h/.stubs:$PATH" \
     ${ZSHRUN_ENV:-} zsh -l -i -c "$1"
 }
@@ -170,9 +170,16 @@ STUBEOF
   # --disable-ctrl-r.
   cat >"$1/.stubs/atuin" <<'STUBEOF'
 #!/bin/sh
+[ -n "$STUB_LOG" ] && echo "atuin $*" >> "$STUB_LOG"
+[ "$1" = uuid ] && echo 00000000000000000000000000000000
 [ "$1" = init ] || exit 0
 echo "ATUIN_STUB_ARGS='$*'"
+# The session id line of the real init script: a fork of `atuin uuid`.
 cat <<'ZSHEOF'
+if [[ -z $ATUIN_SESSION || $ATUIN_SHLVL != $SHLVL ]]; then
+  export ATUIN_SESSION=$(atuin uuid)
+  export ATUIN_SHLVL=$SHLVL
+fi
 _atuin_precmd() { :; }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _atuin_precmd
@@ -293,7 +300,7 @@ login_shell_cpu_ms() {
   _zsh_login "$h" true >/dev/null 2>&1   # warm the caches
   # The environment of _zsh_login, spelled out: /usr/bin/time needs a
   # program, not a shell function.
-  o=$( { /usr/bin/time -p env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST \
+  o=$( { /usr/bin/time -p env -u LC_ALL -u TERM_PROGRAM -u DOTFILES_TERM_HOST -u ATUIN_SESSION -u ATUIN_SHLVL \
            HOME="$h" ZDOTDIR="$h" XDG_CACHE_HOME="$h/.cache" PATH="$h/.stubs:$PATH" \
            DOTFILES_TERM_HOST="${ZSHRUN_TERM_HOST-rich}" \
            zsh -l -i -c true </dev/null; } 2>&1 >/dev/null )
@@ -424,7 +431,7 @@ t "C6.1" "fzf-tab is sourced after prezto, in rich terminals only" \
    bound_elsewhere "$(pv KEY_TAB warp)" fzf-tab-complete &&
    bound_elsewhere "$(pv KEY_TAB dumb)" fzf-tab-complete'
 t "C6.2" "atuin init is guarded, and Warp gets its recording hooks without bindings" \
-  '[ "$(code_of system/.atuin | grep -c "commands\[atuin\]")" -eq 1 ] &&
+  '[ "$(code_of system/.atuin | grep -c "[+]commands\[atuin\]")" -eq 1 ] &&
    [ "$(pv ATUIN_HOOK warp)" = _atuin_precmd ] &&
    a=" $(pv ATUIN_ARGS warp) " &&
    case "$a" in *" --disable-ctrl-r "*) ;; *) false ;; esac &&
@@ -579,5 +586,36 @@ t "P2.2" "the ls aliases are the same as without the shim, and no eza function i
    [ "$(grep -c -e "--version" "$G/eza.log")" -gt 0 ] && [ "$(grep -c -e "--version" "$H/eza.log")" -eq 0 ]'
 t "P2.3" "a shell without eza starts as before" \
   '[ "$(zshrun_all "echo ok")" = ok ]'
+
+section "P3 — atuin's init is cached per host, and the session id is minted in zsh"
+# Two or three login shells in one sandbox, atuin logging every call to
+# $H/stub.log. calls <log> <pattern>: how many logged calls start with it.
+_calls() { [ -f "$1" ] && awk -v p="$2" 'index($0, p) == 1 { n++ } END { print n + 0 }' "$1" || echo 0; }
+_ATUIN_SID='print -r -- "SID=$ATUIN_SESSION ${(t)ATUIN_SESSION} SHLVL=$ATUIN_SHLVL"'
+t "P3.1" "the first shell runs atuin init once; the second runs neither init nor uuid" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin init")" -eq 1 ] && [ "$(_calls "$L" "atuin uuid")" -eq 0 ] &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin init")" -eq 1 ] && [ "$(_calls "$L" "atuin uuid")" -eq 0 ]'
+t "P3.2" "the cache is per host, flags intact, and a newer atuin regenerates it" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_TERM_HOST=warp ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   ZSHRUN_TERM_HOST=rich ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin init")" -eq 2 ] &&
+   [ "$(grep -c -e "--disable-up-arrow --disable-ctrl-r --disable-ai" "$H/.cache/atuin-init-warp.zsh")" -eq 1 ] &&
+   [ "$(grep -c -e "--disable-ctrl-r" "$H/.cache/atuin-init-rich.zsh")" -eq 0 ] &&
+   touch -t 203501010000 "$H/.stubs/atuin" &&
+   ZSHRUN_TERM_HOST=rich ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin init")" -eq 3 ]'
+t "P3.3" "a shell with no terminal neither calls atuin nor writes a cache" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_TERM_HOST=dumb ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "atuin")" -eq 0 ] && [ ! -e "$H/.cache/atuin-init-dumb.zsh" ]'
+t "P3.4" "ATUIN_SESSION is 32 hex digits, exported, differs per shell, and ATUIN_SHLVL is set" \
+  'H=$(_zsh_sandbox) &&
+   A=$(ZSHRUN_HOME="$H" zshrun "$_ATUIN_SID") && B=$(ZSHRUN_HOME="$H" zshrun "$_ATUIN_SID") &&
+   [ "$A" != "$B" ] &&
+   [ "$(printf "%s\n%s\n" "$A" "$B" | grep -cE "^SID=[0-9a-f]{32} scalar-export SHLVL=[0-9]+$")" -eq 2 ]'
 
 finish

@@ -14,10 +14,35 @@
 #         Warp, whose docs list custom key bindings as a source of broken
 #         input. --disable-ai is what removes the ? binding.
 #   dumb  nothing: a `zsh -c` shell runs no precmd or preexec to record.
+#
+# Speed (about 11 ms of the login shell): `atuin init zsh` is cached per host
+# in $XDG_CACHE_HOME, regenerated when missing, older than the atuin binary or
+# older than this file (the flags below live here). The init script forks
+# `atuin uuid` for the session id whenever ATUIN_SESSION is unset or belongs to
+# another shell level, so that id is minted here in zsh first: 32 hex digits, a
+# millisecond-ish timestamp, the pid and two random words.
 if (( $+commands[atuin] )); then
+  _atuin_flags=
   case "$DOTFILES_TERM_HOST" in
     dumb) ;;
-    warp) eval "$(atuin init zsh --disable-up-arrow --disable-ctrl-r --disable-ai 2>/dev/null)" ;;
-    *) eval "$(atuin init zsh --disable-up-arrow 2>/dev/null)" ;;
+    warp) _atuin_flags='--disable-up-arrow --disable-ctrl-r --disable-ai' ;;
+    *) _atuin_flags='--disable-up-arrow' ;;
   esac
+
+  if [[ "$DOTFILES_TERM_HOST" != dumb ]]; then
+    if [[ -z "$ATUIN_SESSION" || "$ATUIN_SHLVL" != "$SHLVL" ]]; then
+      zmodload zsh/datetime
+      printf -v ATUIN_SESSION '%013x%05x%04x%010x' $(( EPOCHREALTIME * 1000000 )) $$ $RANDOM $(( RANDOM * RANDOM ))
+      export ATUIN_SESSION ATUIN_SHLVL=$SHLVL
+    fi
+
+    _atuin_cache="${XDG_CACHE_HOME:-$HOME/.cache}/atuin-init-${DOTFILES_TERM_HOST}.zsh"
+    if [[ ! -s "$_atuin_cache" || "$commands[atuin]" -nt "$_atuin_cache" || "${(%):-%x}" -nt "$_atuin_cache" ]]; then
+      mkdir -p "${_atuin_cache:h}"
+      atuin init zsh ${=_atuin_flags} >| "$_atuin_cache" 2>/dev/null
+    fi
+    [[ -s "$_atuin_cache" ]] && source "$_atuin_cache"
+    unset _atuin_cache
+  fi
+  unset _atuin_flags
 fi
