@@ -149,12 +149,15 @@ bound_elsewhere() { [ -n "$1" ] && [ "${1#\"*\" }" != "$2" ]; }
 write_tool_stubs() {
   cat >"$1/.stubs/starship" <<'STUBEOF'
 #!/bin/sh
+[ -n "$STUB_LOG" ] && echo "starship $*" >> "$STUB_LOG"
+[ "$1 $2" = "prompt --continuation" ] && printf 'CONT> '
 [ "$1" = init ] || exit 0
 cat <<'ZSHEOF'
 prompt_starship_precmd() { :; }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd prompt_starship_precmd
 RPROMPT='$(starship prompt --right)'
+PROMPT2="$(starship prompt --continuation)"
 ZSHEOF
 STUBEOF
   cat >"$1/.stubs/fzf" <<'STUBEOF'
@@ -617,5 +620,36 @@ t "P3.4" "ATUIN_SESSION is 32 hex digits, exported, differs per shell, and ATUIN
    A=$(ZSHRUN_HOME="$H" zshrun "$_ATUIN_SID") && B=$(ZSHRUN_HOME="$H" zshrun "$_ATUIN_SID") &&
    [ "$A" != "$B" ] &&
    [ "$(printf "%s\n%s\n" "$A" "$B" | grep -cE "^SID=[0-9a-f]{32} scalar-export SHLVL=[0-9]+$")" -eq 2 ]'
+
+section "P4 — starship's init is cached, with the continuation prompt baked in"
+t "P4.1" "the second shell runs neither starship init nor prompt --continuation, and PROMPT2 survives" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   A=$(ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun "print -r -- \"P2=[\$PROMPT2]\"") &&
+   [ "$(_calls "$L" "starship init")" -eq 1 ] && [ "$(_calls "$L" "starship prompt --continuation")" -eq 1 ] &&
+   B=$(ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun "print -r -- \"P2=[\$PROMPT2]\"") &&
+   [ "$(_calls "$L" "starship init")" -eq 1 ] && [ "$(_calls "$L" "starship prompt --continuation")" -eq 1 ] &&
+   [ "$A" = "P2=[CONT> ]" ] && [ "$B" = "$A" ]'
+t "P4.2" "the init is the full one, and the cached file holds a literal PROMPT2" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(grep -c -e "^starship init zsh --print-full-init$" "$L")" -eq 1 ] &&
+   [ "$(grep -c "^PROMPT2=.CONT> .$" "$H/.cache/starship-init.zsh")" -eq 1 ] &&
+   [ "$(grep -c "prompt --continuation" "$H/.cache/starship-init.zsh")" -eq 0 ]'
+t "P4.3" "touching the starship config regenerates the cache" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   mkdir -p "$H/.config/starship" && : >"$H/.config/starship/config.toml" &&
+   touch -t 203501010000 "$H/.config/starship/config.toml" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "starship init")" -eq 2 ]'
+t "P4.4" "a newer starship binary regenerates the cache" \
+  'H=$(_zsh_sandbox) && L="$H/stub.log" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   touch -t 203501010000 "$H/.stubs/starship" &&
+   ZSHRUN_ENV="STUB_LOG=$L" ZSHRUN_HOME="$H" zshrun true &&
+   [ "$(_calls "$L" "starship init")" -eq 2 ]'
+t "P4.5" "a shell that gets no Starship never writes the cache" \
+  'H=$(_zsh_sandbox) && ZSHRUN_TERM_HOST=warp ZSHRUN_HOME="$H" zshrun true &&
+   [ ! -e "$H/.cache/starship-init.zsh" ]'
 
 finish
