@@ -159,7 +159,7 @@ t "P3.6" "secrets.age and files outside the mapping never become links in the pu
   W=$(penv); seeded; printf "x" >"$W/priv/secrets.age"; mkdir -p "$W/priv/evil"; printf "x" >"$W/priv/evil/run.sh"; printf "x" >"$W/priv/README.md"
   priv link >/dev/null 2>&1 && [ ! -e "$W/pub/secrets.age" ] && [ ! -e "$W/pub/evil" ] && [ ! -e "$W/pub/README.md" ]'
 t "P3.7" "ssh/config is linked as ~/.ssh/config.private" '
-  W=$(penv); seeded; mkdir -p "$W/priv/ssh"; printf "Host box\n  HostName 192.0.2.1\n" >"$W/priv/ssh/config"
+  W=$(penv); seeded; mkdir -p "$W/priv/ssh"; printf "Host box\n  HostName box.example.invalid\n" >"$W/priv/ssh/config"
   priv link >/dev/null 2>&1 && [ "$(readlink "$W/home/.ssh/config.private")" = "$W/priv/ssh/config" ] && [ ! -e "$W/pub/ssh" ]'
 t "P3.8" "the managed ~/.ssh/config gets Include ~/.ssh/config.private exactly once, before any Host" '
   W=$(penv); seeded; mkdir -p "$W/priv/ssh" "$W/home/.ssh"; printf "Host box\n" >"$W/priv/ssh/config"
