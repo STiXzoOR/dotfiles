@@ -69,8 +69,14 @@ fi
 section "L2 -- the Brewfile installs exactly one launcher"
 # `brew bundle list` is read-only (it prints the cask without its tap).
 # HOMEBREW_NO_AUTO_UPDATE keeps it offline. Only HOMEBREW_* variables reach the
-# Brewfile, hence HOMEBREW_DOTFILES_LAUNCHER.
-_bl() { env HOMEBREW_NO_AUTO_UPDATE=1 "$@" brew bundle list --cask --file=Brewfile 2>/dev/null; }
+# Brewfile, hence HOMEBREW_DOTFILES_LAUNCHER. The Brewfile is read from a
+# sandbox copy: the one in the repo falls back to this Mac's own gitignored
+# macos/machine.local.sh, which would decide "unset" for the test (see L6).
+_bl() {
+  local d
+  d=$(_lc_dir) && cp Brewfile "$d/Brewfile" &&
+    env HOMEBREW_NO_AUTO_UPDATE=1 "$@" brew bundle list --cask --file="$d/Brewfile" 2>/dev/null
+}
 t "L2.1" "unset: Tinycast, not Raycast" \
   '! command -v brew >/dev/null || { o=$(_bl X=1); printf "%s\n" "$o" | grep -qx tinycast && ! printf "%s\n" "$o" | grep -qx raycast; }'
 t "L2.2" "DOTFILES_LAUNCHER=tinycast: Tinycast, not Raycast" \
