@@ -566,11 +566,11 @@ drift_header() {
 
 # strict_confirm <prompt>: yes only from a person. It needs a terminal and a
 # typed y or yes, and ignores DOTFILES_YES, which answers the ordinary
-# confirm. DOTFILES_STRICT_ANSWERS names a file of answers, one per line: the
-# test seam, since a test has no terminal.
+# confirm. The test harness (tests/lib.sh) may script the answers, but only
+# with no terminal, inside its own marked sandbox and from a file under it.
 strict_confirm() {
   local a
-  if [ -n "${DOTFILES_STRICT_ANSWERS:-}" ]; then
+  if [ ! -t 0 ] && scripted_answers_ok; then
     if [ "$STRICT_FD_OPEN" -eq 0 ]; then
       exec 4<"$DOTFILES_STRICT_ANSWERS" || return 1
       STRICT_FD_OPEN=1
@@ -583,6 +583,20 @@ strict_confirm() {
   fi
   case "$a" in y|Y|yes|YES|Yes) return 0 ;; esac
   return 1
+}
+
+scripted_answers_ok() {
+  local root="${DOTFILES_TEST_SANDBOX:-}" f="${DOTFILES_STRICT_ANSWERS:-}"
+  case "$root" in /?*) ;; *) return 1 ;; esac
+  case "$f" in "$root"/*) ;; *) return 1 ;; esac
+  case "/$f/" in */../*) return 1 ;; esac
+  [ -f "$f" ]
+}
+
+close_strict_answers() {
+  [ "$STRICT_FD_OPEN" -eq 1 ] || return 0
+  exec 4<&-
+  STRICT_FD_OPEN=0
 }
 
 # append_line <file> <line>: never twice, and never onto an unterminated line.
@@ -788,6 +802,7 @@ jev_drift() {
   drift_pkg
   drift_defaults
   drift_config
+  close_strict_answers
   jev_cleanup
   if [ "$DRIFT_SUGGESTED" -gt 0 ] && [ "$SCHEDULED" -eq 1 ]; then
     attn "Jev suggests $DRIFT_SUGGESTED drift item(s) to classify (run dotfiles sync)"

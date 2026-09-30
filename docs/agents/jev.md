@@ -174,8 +174,7 @@ What `on` mode does with an answer:
   write <domain> <key> -bool true`) and ask a **strict prompt**: it needs a
   terminal and a typed `y` or `yes`, and `DOTFILES_YES=1` does not answer it, so
   a line chosen by a model is never appended unattended. Yes appends it to that
-  file; nothing is committed. (`DOTFILES_STRICT_ANSWERS=<file>` feeds answers,
-  one per line: the test seam.)
+  file; nothing is committed.
 - A name is written only if it fits a conservative character set (brew and cask
   `A-Za-z0-9@._+/-`; App Store names also allow spaces, `&`, `:` and `'"'"'`, never
   `"`, `#`, `\` or `$`; extension ids `publisher.name`; a defaults domain

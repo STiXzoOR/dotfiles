@@ -22,6 +22,9 @@ pass=0; fail=0; failed_names=()
 # runs sandbox in a subshell -- still gets cleaned up. Removed by finish and,
 # if the suite dies early, by the EXIT trap.
 _sandbox_root=$(mktemp -d "${TMPDIR:-/tmp}/dftest.XXXXXX") || exit 1
+# The marker that lets a script under test accept scripted prompt answers, and
+# only for an answers file inside this root. Nothing else exports it.
+export DOTFILES_TEST_SANDBOX="$_sandbox_root"
 _sandbox_cleanup() { [ -n "${_sandbox_root:-}" ] && rm -rf "$_sandbox_root"; }
 trap _sandbox_cleanup EXIT
 

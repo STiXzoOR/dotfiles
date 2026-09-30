@@ -384,9 +384,13 @@ dstub() {
 # dsyn <args>: syn with Jev switched on and pointed at the stubs. $DX adds VAR=val.
 dsyn() {
   local ans=""
-  # DXY=1 answers the strict prompt "y" through the documented test seam
-  # (DOTFILES_STRICT_ANSWERS), since the strict prompt ignores DOTFILES_YES.
-  if [ -n "${DXY:-}" ]; then printf 'y\ny\ny\ny\ny\ny\ny\ny\ny\ny\n' >"$W/yes"; ans="DOTFILES_STRICT_ANSWERS=$W/yes"; fi
+  # DXY=1 answers "y" to every strict prompt, DXA=1 uses the answers already in
+  # $W/yes. The strict prompt ignores DOTFILES_YES; a test has no terminal, so
+  # the harness marks its sandbox (see tests/lib.sh) and names an answers file
+  # inside it.
+  local xa="${DXA:-}"
+  if [ -n "${DXY:-}" ]; then printf 'y\ny\ny\ny\ny\ny\ny\ny\ny\ny\n' >"$W/yes"; xa=1; fi
+  [ -n "$xa" ] && ans="DOTFILES_TEST_SANDBOX=$DOTFILES_TEST_SANDBOX DOTFILES_STRICT_ANSWERS=$W/yes"
   local SYNENV="$ans DOTFILES_JEV= DOTFILES_JEV_CONFIG=$W/jev.conf DOTFILES_JEV_BIN=$W/bin/dotfiles-jev-stub DOTFILES_BASELINE_BIN=$W/bin/dotfiles-baseline-stub ${DX:-}"
   syn "$@"
 }
@@ -512,7 +516,7 @@ t "D6.1" "DOTFILES_YES=1 with no terminal and no seam appends nothing: the model
   out=$(DX="DOTFILES_YES=1" dsyn 2>&1); [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && printf "%s\n" "$out" | grep -qF "Jev suggests public: brew \"jq\""'
 t "D6.2" "an answer that is not y or yes appends nothing" '
   W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile"); printf "n\nyep\n" >"$W/yes"
-  DX="DOTFILES_STRICT_ANSWERS=$W/yes" dsyn >/dev/null 2>&1; [ "$(shasum "$W/pub/Brewfile")" = "$b" ]'
+  DXA=1 dsyn >/dev/null 2>&1; [ "$(shasum "$W/pub/Brewfile")" = "$b" ]'
 t "D6.3" "a hostile App Store name (quote, Ruby interpolation) is never written into a Brewfile; it is shown to add by hand" '
   W=$(senv); dstub "$W"; printf "111  Evil\"App #{system(1)}  (5.0)\n222  Fine App  (1.0)\n" >"$W/state/mas"
   _suggest pkg mas:111 public; _suggest pkg mas:222 public; out=$(DXY=1 dsyn 2>&1)
@@ -546,6 +550,20 @@ t "D6.10" "a defaults integer like 5-3 and a domain with a shell metacharacter a
   printf "com.example.a\tBeta\t5\t5-3\nevil;dom\tK\t1\t2\n" >"$W/state/changed"
   _suggest defaults "com.example.a Beta" public; _suggest defaults "evil;dom K" public; out=$(DXY=1 dsyn 2>&1)
   [ ! -s "$W/pub/macos/defaults.sh" ] && [ "$(printf "%s\n" "$out" | grep -c "by hand")" -eq 2 ]'
+
+t "D6.11" "an exported answers file without the sandbox marker is ignored: a real run appends nothing" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; printf "y\ny\n" >"$W/yes"; b=$(shasum "$W/pub/Brewfile")
+  DX="DOTFILES_STRICT_ANSWERS=$W/yes" dsyn >/dev/null 2>&1; [ "$(shasum "$W/pub/Brewfile")" = "$b" ]'
+t "D6.12" "with the marker, an answers file outside the sandbox root, or reached through .., is ignored" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile")
+  o=$(mktemp -d "${TMPDIR:-/tmp}/dfout.XXXXXX"); printf "y\ny\n" >"$o/yes"; printf "y\ny\n" >"$W/yes"
+  DX="DOTFILES_TEST_SANDBOX=$DOTFILES_TEST_SANDBOX DOTFILES_STRICT_ANSWERS=$o/yes" dsyn >/dev/null 2>&1; a=$(shasum "$W/pub/Brewfile")
+  DX="DOTFILES_TEST_SANDBOX=$DOTFILES_TEST_SANDBOX DOTFILES_STRICT_ANSWERS=$DOTFILES_TEST_SANDBOX/../$(basename "$o")/yes" dsyn >/dev/null 2>&1; c=$(shasum "$W/pub/Brewfile")
+  DX="DOTFILES_TEST_SANDBOX= DOTFILES_STRICT_ANSWERS=$W/yes" dsyn >/dev/null 2>&1; d=$(shasum "$W/pub/Brewfile")
+  command rm -f "$o/yes"; rmdir "$o"
+  [ "$a" = "$b" ] && [ "$c" = "$b" ] && [ "$d" = "$b" ]'
+t "D6.13" "the answers descriptor the seam opens is closed again, and the seam is not advertised in the docs" '
+  [ "$(code_of bin/dotfiles-sync | grep -c "exec 4<&-")" -ge 1 ] && [ "$(grep -c "STRICT_ANSWERS" docs/agents/jev.md docs/agents/two-mac-sync.md | grep -vc ":0$")" -eq 0 ]'
 
 t "D5.1" "sync never writes to a Brewfile or a defaults file without going through confirm" '
   c=$(code_of bin/dotfiles-sync)
