@@ -158,11 +158,17 @@ t "G2.7" "an app covering a vscode, claude/ or codex/ target fails (no defaults 
      add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
      refused OVERLAP check || rc=1
    done; [ "$rc" -eq 0 ]'
-t "G2.7b" "an app covering an apps/ target that macos/defaults-<app>.sh installs (warp, vlc, gitkraken, xcode, terminal) passes with an info line" \
+t "G2.7b" "an apps/ target that macos/defaults-<app>.sh COPIES (warp, vlc, terminal) passes with an info line" \
   'W=$(newenv); rc=0
-   for p in ".warp/settings.toml" "Library/Preferences/org.videolan.vlc/vlcrc" ".gitkraken/profiles" "Library/Developer/Xcode/UserData/FontAndColorThemes/Nord.xccolortheme" "Library/Preferences/com.apple.Terminal.plist"; do
+   for p in ".warp/settings.toml" "Library/Preferences/org.videolan.vlc/vlcrc" "Library/Preferences/com.apple.Terminal.plist"; do
      add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
      out=$(run_apps check 2>&1) && ! printf "%s\n" "$out" | grep -q OVERLAP && printf "%s\n" "$out" | grep -q "^info: appsapp" || rc=1
+   done; [ "$rc" -eq 0 ]'
+t "G2.7c" "an apps/ target that macos/defaults-<app>.sh SYMLINKS into the repo (gitkraken, xcode, vscode) is a hard failure" \
+  'W=$(newenv); rc=0
+   for p in ".gitkraken/profiles" ".gitkraken/themes/nord-dark.jsonc" "Library/Developer/Xcode/UserData/FontAndColorThemes/Nord.xccolortheme" "Library/Application Support/Code/User/settings.json"; do
+     add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
+     refused OVERLAP check || rc=1
    done; [ "$rc" -eq 0 ]'
 t "G2.8" "an app whose plist is a domain macos/defaults*.sh writes passes, with one info line naming app and domain" \
   'W=$(newenv); add_app "$W" domapp "Library/Preferences/com.apple.dock.plist" "Library/Preferences/com.apple.dock.extra.plist"; set_allow "$W" alpha domapp
@@ -202,6 +208,15 @@ t "G2.15b" "a CLI-only app marked app|- passes check and restore never asks pgre
   'W=$(newenv); add_app "$W" cliapp "Library/Application Support/cliapp"; set_allow "$W" alpha cliapp
    printf "cliapp|-\n" >|"$W/cfg/processes.list"; printf "alpha|alphaProc\n" >>"$W/cfg/processes.list"
    run_apps check && run_apps backup && run_apps restore && ! grep -q "pgrep -x -" "$W/log"'
+t "G1.8" "app|- is used only by the CLI-only apps" \
+  '[ "$(grep "|-$" config/mackup/processes.list | cut -d"|" -f1 | sort | tr "\n" " ")" = "aws-settings fish mkcert ngrok opencode quicklook zoxide " ]'
+t "G1.9" "brave is not allowlisted (Secure Preferences HMAC resets a partial restore)" \
+  '! allow_of | grep -qx brave'
+t "G1.10" "no allowlisted definition covers Adobe OOBE, aws caches or transmission blocklists/stats" \
+  '[ "$(code_of config/mackup/applications/*.cfg | grep -ci OOBE)" -eq 0 ] &&
+   [ "$(code_of config/mackup/applications/aws-settings.cfg | grep -c cache)" -eq 0 ] &&
+   [ "$(code_of config/mackup/applications/transmission-settings.cfg | grep -ci "blocklist\|stats")" -eq 0 ] &&
+   ! allow_of | grep -Eqx "illustrator|photoshop|aws|transmission"'
 t "G2.16" "the shipped allowlist passes against real mackup (skipped, visibly, when not installed)" \
   '[ "$HAVE_MACKUP" -eq 0 ] || {
    W=$(sandbox); mkdir -p "$W/home/.config/mackup" "$W/stubs"
@@ -408,6 +423,10 @@ t "R17c" "restore with no defaults-domain overlap does not print the instruction
 t "R18" "restore refuses when a covered path is a symlink into the storage folder" \
   'W=$(newenv); run_apps backup && ln -sf "$W/icloud/Mackup/x" "$W/home/Library/Preferences/com.example.alpha.plist.new" &&
    mv "$W/home/Library/Preferences/com.example.alpha.plist.new" "$(alpha_plist)" && refused symlink restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18b" "restore refuses when a covered path is a symlink into the dotfiles repo, naming it" \
+  'W=$(newenv); run_apps backup && ln -sf "$ROOT_DIR/bin/dotfiles-apps" "$W/home/Library/Preferences/x.new" &&
+   mv "$W/home/Library/Preferences/x.new" "$(alpha_plist)" && out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "dotfiles repo" && printf "%s\n" "$out" | grep -q "alpha.plist" && [ "$(mackup_calls restore)" -eq 0 ]'
 t "R19" "restore takes the lock too" \
   'W=$(newenv); run_apps backup && mkdir -p "$(lock_dir)" && refused "lock" restore'
 t "R20" "on a fresh Mac (nothing local yet) restore works and needs no rescue copy" \

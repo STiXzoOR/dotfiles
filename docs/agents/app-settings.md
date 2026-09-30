@@ -25,11 +25,12 @@ dotfiles apps undo                        put back the latest rescue copy
 - `dotfiles apps check` enforces the rule instead of documenting it. It resolves
   every path each allowlisted app covers (`mackup show <app>`) and fails, naming
   the app and the path, if a path is or contains (or sits inside) a stow target
-  or a `claude/`, `codex/` or `vscode` target. `backup` and `restore` run it first
+  or a `claude/`, `codex/` or `vscode` target, or any `apps/` target whose
+  `macos/defaults-<name>.sh` links (`ln -s`) into the repo (gitkraken, xcode). `backup` and `restore` run it first
   and refuse on overlap.
 - **Defaults overlap is allowed.** A path that is the preferences plist (or
   container) of a domain `macos/defaults*.sh` writes, or an `apps/<name>/` target
-  installed by `macos/defaults-<name>.sh`, is reported as one `info:` line per
+  installed by a `macos/defaults-<name>.sh` that copies (terminal, vlc, warp), is reported as one `info:` line per
   app. After `apps restore`, `dotfiles configure --defaults` re-applies the
   dotfiles' keys over the restored ones, so `restore` ends by printing that
   instruction whenever a restored app overlaps. Domains come from the same key
@@ -58,14 +59,11 @@ that is the owner's decision.
 | --- | --- |
 | `adobe-camera-raw` | built-in: Application Support/Adobe/CameraRaw |
 | `apple-music` | built-in: Music plists and Scripts |
-| `aws` | built-in: `~/.aws` |
 | `bartender`, `cleanshot` | built-in: the Setapp and standard plist |
 | `blender` | built-in: `~/.config/blender`, Application Support/Blender |
-| `brave` | built-in: the Default profile Preferences file |
 | `fish` | built-in: `~/.config/fish` |
 | `flux` | built-in: `org.herf.Flux.plist` |
 | `iina` | built-in: plist and input_conf |
-| `illustrator`, `photoshop` | built-in: Adobe preferences, presets, workspaces |
 | `magnet` | built-in: `com.crowdcafe.windowmagnet.plist` |
 | `mail` | built-in: `com.apple.mail.plist` (defaults overlap) |
 | `microsoft-remote-desktop` | built-in: the `com.microsoft.rdc.macos` container plist |
@@ -76,12 +74,15 @@ that is the owner's decision.
 | `quicklook` | built-in: `~/Library/Quicklook` |
 | `telegram_macos` | built-in: `ru.keepcoder.Telegram.plist` |
 | `terminal` | built-in: `com.apple.Terminal.plist` (defaults overlap, `apps/terminal`) |
-| `transmission` | built-in: plist and `~/.config/transmission*` (defaults overlap) |
 | `tunnelblick` | built-in: Tunnelblick Configurations |
 | `vlc` | built-in: plists, Application Support, `org.videolan.vlc` (`apps/vlc` overlap) |
 | `warp` | built-in: `~/.warp` (`apps/warp` overlap) |
 | `zoom` | built-in: the `us.zoom.*` plists |
 | `zoxide` | built-in: Application Support/zoxide |
+| `aws-settings` | custom: `config`, `credentials`, `sso/` (not `cli/cache` or `sso/cache`, which hold rotating tokens) |
+| `illustrator-settings` | custom: the plist, `Adobe Illustrator 29 Settings`, `Application Support/Adobe/Adobe Illustrator 29`. The version is in the paths: update it with the app. Never OOBE |
+| `photoshop-settings` | custom: the plist, `Adobe Photoshop 2025 Settings`, `Application Support/Adobe/Adobe Photoshop 2025`. Same version note. Never OOBE |
+| `transmission-settings` | custom: the plist and `settings.json` (not `stats.json` or blocklists; defaults overlap) |
 | `bambu-studio` | custom: plist, `BambuStudio.conf`, `BambuNetworkEngine.conf`, `printers`, `user` (not plugins, system, ota, cache or logs) |
 | `claude-usage` | custom: `HamedElfayome.Claude-Usage.plist` |
 | `cleanmymac-setapp` | custom: the `-setapp` plist |
@@ -106,7 +107,10 @@ that is the owner's decision.
 - `bash`, `zsh`, `prezto`, `ruby`, `git`, `github-cli`, `mise`, `neovim`, `karabiner-elements`, `vscode`, `mackup`, `claude-code`, `codex`, `ssh`: stowed or installer-managed, a copy would replace the dotfiles' symlink.
 - `macosx`: the whole `.GlobalPreferences` is risky across macOS versions; `configure` sets the wanted keys.
 - `openemu`, `proxyman`: superseded by `openemu-settings` and `proxyman-setapp`.
-- `gitkraken`, `xcode`: replaced by `gitkraken-settings` and `xcode-settings` (symlinks, above).
+- `brave`: restoring `Default/Preferences` without `Secure Preferences` trips Chromium's tracked-pref HMAC and Brave resets the settings; Brave Sync covers it.
+- `illustrator`, `photoshop`: the built-ins cover only old versions and `Application Support/Adobe/OOBE`, which holds account state and can break Adobe sign-in; replaced by `illustrator-settings` and `photoshop-settings`.
+- `aws`, `transmission`: the built-ins copy rotating caches, stats and blocklists; replaced by `aws-settings` and `transmission-settings`.
+- `gitkraken`, `xcode`: replaced by `gitkraken-settings` and `xcode-settings` (the dotfiles symlink into them, above). `restore` also refuses any covered path that is a symlink into the dotfiles repo or the private repo.
 
 To add an app: put its name under `[applications_to_sync]`, add a
 `processes.list` line (`app|process name`, matched with `pgrep -x`), add a

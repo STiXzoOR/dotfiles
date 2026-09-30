@@ -183,12 +183,13 @@ owned_targets() {
     e=$(basename "$e")
     printf 'stowed from config/%s\t%s/%s\n' "$e" "$rel" "$e"
   done
-  # An apps/ directory with a macos/defaults-<name>.sh is installed by that
-  # script, which `dotfiles configure --defaults` re-runs after a restore.
+  # An apps/ directory installed by a macos/defaults-<name>.sh that COPIES is
+  # re-applied by `dotfiles configure --defaults` after a restore. A script
+  # that `ln -s`es into the repo is always hard: a copy restore would replace
+  # the link.
   app_targets | while IFS=$'\t' read -r name target; do
-    # VS Code is the exception: its script links the files, and a copy restore
-    # would replace the links.
-    if [ "$name" != vscode ] && [ -f "$DOTFILES_DIR/macos/defaults-$name.sh" ]; then
+    if [ -f "$DOTFILES_DIR/macos/defaults-$name.sh" ] &&
+      ! grep -Eq '(^|[[:space:]])ln[[:space:]]+-[a-zA-Z]*s' "$DOTFILES_DIR/macos/defaults-$name.sh"; then
       printf 'a domain macos/defaults*.sh writes (apps/%s)\t%s\n' "$name" "$target"
     else
       printf 'installed from %s/\t%s\n' "$name" "$target"
@@ -432,6 +433,17 @@ guard_symlinks() {
         case "$target" in
           "$STORE" | "$STORE"/* | "$STATE"/* | */Mackup | */Mackup/* | *com~apple~CloudDocs*)
             err "SYMLINK: '$l' ($app) is a symlink into cloud storage ($target), left by mackup's old link mode. Replace it with a real copy: rm '$l' && cp -R '$target' '$l' -- then run again"
+            rc=1
+            ;;
+        esac
+        # A link into the dotfiles repos would be replaced by a copy.
+        case "$target" in
+          /*) ;;
+          *) target="$(cd "$(dirname "$l")" 2>/dev/null && pwd -P)/$target" ;;
+        esac
+        case "$target" in
+          "$DOTFILES_DIR"/* | "${DOTFILES_PRIVATE_DIR:-$HOME/.dotfiles-private}"/*)
+            err "SYMLINK: '$l' ($app) is a symlink into the dotfiles repo ($target); a copy would replace the link, so this app cannot cover it"
             rc=1
             ;;
         esac
