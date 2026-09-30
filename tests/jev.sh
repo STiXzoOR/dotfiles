@@ -709,11 +709,18 @@ t "I2" "an own-secret line is dropped whole: the marker carries none of its text
   s=$(ask_state "$W" "before $OWN after")
   [ "$s" = "[masked own-secret line]" ]'
 
+# tp <id> <description> <expression>: t, but skipped visibly (never silently
+# passed) when this machine has no plutil.
+tp() {
+  if command -v plutil >/dev/null 2>&1; then t "$@"
+  else printf "  %sSKIP%s %s %s (needs plutil)\n" "$RED" "$RESET" "$1" "$2"; fi
+}
+
 mkplist() { # mkplist <file> <value>: a BINARY plist holding <value>
   printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>k</key><string>%s</string></dict></plist>' "$2" >"$1.xml"
   plutil -convert binary1 -o "$1" "$1.xml" && command rm -f "$1.xml"
 }
-t "I3" "scan-tree scans a binary plist through plutil: a credential in it is found" '
+tp "I3" "scan-tree scans a binary plist through plutil: a credential in it is found" '
   W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; tok="ghp_$(rand 36 A-Za-z0-9)"
   mkplist "$W/tree/settings.plist" "é$tok"
   bad=; [ "$(head -c 6 "$W/tree/settings.plist")" = bplist ] || bad=1
@@ -732,7 +739,7 @@ t "I5" "only a file that cannot be read is reported as not scanned" '
   W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "x\n" >"$W/tree/locked.txt"; chmod 000 "$W/tree/locked.txt"
   out=$(jtool scan-tree "$W/tree" 2>&1); chmod 600 "$W/tree/locked.txt"
   [ "$(printf "%s\n" "$out" | grep -c "1 file(s) not scanned (unreadable)")" -eq 1 ]'
-t "I6" "a settings backup with a credential inside a binary plist is refused" '
+tp "I6" "a settings backup with a credential inside a binary plist is refused" '
   W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; tok="ghp_$(rand 36 A-Za-z0-9)"
   mkplist "$W/tree/a.plist" "$tok"
   mkdir -p "$W/vault/Claude-Sessions"; cp "$W/tree/a.plist" "$W/vault/Claude-Sessions/a.plist"
@@ -763,15 +770,222 @@ t "I10" "a locked keychain warns once per run that the own-secret check is skipp
   newrepo; stub_locked_keychain "$W"; cp "$W/repo/profiles/local.zsh" "$W/r/profiles/local.zsh"
   gstage "$W" a.txt "we shipped an ordinary line" ; gstage "$W" b.txt "another ordinary line of prose"
   out=$(JENV="TYPESAFE_API_KEY=k1" guard 2>&1); rc=$?
-  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "own-secret check skipped: keychain locked or item unreadable")" -eq 1 ]'
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "own-secret check skipped: keychain locked (security exit 36)")" -eq 1 ]'
 t "I11" "the same warning, once, from scans and from redaction inside jev_ask" '
   W=$(sandbox); mkenv "$W"; stub_locked_keychain "$W"; mkdir -p "$W/tree"; printf "fine\n" >"$W/tree/a.txt"; printf "fine\n" >"$W/tree/b.txt"
   out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
   bad=; [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "own-secret check skipped")" -eq 1 ] || bad=1
   printf "x\n" >"$W/state.txt"
   out2=$(JENV="TYPESAFE_API_KEY=k1" jrun "jev_init; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_cleanup" 2>&1)
-  [ -z "$bad" ] && [ "$(printf "%s\n" "$out2" | grep -c "own-secret check skipped")" -eq 1 ]'
+  [ -z "$bad" ] && [ "$(printf "%s\n" "$out2" | grep -c "own-secret check skipped: keychain locked")" -eq 1 ]'
 t "I12" "docs record the in-memory grep -F match and why it replaces SHA-256 hashes" '
   [ "$(grep -c "grep -F -f <(printf" docs/agents/jev.md)" -ge 1 ] && [ "$(grep -ci "sha-256" docs/agents/jev.md)" -ge 1 ]'
+
+#############################################################################
+section "J -- Task 12: own-secret loading, plist data, temp cleanup, host names, log"
+#############################################################################
+
+# stub_pem_secret <W>: dotfiles.pem_key holds a PEM-armoured multi-line value;
+# every other item is not found (exit 44, like the real tool).
+# The armor lines are assembled at run time so this file holds no PEM header.
+PEM_BEGIN="-----BEGIN PRIV""ATE KEY-----"
+PEM_END="-----END PRIV""ATE KEY-----"
+stub_pem_secret() {
+  cat >"$1/stubs/security" <<STUB
+#!/bin/sh
+case "\$*" in
+  *dotfiles.pem_key*) printf '%s\n' '$PEM_BEGIN' 'MIIEvQIBADANBgkqhki' '----------------' '$PEM_END' ;;
+  *) exit 44 ;;
+esac
+STUB
+  chmod +x "$1/stubs/security"
+  printf 'pem_key() { dotfiles-secrets get pem_key; }\n' >"$1/repo/profiles/local.zsh"
+}
+
+t "J1" "a keychain item that does not exist yet (a fresh Mac) is silent: nothing to compare" '
+  W=$(sandbox); mkenv "$W"; printf "openai_key() { dotfiles-secrets get openai_api_key; }\n" >"$W/repo/profiles/local.zsh"
+  printf "x\n" >"$W/state.txt"
+  out=$(jrun "jev_load_secrets; jev_own_secret_lines state.txt" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ -z "$out" ]'
+t "J2" "a real keychain failure warns, and says whether it is locked or another error" '
+  W=$(sandbox); mkenv "$W"; stub_locked_keychain "$W"
+  o1=$(jrun "jev_load_secrets" 2>&1)
+  printf "#!/bin/sh\nexit 1\n" >"$W/stubs/security"
+  o2=$(jrun "jev_load_secrets" 2>&1)
+  [ "$(printf "%s\n" "$o1" | grep -c "own-secret check skipped: keychain locked (security exit 36)")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$o2" | grep -c "own-secret check skipped: keychain error (security exit 1)")" -eq 1 ]'
+t "J3" "PEM armor and other structural lines of a multi-line secret are not own-secret patterns" '
+  W=$(sandbox); mkenv "$W"; stub_pem_secret "$W"
+  printf "%s\n" "$PEM_BEGIN" "public notes" "$PEM_END" "----------------" "line MIIEvQIBADANBgkqhki here" >"$W/f.txt"
+  out=$(jrun "jev_own_secret_lines f.txt" 2>&1)
+  [ "$out" = 5 ]'
+t "J4" "a scan killed while it converts a plist leaves no temporary directory behind" '
+  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree" "$W/tmp"; printf "\000\001bin" >"$W/tree/a.plist"
+  printf "#!/bin/sh\nprintf \"%%s %%s\" \"\$PPID\" \"\$\$\" >\"\$FAKE_PLUTIL_OUT\"\nexec sleep 20\n" >"$W/stubs/plutil"; chmod +x "$W/stubs/plutil"
+  JENV="TMPDIR=$W/tmp FAKE_PLUTIL_OUT=$W/plutil.out" jtool scan-tree "$W/tree" >/dev/null 2>&1 &
+  bg=$!
+  n=0; while [ "$n" -lt 100 ] && [ ! -s "$W/plutil.out" ]; do sleep 0.1; n=$((n + 1)); done
+  read -r sp cp <"$W/plutil.out"
+  kill -TERM "$sp" 2>/dev/null; kill -TERM "$cp" 2>/dev/null; wait "$bg" 2>/dev/null
+  [ -n "$sp" ] && [ -z "$(ls -A "$W/tmp")" ]'
+# mkdataplist <file> <text>: a BINARY plist whose <data> element holds <text>.
+mkdataplist() {
+  printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>k</key><data>%s</data></dict></plist>' \
+    "$(printf '%s' "$2" | base64 | tr -d '\n')" >"$1.xml"
+  plutil -convert binary1 -o "$1" "$1.xml" && command rm -f "$1.xml"
+}
+tp "J5" "a plist <data> value is decoded: an own secret inside it is found, and neither it nor its base64 is printed" '
+  W=$(sandbox); mkenv "$W"; redact_env "$W"; mkdir -p "$W/tree"
+  mkdataplist "$W/tree/a.plist" "prefix-bytes $OWN and more"
+  mkdataplist "$W/tree/b.plist" "nothing of interest here"
+  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
+  [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK a.plist:[0-9]*: contains the value of one of your own Keychain")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "b.plist")" -eq 0 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c -e "$OWN" -e "$(printf "%s" "$OWN" | base64 | cut -c1-12)")" -eq 0 ]'
+t "J6" "a multi-word computer name is a deterministic block; a blank one is ignored, not a three-space pattern" '
+  newrepo; gstage "$W" a.txt "notes about frobnitz mini and its disk"
+  out=$(JENV="STUB_LOCALHOST=plainhost" T_COMPUTER="Frobnitz Mini" guard 2>&1); rc=$?
+  bad=; [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK privacy: a.txt:1: .*host name: fr\*\*\*")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c -e "frobnitz" -e "disk")" -eq 0 ] || bad=1
+  newrepo; gstage "$W" b.txt "a line   with   wide   spacing"
+  out2=$(JENV="STUB_LOCALHOST=plainhost" T_COMPUTER="   " guard 2>&1); rc2=$?
+  [ -z "$bad" ] && [ "$rc2" -eq 0 ] && [ -z "$out2" ]'
+t "J7" "the owners secrets are read from the keychain once per run, not once per request" '
+  W=$(sandbox); mkenv "$W"; redact_env "$W"; printf "x\n" >"$W/state.txt"
+  JENV="TYPESAFE_API_KEY=k1" jrun "jev_init; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_cleanup"
+  [ "$(calls)" -eq 3 ] && [ "$(grep -c "dotfiles.openai_api_key" "$W/sec/calls.log")" -eq 1 ]'
+t "J8" "shadow mode with no key spawns no background job on a commit" '
+  newrepo; T_SYNC=""; gstage "$W" a.txt "we shipped the Acme onboarding flow for the client"
+  out=$(guard 2>&1); rc=$?
+  sleep 1
+  [ "$rc" -eq 0 ] && [ -z "$out" ] && [ ! -e "$(LOGF)" ]'
+t "J9" "the log stores the confidence the verdict used: Jevs own when given, the derived one when not" '
+  newrepo; gstage "$W" a.txt "we shipped the Acme onboarding flow for the client"
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-noconf.json" guard >/dev/null 2>&1
+  a=$(tail -n 1 "$(LOGF)")
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-high.json" guard >/dev/null 2>&1
+  b=$(tail -n 1 "$(LOGF)")
+  [ "$(printf "%s" "$a" | jq -r .answers.reveals.confidence)" = "0.93" ] && [ "$(printf "%s" "$a" | jq -r .answers.reveals.confidence_derived)" = true ] &&
+  [ "$(printf "%s" "$b" | jq -r .answers.reveals.confidence)" = "0.91" ] && [ "$(printf "%s" "$b" | jq -r .answers.reveals.confidence_derived)" = null ]'
+t "J10" "a plutil-dependent test is skipped visibly, not passed, when plutil is absent" '
+  o=$(PATH=/nonexistent; tp J10-in "needs plutil" false); [ "$(printf "%s\n" "$o" | grep -c "SKIP.*J10-in")" -eq 1 ] &&
+  o2=$(tp J10-in "runs when present" true); [ "$(printf "%s\n" "$o2" | grep -c "✓.*runs when present")" -eq 1 ]'
+
+t "J11" "every consult path loads the owners secrets once, in the main shell: two hunks, one keychain read" '
+  newrepo; redact_env "$W"; command cp "$W/repo/profiles/local.zsh" "$W/r/profiles/local.zsh"
+  gstage "$W" .githooks/pre-commit "an ordinary line of prose in the first exempt file"
+  gstage "$W" tests/fixtures/make-secrets.sh "an ordinary line of prose in the second exempt file"
+  JENV="TYPESAFE_API_KEY=k1" guard >/dev/null 2>&1
+  [ "$(calls)" -eq 2 ] && [ "$(grep -c "dotfiles.openai_api_key" "$W/sec/calls.log")" -eq 1 ]'
+
+t "J12" "replay reads the owners secrets once for all cases, not once per question" '
+  W=$(sandbox); mkenv "$W"; mkreplay "$W"; redact_env "$W"
+  JENV="TYPESAFE_API_KEY=k1 DOTFILES_JEV_REPLAY_DIR=$W/replay" jtool replay privacy >/dev/null 2>&1
+  [ "$(calls)" -eq 4 ] && [ "$(grep -c "dotfiles.openai_api_key" "$W/sec/calls.log")" -eq 1 ]'
+
+#############################################################################
+section "K -- Task 13: drift that notices itself (dotfiles jev drift)"
+#############################################################################
+
+# Three undeclared packages as the sync facts feed them: key<TAB>facts.
+DRIFT3=$(printf 'brew:jq\tkind=brew formula; desc=Lightweight JSON processor; dependency=no; first seen 2026-09-01\ncask:slack\tkind=cask; desc=Team chat; dependency=no; first seen 2026-09-20\nbrew:libfoo\tkind=brew formula; desc=A library; dependency=yes; first seen 2026-08-30\n')
+# drift <kind> <facts>: dotfiles jev drift with the facts on stdin
+drift() { local k="$1"; shift; printf '%s\n' "$1" | jtool drift "$k"; }
+
+t "K1" "shadow mode (the default) asks once, logs a would-have decision, prints nothing and changes nothing" '
+  W=$(sandbox); mkenv "$W"
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$DRIFT3" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ -z "$out" ] && [ "$(calls)" -eq 1 ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .point)" = drift ] && [ "$(tail -n 1 "$(LOGF)" | jq -r .mode)" = shadow ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .action | grep -c "^shadow: would have suggested")" -eq 1 ]'
+t "K2" "on mode: one batched request with one choice question per item, suggestions above the thresholds as SUGGEST lines" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$DRIFT3" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(calls)" -eq 1 ] &&
+  [ "$(jq -r ".questions | keys | join(\",\")" "$W/rec/body.log")" = "i1,i2,i3" ] &&
+  [ "$(jq -r ".questions.i2.type" "$W/rec/body.log")" = choice ] &&
+  [ "$(jq -r ".questions.i1.criteria | keys | join(\",\")" "$W/rec/body.log")" = "ignore,private,public,remove" ] &&
+  [ "$(printf "%s\n" "$out" | sed -n 1p)" = "$(printf "SUGGEST\tbrew:jq\tpublic\t0.9\t0.9")" ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST")" -eq 3 ]'
+t "K3" "the state carries every item with its facts, numbered to match the questions" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$DRIFT3" >/dev/null 2>&1
+  st=$(jq -r .state "$W/rec/body.log")
+  [ "$(printf "%s\n" "$st" | grep -c "^i1: brew:jq .*Lightweight JSON processor")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$st" | grep -c "^i3: brew:libfoo .*dependency=yes")" -eq 1 ]'
+t "K4" "a probability below the warn threshold is not offered" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-low.json" drift pkg "$DRIFT3" 2>&1)
+  [ -z "$out" ] && [ "$(calls)" -eq 1 ]'
+t "K5" "a remove suggestion needs two agreeing calls: the second, on the removes only, agrees, so it is offered" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  printf "Second opinion\tanswer-drift-second-yes.json\n" >"$W/rec/rules"
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-remove.json" drift pkg "$DRIFT3" 2>&1)
+  [ "$(calls)" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST.brew:libfoo.remove")" -eq 1 ] &&
+  [ "$(jq -r ".questions | keys | join(\",\")" "$W/rec/body.log" | sed -n 2p)" = i1 ] &&
+  [ "$(jq -r .state "$W/rec/body.log" | sed -n "/Second opinion/,\$p" | grep -c "brew:libfoo")" -ge 1 ] &&
+  [ "$(jq -r .state "$W/rec/body.log" | sed -n "/Second opinion/,\$p" | grep -c "brew:jq")" -eq 0 ]'
+t "K6" "a second call that disagrees drops the remove suggestion; the other suggestions stand" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  printf "Second opinion\tanswer-drift-second-no.json\n" >"$W/rec/rules"
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-remove.json" drift pkg "$DRIFT3" 2>&1)
+  [ "$(calls)" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "remove")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST")" -eq 2 ]'
+t "K7" "a failing second call (5xx) is no agreement: no remove suggestion" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 JEV_TRIES=1 FAKE_CURL_SEQ=200,503 FAKE_CURL_ANSWER=answer-drift-remove.json" drift pkg "$DRIFT3" 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "remove")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST")" -eq 2 ]'
+t "K8" "the options differ per kind: defaults are public/local-only/transient, config dirs capture/ignore" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift defaults "com.example.app|Key	old=1; new=2" >/dev/null 2>&1
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift config "tool	files=3; size=4 KB" >/dev/null 2>&1
+  [ "$(jq -r ".questions.i1.criteria | keys | join(\",\")" "$W/rec/body.log" | sed -n 1p)" = "local-only,public,transient" ] &&
+  [ "$(jq -r ".questions.i1.criteria | keys | join(\",\")" "$W/rec/body.log" | sed -n 2p)" = "capture,ignore" ]'
+t "K9" "an unknown kind is a usage error and asks nothing" '
+  W=$(sandbox); mkenv "$W"
+  out=$(JENV="TYPESAFE_API_KEY=k1" drift bogus "$DRIFT3" 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && [ "$(calls)" -eq 0 ]'
+t "K10" "off is exit 0, no key is exit 3 (a failed request); neither asks nor prints" '
+  W=$(sandbox); mkenv "$W"; setmode drift=off
+  o1=$(JENV="TYPESAFE_API_KEY=k1" drift pkg "$DRIFT3" 2>&1); r1=$?
+  setmode drift=on
+  o2=$(drift pkg "$DRIFT3" 2>&1); r2=$?
+  [ "$r1" -eq 0 ] && [ -z "$o1" ] && [ "$r2" -eq 3 ] && [ -z "$o2" ] && [ "$(calls)" -eq 0 ]'
+t "K11" "a failed request (timeout) prints nothing and exits 3, which sync reads as stop asking" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_TIMEOUT=1" drift pkg "$DRIFT3" 2>&1); rc=$?
+  [ "$rc" -eq 3 ] && [ -z "$out" ]'
+t "K12" "nothing leaves the Mac that is on the never-send list: a private host name in the facts is a placeholder" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on; printf "Zorblax-Depot\n" >"$W/priv/jev/never-send.list"
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$(printf "brew:jq\tdesc=tap of Zorblax-Depot\n")" >/dev/null 2>&1
+  [ "$(calls)" -eq 1 ] && [ "$(recorded | grep -c "Zorblax-Depot")" -eq 0 ] && [ "$(jq -r .state "$W/rec/body.log" | grep -c "NEVER-SEND")" -eq 1 ]'
+t "K13" "the batch is capped (JEV_DRIFT_MAX_ITEMS): more items than that are not sent" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  many=$(i=0; while [ "$i" -lt 12 ]; do i=$((i + 1)); printf "brew:p%s\tdesc=x\n" "$i"; done)
+  JENV="TYPESAFE_API_KEY=k1 JEV_DRIFT_MAX_ITEMS=5 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$many" >/dev/null 2>&1
+  [ "$(calls)" -eq 1 ] && [ "$(jq -r ".questions | length" "$W/rec/body.log")" -eq 5 ]'
+t "K14" "the log holds counts and ids only: no item name or fact" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$DRIFT3" >/dev/null 2>&1
+  [ "$(grep -c "jq\|slack\|libfoo\|Lightweight" "$(LOGF)")" -eq 0 ] && [ "$(tail -n 1 "$(LOGF)" | jq -r .answers.i1.choice)" = public ]'
+t "K15" "status lists the drift point, shadow by default" '
+  W=$(sandbox); mkenv "$W"
+  out=$(jtool status 2>&1); [ "$(printf "%s\n" "$out" | grep -c "drift  *shadow")" -eq 1 ]'
+t "K16" "an empty facts feed asks nothing" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1" jtool drift pkg </dev/null 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ -z "$out" ] && [ "$(calls)" -eq 0 ]'
+t "K17" "shadow mode does not make the second remove call: nothing is acted on" '
+  W=$(sandbox); mkenv "$W"
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-remove.json" drift pkg "$DRIFT3" >/dev/null 2>&1
+  [ "$(calls)" -eq 1 ]'
+t "K18" "a choice that is not one of the offered options is ignored" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-bogus.json" drift pkg "$DRIFT3" 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "frobnicate")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST")" -eq 1 ]'
+t "K19" "a run dir shared by the caller survives: two drift calls, one request cap and fatal marker" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on; d=$(mktemp -d "$W/jev.XXXXXX"); printf 0 >"$d/count"
+  JENV="TYPESAFE_API_KEY=k1 JEV_RUN_DIR=$d FAKE_CURL_SEQ=401" drift pkg "$DRIFT3" >/dev/null 2>&1; r1=$?
+  JENV="TYPESAFE_API_KEY=k1 JEV_RUN_DIR=$d FAKE_CURL_SEQ=401" drift config "x	y" >/dev/null 2>&1; r2=$?
+  [ -d "$d" ] && [ "$(calls)" -eq 1 ] && [ "$r1" -eq 3 ] && [ "$r2" -eq 3 ]'
 
 finish

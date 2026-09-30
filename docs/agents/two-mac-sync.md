@@ -55,10 +55,22 @@ secrets.age     the encrypted secrets export
 | Command                  | What it does                                                                                       |
 | ------------------------ | -------------------------------------------------------------------------------------------------- |
 | `dotfiles private init`  | On the first Mac: create the repo from the gitignored files that exist, leave symlinks behind, make the first commit. It does **not** create the GitHub repo: it prints `gh repo create <owner>/dotfiles-private --private --source <dir> --push` for you to run. |
-| `dotfiles private clone` | On the second Mac: clone it (`DOTFILES_PRIVATE_REMOTE`, else the default SSH URL, then `gh repo clone` when `gh` is logged in). On failure it says what to set up (an SSH key on GitHub, or `gh auth login`) and returns non-zero. |
+| `dotfiles private clone` | On the second Mac: clone it (`DOTFILES_PRIVATE_REMOTE`, else the default SSH URL, then `gh repo clone` when `gh` is logged in). git's own message is always shown. Only `Repository not found` and `Permission denied (publickey)` count as "not set up yet": it then says what to set up (an SSH key on GitHub, or `gh auth login`) and returns 3. Any other failure (network, a typo in the remote, a changed host key) returns 1 with git's message. An HTTPS remote with no credentials fails with "terminal prompts disabled": that is a fault (exit 1), not "not set up". When the key was refused and a key in `~/.ssh` is protected by a passphrase, it names that key and says to `ssh-add` it: ssh runs with `BatchMode`, so it cannot ask. |
+| `dotfiles private hook`  | Install the secrets guard as the private repo's `pre-commit` hook (see below). `init`, `clone` and `link` do it too, so it is there on every Mac. Idempotent; a different existing hook is moved to `pre-commit.bak.<epoch>` first, and says so. |
 | `dotfiles private link`  | Symlink each private file to its path here. A different real file in the way is moved to `<name>.bak.<epoch>`; a correct link is left alone. Only the paths above are ever linked. `ssh/config` becomes `~/.ssh/config.private`, and `~/.ssh/config` gets `Include ~/.ssh/config.private` once, at the top (the public `Host *` defaults stay in `~/.ssh/config`). |
 | `dotfiles private status`| Ahead/behind/uncommitted for the private repo, and any gitignored file here that is a real file, not a link: a local change that will not reach the other Mac. |
-| `dotfiles install --private` | `clone` then `link`. It runs right before `link` in `install --all`; when the repo or GitHub access is not set up yet the clone is a skip that prints what to do (exit 0); a real error still fails the step. Git and ssh run non-interactively and accept a first-seen GitHub host key. |
+| `dotfiles install --private` | `clone` then `link`. It runs right before `link` in `install --all`; when the repo or GitHub access is not set up yet (see `clone`) the step is a skip that prints what to do (exit 0); any other failure fails the step. Git and ssh run non-interactively and accept a first-seen GitHub host key. |
+
+**The private repo cannot hold a plaintext secret.** Its `pre-commit` hook runs
+`dotfiles jev guard-private` (`docs/agents/jev.md`) over the staged diff:
+gitleaks, the credential formats, the high-entropy check and the exact values of
+your own Keychain secrets. A hit blocks the commit and prints `file:line` and a
+masked shape, never the value. Only `secrets.age` (age-encrypted) is exempt. The
+privacy checks of the public repo are not run here: names, hosts and addresses
+belong in this repo. Without gitleaks installed that layer is skipped with a warning on every commit. If `core.hooksPath` is set (in the repo or globally) git ignores `.git/hooks`, so `dotfiles private hook`, `link` and `clone` warn that the guard is NOT active, install nothing and fail. The hook needs this repo's `bin/dotfiles-jev`; when it is
+missing the commit is blocked, because a check that cannot run must not let a
+secret through. Nothing is sent to Jev unless a key exists and the point is on
+or in shadow mode, and then only the masked shape of an ambiguous value.
 
 `dotfiles secrets export` with no file argument writes `secrets.age` into the
 private repo when it exists (the one git working tree export accepts). The file
@@ -83,7 +95,21 @@ sync only reports the change and never imports.
    reported, never applied.
 4. Drift: packages installed on this Mac (`brew leaves --installed-on-request`,
    casks, `mas list`, VS Code extensions) that neither the public nor the private
-   lists declare, each with the line to add.
+   lists declare, each with the line to add. With the Jev `drift` point not `off`,
+   the packages, the macOS defaults that read back differently from the baseline
+   snapshot and the unmanaged `~/.config` directories are also classified in one
+   batched request per kind; `on` mode offers the pre-filled line behind a
+   strict prompt (a terminal and a typed y), `shadow` only logs, and nothing is ever written or committed without
+   you (see [jev.md](jev.md)).
+
+5. **Scheduled runs only**, once a day: `dotfiles jev scan-vault` over the vault's
+   `Claude-Sessions/` notes, which sync through iCloud (a token pasted into a
+   session lands there). A hit, definite or ambiguous, adds one line to the
+   notification: the count and up to three `file:line` positions, never the value.
+   It is report-only, so nothing in the vault is edited, moved or deleted. A day
+   stamp (`~/.local/state/dotfiles/vault-scan-last`) keeps it to one scan a day; a
+   scan that could not run is notified and retried the next run. No vault folder
+   means nothing to scan.
 
 **Interactively**, step 3 asks (`confirm`) before each action. **Scheduled**
 (`--scheduled`) it logs to `~/Library/Logs/dotfiles-sync.log`, never prompts,

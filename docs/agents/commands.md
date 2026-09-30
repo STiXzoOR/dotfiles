@@ -20,7 +20,7 @@ open                    # Open the dotfiles in Finder
 profiler                # Profile shell startup time
 secrets                 # Manage secrets in the macOS Keychain
 apps <check|backup|restore|list|undo>  # App settings backup (mackup, copy mode); see app-settings.md
-private <init|clone|link|status>       # Private companion repo for the gitignored files; see two-mac-sync.md
+private <init|clone|link|status|hook>  # Private companion repo for the gitignored files; see two-mac-sync.md
 sync [--scheduled]      # Keep this Mac current: fetch, fast-forward, restow, report drift; see two-mac-sync.md
 vault migrate           # Move ~/Vault into iCloud Drive, leaving a symlink; see two-mac-sync.md
 jev <status|log|replay|promote|scan-vault>  # Jev privacy and secrets guards (shadow by default); see jev.md
@@ -32,7 +32,9 @@ update                  # Update submodules
 
 `baseline` is not a `dotfiles` subcommand; the macOS defaults baseline is
 captured directly with `./bin/dotfiles-baseline`, which records every declared
-default and diffs a later capture against it.
+default and diffs a later capture against it. `dotfiles-baseline changed [label]`
+lists declared keys whose live value differs from the snapshot (read-only);
+`dotfiles sync` hands them to the Jev `drift` point.
 
 ## install flags
 

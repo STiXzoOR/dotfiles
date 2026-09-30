@@ -14,6 +14,10 @@
 #   dotfiles-baseline list              Print domain<TAB>key[<TAB>flags] pairs
 #   dotfiles-baseline capture [label]   Write a snapshot (default label: OS version)
 #   dotfiles-baseline diff <a> <b>      Report keys that stopped working
+#   dotfiles-baseline changed [label]   Declared keys whose live value differs
+#                                       from the snapshot: domain, key, old,
+#                                       new (tab separated; `dotfiles sync`
+#                                       hands them to Jev to classify)
 #
 set -uo pipefail
 
@@ -165,6 +169,24 @@ cmd_diff() {
     sed 's/^/  BROKE: /'
 }
 
+# Keys that still work but read back a different value than the snapshot
+# recorded. A key the OS stopped honouring is `diff`'s business (BROKE), and a
+# key that was absent then is not a change either. Read-only.
+cmd_changed() {
+  local label="${1:-$(sw_vers -productVersion 2>/dev/null)}" snap
+  snap="$BASELINE_DIR/$label.tsv"
+  [[ -f "$snap" ]] || {
+    echo "no baseline for '$label' in $BASELINE_DIR (dotfiles-baseline capture)" >&2
+    return 0
+  }
+  awk -F'\t' '
+    NR == FNR { old[$1 SUBSEP $2] = $3; next }
+    ($1 SUBSEP $2) in old {
+      o = old[$1 SUBSEP $2]
+      if (o != "ABSENT" && $3 != "ABSENT" && o != $3) printf "%s\t%s\t%s\t%s\n", $1, $2, o, $3
+    }' "$snap" <(capture_values)
+}
+
 case "${1:-}" in
   list)
     shift
@@ -178,8 +200,12 @@ case "${1:-}" in
     shift
     cmd_diff "$@"
     ;;
+  changed)
+    shift
+    cmd_changed "$@"
+    ;;
   *)
-    echo "Usage: dotfiles-baseline {list|capture [label]|diff <before> <after>}" >&2
+    echo "Usage: dotfiles-baseline {list|capture [label]|diff <before> <after>|changed [label]}" >&2
     exit 1
     ;;
 esac

@@ -63,6 +63,13 @@ refused() {
   out=$(priv "$@" 2>&1); rc=$?
   [ "$rc" -ne 0 ] && [ "$(printf '%s\n' "$out" | grep -c -- "$pat")" -ge 1 ]
 }
+# _gitfail <stderr text>: a git in front of the real one whose `clone` of the
+# private remote fails with that text (exit 128), as GitHub or ssh would.
+# Everything else (and a clone of any other URL, such as gh's) goes to real git.
+_gitfail() {
+  printf '%s\n' "$1" >"$W/giterr"
+  stub "$W/bin" git "case \"\$1\" in clone) for a in \"\$@\"; do [ \"\$a\" = \"\$DOTFILES_PRIVATE_REMOTE\" ] && { command cat \"$W/giterr\" >&2; exit 128; }; done ;; esac; exec /usr/bin/git \"\$@\""
+}
 # seeded: init the private repo, push it to the sandbox remote. A second Mac
 # then clones it (see other_mac).
 seeded() {
@@ -113,15 +120,15 @@ t "P2.1" "clone fetches the private repo into the private dir" '
 t "P2.2" "clone over an existing repo does nothing and succeeds" '
   W=$(penv); seeded; h=$(git -C "$W/priv" rev-parse HEAD)
   priv clone >/dev/null 2>&1 && [ "$(git -C "$W/priv" rev-parse HEAD)" = "$h" ]'
-t "P2.3" "a failed clone returns non-zero and says what to set up" '
-  W=$(penv); E="DOTFILES_PRIVATE_REMOTE=$W/nowhere.git STUB_GH_AUTH=no"
+t "P2.3" "a clone of a repo that is not there yet returns non-zero and says what to set up" '
+  W=$(penv); _gitfail "ERROR: Repository not found."; E="DOTFILES_PRIVATE_REMOTE=$W/nowhere.git STUB_GH_AUTH=no"
   with_env "$E" refused "gh auth login" clone && [ "$(with_env "$E" priv clone 2>&1 | grep -c "SSH key")" -ge 1 ] && [ ! -e "$W/priv/.git" ]'
-t "P2.4" "with gh authenticated, a failed git clone falls back to gh repo clone" '
-  W=$(penv); seeded && command rm -rf "$W/priv"
-  E="DOTFILES_PRIVATE_REMOTE=git@github.com:someone/dotfiles-private.git GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.$W/nowhere.insteadOf GIT_CONFIG_VALUE_0=git@github.com:someone/"
+t "P2.4" "with gh authenticated, a git clone that says Repository not found falls back to gh repo clone" '
+  W=$(penv); seeded && command rm -rf "$W/priv"; _gitfail "ERROR: Repository not found."
+  E="DOTFILES_PRIVATE_REMOTE=git@github.com:someone/dotfiles-private.git"
   with_env "$E" priv clone >/dev/null 2>&1 && grep -qx "gh repo clone someone/dotfiles-private $W/priv" "$W/log" && [ -f "$W/priv/profiles/local.zsh" ]'
 t "P2.5" "with gh not authenticated the fallback is not tried" '
-  W=$(penv); E="DOTFILES_PRIVATE_REMOTE=git@github.com:someone/dotfiles-private.git GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.$W/nowhere.insteadOf GIT_CONFIG_VALUE_0=git@github.com:someone/ STUB_GH_AUTH=no"
+  W=$(penv); _gitfail "ERROR: Repository not found."; E="DOTFILES_PRIVATE_REMOTE=git@github.com:someone/dotfiles-private.git STUB_GH_AUTH=no"
   ! with_env "$E" priv clone >/dev/null 2>&1 && [ "$(grep -c "^gh repo clone" "$W/log")" -eq 0 ]'
 
 #############################################################################
@@ -180,7 +187,7 @@ section "P4 -- status"
 t "P4.1" "a clean, pushed private repo reports up to date" \
   'W=$(penv); seeded; priv link >/dev/null 2>&1; said "up to date" status'
 t "P4.2" "an unpushed commit is reported as ahead" \
-  'W=$(penv); seeded; printf "n\n" >"$W/priv/Brewfile.local"; git -C "$W/priv" commit -qam more; said "ahead" status'
+  'W=$(penv); seeded; printf "n\n" >"$W/priv/Brewfile.local"; git -C "$W/priv" commit -q --no-verify -am more; said "ahead" status'
 t "P4.3" "a commit on the remote is reported as behind" '
   W=$(penv); seeded; c=$(sandbox); git clone -q "$W/remote.git" "$c/x"
   ( cd "$c/x" && printf "n\n" >>Brewfile.local && git -c user.name=t -c user.email=t@example.invalid commit -qam up && git push -q origin main )
@@ -202,14 +209,14 @@ t "P5.1" "install runs clone then link" '
   W=$(penv); seeded; command rm -rf "$W/priv" "$W/pub/profiles/local.zsh"
   priv install >/dev/null 2>&1 && [ -f "$W/priv/profiles/local.zsh" ] && [ -L "$W/pub/profiles/local.zsh" ]'
 t "P5.2" "install with a clone that cannot succeed yet is a skip (exit 0), says what to do, and links nothing" '
-  W=$(penv); E="DOTFILES_PRIVATE_REMOTE=$W/nowhere.git STUB_GH_AUTH=no"
+  W=$(penv); _gitfail "ERROR: Repository not found."; E="DOTFILES_PRIVATE_REMOTE=$W/nowhere.git STUB_GH_AUTH=no"
   out=$(with_env "$E" priv install 2>&1); rc=$?
   [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -q "gh repo create" && printf "%s\n" "$out" | grep -q "SSH key" &&
   printf "%s\n" "$out" | grep -qi "skipp" && [ ! -L "$W/pub/profiles/local.zsh" ]'
 t "P5.2b" "install with a real error (a non-git directory in the way) still fails" '
   W=$(penv); mkdir -p "$W/priv"; printf "x\n" >"$W/priv/f"; ! priv install >/dev/null 2>&1'
 t "P5.2c" "clone on its own still returns non-zero when the repo is not there yet" '
-  W=$(penv); with_env "DOTFILES_PRIVATE_REMOTE=$W/nowhere.git STUB_GH_AUTH=no" priv clone >/dev/null 2>&1; [ "$?" -ne 0 ]'
+  W=$(penv); _gitfail "ERROR: Repository not found."; with_env "DOTFILES_PRIVATE_REMOTE=$W/nowhere.git STUB_GH_AUTH=no" priv clone >/dev/null 2>&1; [ "$?" -ne 0 ]'
 # A stub git in front of the real one records the ssh command git was given.
 _gitspy() { stub "$W/bin" git 'echo "GSC=${GIT_SSH_COMMAND:-}" >>"$STUB_LOG"; exec /usr/bin/git "$@"'; }
 t "P2.6" "clone gets a non-interactive ssh that accepts a first-seen host key" '
@@ -226,4 +233,125 @@ t "P5.3" "an unknown subcommand is a usage error" \
 t "P5.4" "the ssh helper keeps the public Host * defaults in scripts/lib/ssh.sh" \
   'grep -q "UseKeychain yes" scripts/lib/ssh.sh && grep -q "dotfiles_ensure_ssh_include" scripts/lib/ssh.sh'
 
+#############################################################################
+section "P6 -- the secrets guard is the private repo's pre-commit hook (Task 12.1)"
+#############################################################################
+# guard_pub: give the sandbox public repo the guard, its libs and the real hook,
+# so the private repo's hook runs the guard exactly as shipped.
+guard_pub() {
+  mkdir -p "$W/pub/bin" "$W/pub/scripts/lib" "$W/pub/.githooks" "$W/sec" "$W/state"
+  cp "$ROOT_DIR/bin/dotfiles-jev" "$W/pub/bin/"
+  cp "$ROOT_DIR"/scripts/lib/jev* "$W/pub/scripts/lib/"
+  cp "$ROOT_DIR/.githooks/pre-commit" "$W/pub/.githooks/"
+}
+# pcommit <message>: commit what is staged in the private repo, so its hook runs.
+pcommit() {
+  env -i HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" DOTFILES_SECURITY_STUB_DIR="$W/sec" XDG_STATE_HOME="$W/state" \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid \
+    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid git -C "$W/priv" commit -q -m "$1"
+}
+PHOOK() { printf '%s/priv/.git/hooks/pre-commit' "$W"; }
+
+t "P6.1" "init installs an executable pre-commit hook that runs the guard" '
+  W=$(penv); guard_pub; priv init >/dev/null 2>&1
+  [ -x "$(PHOOK)" ] && [ "$(grep -c "dotfiles-private-guard" "$(PHOOK)")" -ge 1 ] && [ "$(grep -c "guard-private" "$(PHOOK)")" -ge 1 ]'
+t "P6.2" "a plaintext token in a staged file blocks the commit, and the token is never printed" '
+  W=$(penv); guard_pub; seeded; tok="ghp_$(rand_chars 36 A-Za-z0-9)"
+  printf "export GH_TOKEN=%s\n" "$tok" >>"$W/priv/profiles/local.zsh"; git -C "$W/priv" add -A
+  out=$(pcommit "add token" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK secrets: profiles/local.zsh:")" -ge 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "$tok")" -eq 0 ] && [ "$(git -C "$W/priv" rev-list --count HEAD)" -eq 1 ]'
+t "P6.3" "secrets.age is the one file allowed to hold secret-shaped text" '
+  W=$(penv); guard_pub; seeded; tok="ghp_$(rand_chars 36 A-Za-z0-9)"
+  printf "%s\n" "$tok" >"$W/priv/secrets.age"; git -C "$W/priv" add secrets.age
+  [ -x "$(PHOOK)" ] && pcommit "add secrets.age" >/dev/null 2>&1 && [ "$(git -C "$W/priv" rev-list --count HEAD)" -eq 2 ]'
+t "P6.4" "an ordinary change commits" '
+  W=$(penv); guard_pub; seeded; printf "brew \"jq\"\n" >>"$W/priv/Brewfile.local"; git -C "$W/priv" add -A
+  [ -x "$(PHOOK)" ] && pcommit "add jq" >/dev/null 2>&1 && [ "$(git -C "$W/priv" rev-list --count HEAD)" -eq 2 ]'
+t "P6.5" "a value of one of your own Keychain secrets blocks, and is never printed" '
+  W=$(penv); guard_pub; seeded; cp "$ROOT_DIR/tests/fixtures/security-stub" "$W/bin/security"
+  own="own-secret-$(rand_chars 14 A-Za-z0-9)"; printf "dotfiles.openai_api_key\t%s\n" "$own" >"$W/sec/login"
+  mkdir -p "$W/priv/jev"; printf "openai_api_key\n" >"$W/priv/jev/secret-names.list"
+  printf "# notes %s\n" "$own" >>"$W/priv/Brewfile.local"; git -C "$W/priv" add -A
+  out=$(pcommit "own secret" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "Brewfile.local:.*own Keychain secrets")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "$own")" -eq 0 ]'
+t "P6.6" "the privacy checks are not run on the private repo: names, addresses and home paths may live there" '
+  W=$(penv); guard_pub; seeded
+  printf "Host box\n  HostName 192.168.%s.7\n# /%s/jdoe/notes\n" "$((RANDOM % 200 + 1))" "$(printf Users)" >>"$W/priv/Brewfile.local"; git -C "$W/priv" add -A
+  [ -x "$(PHOOK)" ] && pcommit "private facts" >/dev/null 2>&1 && [ "$(git -C "$W/priv" rev-list --count HEAD)" -eq 2 ]'
+t "P6.7" "a guard that is missing blocks the commit (it never fails open) and says so" '
+  W=$(penv); guard_pub; seeded; command rm -f "$W/pub/bin/dotfiles-jev"
+  printf "brew \"jq\"\n" >>"$W/priv/Brewfile.local"; git -C "$W/priv" add -A
+  out=$(pcommit "no guard" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "secrets guard cannot run")" -eq 1 ]'
+t "P6.8" "installing is idempotent: link and hook again change nothing and make no backup" '
+  W=$(penv); guard_pub; seeded; [ -x "$(PHOOK)" ] && a=$(shasum "$(PHOOK)") &&
+  priv link >/dev/null 2>&1 && out=$(priv hook 2>&1) && priv link >/dev/null 2>&1 && [ -z "$out" ] &&
+  [ "$(shasum "$(PHOOK)")" = "$a" ] && [ "$(ls "$W/priv/.git/hooks" | grep -c "bak")" -eq 0 ]'
+t "P6.9" "a different pre-commit hook is backed up (once), never overwritten silently" '
+  W=$(penv); guard_pub; seeded; printf "#!/bin/sh\necho mine\n" >"$(PHOOK)"; chmod +x "$(PHOOK)"
+  out=$(priv link 2>&1); priv link >/dev/null 2>&1
+  bak=$(ls "$W/priv/.git/hooks" | grep "^pre-commit.bak\.")
+  [ "$(printf "%s\n" "$bak" | grep -c .)" -eq 1 ] && [ "$(sed -n 2p "$W/priv/.git/hooks/$bak")" = "echo mine" ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "pre-commit.bak")" -eq 1 ] && [ "$(grep -c "dotfiles-private-guard" "$(PHOOK)")" -ge 1 ]'
+t "P6.10" "clone and link install the hook too" '
+  W=$(penv); guard_pub; seeded; command rm -rf "$W/priv"; priv clone >/dev/null 2>&1; a=; [ -x "$(PHOOK)" ] || a=x
+  command rm -f "$(PHOOK)"; priv link >/dev/null 2>&1
+  [ -z "$a" ] && [ -x "$(PHOOK)" ]'
+t "P6.11" "the hook command with no private repo says what to run and fails" \
+  'W=$(penv); refused "no private repo" hook'
+
+t "P6.12" "a core.hooksPath (repo-local or global) means git ignores the hook: warn loudly, fail, install nowhere" '
+  W=$(penv); guard_pub; seeded; command rm -f "$(PHOOK)"; git -C "$W/priv" config core.hooksPath "$W/foreign"
+  out=$(priv hook 2>&1); rc=$?
+  bad=; [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "core.hooksPath.*$W/foreign")" -ge 1 ] && [ "$(printf "%s\n" "$out" | grep -c "NOT active")" -ge 1 ] &&
+  [ ! -e "$(PHOOK)" ] && [ ! -e "$W/foreign/pre-commit" ] || bad=1
+  priv link >/dev/null 2>&1; l=$?
+  git -C "$W/priv" config --unset core.hooksPath
+  out2=$(with_env "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/elsewhere" priv hook 2>&1); rc2=$?
+  [ -z "$bad" ] && [ "$l" -ne 0 ] && [ "$rc2" -ne 0 ] && [ "$(printf "%s\n" "$out2" | grep -c "NOT active")" -ge 1 ]'
+t "P6.13" "without gitleaks the private guard says that layer is skipped; with it, no warning" '
+  W=$(penv); guard_pub; seeded; printf "brew \"jq\"\n" >>"$W/priv/Brewfile.local"; git -C "$W/priv" add -A
+  out=$(pcommit "no gitleaks" 2>&1); rc=$?
+  stub "$W/bin" gitleaks ":"; printf "brew \"fd\"\n" >>"$W/priv/Brewfile.local"; git -C "$W/priv" add -A
+  out2=$(pcommit "with gitleaks" 2>&1); rc2=$?
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "gitleaks is not installed")" -eq 1 ] && [ "$rc2" -eq 0 ] && [ "$(printf "%s\n" "$out2" | grep -c "gitleaks")" -eq 0 ]'
+
+t "P6.14" "init still creates the repo when core.hooksPath disables the guard, but its status is non-zero and says so" '
+  W=$(penv); out=$(with_env "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/elsewhere" priv init 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "NOT active")" -ge 1 ] && [ -f "$W/priv/profiles/local.zsh" ] && [ -L "$W/pub/profiles/local.zsh" ]'
+
+#############################################################################
+section "P7 -- clone failures: only 'not set up yet' is a skip (Task 12.4)"
+#############################################################################
+NF="ERROR: Repository not found."
+t "P7.1" "Repository not found is a skip (exit 0) that shows git's own message" '
+  W=$(penv); _gitfail "$NF"; out=$(with_env "STUB_GH_AUTH=no" priv install 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "ERROR: Repository not found.")" -ge 1 ] && printf "%s\n" "$out" | grep -qi "skipp"'
+t "P7.2" "Permission denied (publickey) is a skip too, with git's message" '
+  W=$(penv); _gitfail "git@github.com: Permission denied (publickey)."; out=$(with_env "STUB_GH_AUTH=no" priv install 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "Permission denied (publickey)")" -ge 1 ] && printf "%s\n" "$out" | grep -qi "skipp"'
+t "P7.3" "a network failure fails loudly with git's message: not a skip, and gh is not tried" '
+  W=$(penv); _gitfail "ssh: Could not resolve hostname github.com: nodename nor servname provided, or not known"
+  out=$(priv install 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "Could not resolve hostname")" -ge 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -ci "skipp\|not set up")" -eq 0 ] && [ "$(grep -c "^gh repo clone" "$W/log")" -eq 0 ]'
+t "P7.4" "a changed host key fails loudly with git's message" '
+  W=$(penv); _gitfail "@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@"; out=$(priv install 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "REMOTE HOST IDENTIFICATION HAS CHANGED")" -ge 1 ] && [ "$(printf "%s\n" "$out" | grep -ci "skipp")" -eq 0 ]'
+t "P7.5" "clone alone: not set up is exit 3, anything else is exit 1" '
+  W=$(penv); _gitfail "$NF"; with_env "STUB_GH_AUTH=no" priv clone >/dev/null 2>&1; a=$?
+  _gitfail "fatal: unable to access: Connection timed out"; priv clone >/dev/null 2>&1; b=$?
+  [ "$a" -eq 3 ] && [ "$b" -eq 1 ]'
+t "P7.6" "a typo in the remote (a path that does not exist) fails loudly, not as a skip" '
+  W=$(penv); out=$(with_env "DOTFILES_PRIVATE_REMOTE=$W/typo.git STUB_GH_AUTH=no" priv install 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -ci "skipp")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "typo.git")" -ge 1 ]'
+t "P7.7" "a key that needs a passphrase is named: BatchMode cannot ask, so ssh-add is the fix" '
+  W=$(penv); mkdir -p "$W/home/.ssh"; ssh-keygen -q -t ed25519 -N "pw-$RANDOM" -C t -f "$W/home/.ssh/id_test" >/dev/null 2>&1
+  _gitfail "git@github.com: Permission denied (publickey)."; out=$(with_env "STUB_GH_AUTH=no" priv install 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "id_test.*passphrase")" -ge 1 ] && [ "$(printf "%s\n" "$out" | grep -c "ssh-add")" -ge 1 ]'
+t "P7.8" "without a passphrase-protected key the passphrase hint is not shown" '
+  W=$(penv); mkdir -p "$W/home/.ssh"; ssh-keygen -q -t ed25519 -N "" -C t -f "$W/home/.ssh/id_test" >/dev/null 2>&1
+  _gitfail "git@github.com: Permission denied (publickey)."; out=$(with_env "STUB_GH_AUTH=no" priv install 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -ci "passphrase")" -eq 0 ]'
 finish

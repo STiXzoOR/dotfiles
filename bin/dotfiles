@@ -708,8 +708,10 @@ sub_install_private() {
   bot "Private companion repo\n"
 
   if confirm "Clone the private repo and link its gitignored files?"; then
-    # The tool prints what to set up (SSH key or gh auth login) when the clone
-    # fails; the non-zero status lands in the install --all summary.
+    # A repo or GitHub access that is not set up yet is a skip: the tool prints
+    # what to do (SSH key, gh auth login) and exits 0. Any other failure (a
+    # network error, a changed host key, a typo in the remote) exits non-zero
+    # with git's message, and lands in the install --all summary.
     "$DOTFILES_DIR/bin/dotfiles-private" install || return 1
   else
     skip

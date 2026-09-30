@@ -124,7 +124,7 @@ jev_log() {
     { ts: $ts, point: $point, mode: $mode,
       questions: (if $ans == null then [] else ($ans | keys) end),
       answers: (if $ans == null then {} else
-        ($ans | map_values(with_entries(select(.key | IN("type", "noul", "choice", "score", "confidence"))))) end),
+        ($ans | map_values(with_entries(select(.key | IN("type", "noul", "choice", "score", "confidence", "confidence_derived"))))) end),
       latency_ms: ($ms | tonumber? // null),
       action: $action }' >>"$f" 2>/dev/null
   return 0
@@ -229,28 +229,62 @@ _jev_warn_once() {
   printf 'warning: %s\n' "$2" >&2
 }
 
+# _jev_keychain_get <account>: the item's value on stdout, security's exit
+# status as the return code (44 is "not found", 36 "keychain locked").
+_jev_keychain_get() {
+  if [ -n "${DOTFILES_KEYCHAIN:-}" ]; then
+    security find-generic-password -s dotfiles -a "$1" -w "$DOTFILES_KEYCHAIN" 2>/dev/null
+  else
+    security find-generic-password -s dotfiles -a "$1" -w 2>/dev/null
+  fi
+}
+
+# _jev_structural_line <line>: a fixed line that every value of its kind
+# shares (PEM armor, a rule of dashes, Proc-Type/DEK-Info headers). Matching
+# it would flag any file that merely holds a public certificate or a note.
+_jev_structural_line() {
+  case "$1" in
+    -----*-----) return 0 ;;
+    Proc-Type:* | DEK-Info:*) return 0 ;;
+    *[A-Za-z0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# Load once per process. Callers that would first load inside a pipeline (a
+# subshell whose copy of the array is thrown away) call this before it.
 jev_load_secrets() {
   [ "$_JEV_SECRETS_LOADED" -eq 1 ] && return 0
-  local name v line failed=0
+  local name v line rc failcode=0
   _JEV_SECRETS_LOADED=1
   _JEV_SECRETS=()
   while IFS= read -r name; do
     [ -n "$name" ] || continue
-    if [ -n "${DOTFILES_KEYCHAIN:-}" ]; then
-      v=$(security find-generic-password -s dotfiles -a "dotfiles.$name" -w "$DOTFILES_KEYCHAIN" 2>/dev/null) || { failed=1; continue; }
-    else
-      v=$(security find-generic-password -s dotfiles -a "dotfiles.$name" -w 2>/dev/null) || { failed=1; continue; }
+    v=$(_jev_keychain_get "dotfiles.$name")
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      # No such item is a fresh Mac that has not stored it yet: nothing to
+      # compare, and nothing to say. Anything else is a real failure.
+      [ "$rc" -eq 44 ] && continue
+      if [ "$failcode" -eq 0 ] || [ "$rc" -eq 36 ]; then failcode=$rc; fi
+      continue
     fi
     # A multi-line value (a private key, say) is matched line by line, and
     # never by an empty pattern, which would match every line. A line too
-    # short to be a secret would match ordinary text.
+    # short to be a secret, or a structural one, would match ordinary text.
     while IFS= read -r line; do
-      [ "${#line}" -ge 8 ] && _JEV_SECRETS+=("$line")
+      [ "${#line}" -ge 8 ] || continue
+      _jev_structural_line "$line" && continue
+      _JEV_SECRETS+=("$line")
     done <<EOF
 $v
 EOF
   done < <(jev_secret_names | sort -u)
-  [ "$failed" -eq 0 ] || _jev_warn_once ownsecret "own-secret check skipped: keychain locked or item unreadable"
+  if [ "$failcode" -eq 36 ]; then
+    _jev_warn_once ownsecret "own-secret check skipped: keychain locked (security exit 36)"
+  elif [ "$failcode" -ne 0 ]; then
+    _jev_warn_once ownsecret "own-secret check skipped: keychain error (security exit $failcode)"
+  fi
   return 0
 }
 
@@ -302,7 +336,9 @@ jev_never_send_map() {
     if [ -f "$f" ]; then
       grep -Ev '^[[:space:]]*(#|$)' "$f" | while IFS= read -r a; do printf '<NEVER-SEND>\t%s\n' "$a"; done
     fi
-    [ -n "${DOTFILES_COMPUTER_NAME:-}" ] && printf '<HOST>\t%s\n' "$DOTFILES_COMPUTER_NAME"
+    # A blank name (only spaces) is no name; a name with spaces is kept whole.
+    name=$(printf '%s' "${DOTFILES_COMPUTER_NAME:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -n "$name" ] && printf '<HOST>\t%s\n' "$name"
     name=$(scutil --get LocalHostName 2>/dev/null)
     [ -n "$name" ] && printf '<HOST>\t%s\n' "$name"
     if [ -f "$HOME/.ssh/config" ]; then
@@ -415,6 +451,10 @@ jev_ask() {
   tries="${JEV_TRIES:-2}"
   max="${JEV_MAX_REQUESTS:-20}"
 
+  # jev_redact runs in a pipeline (a subshell whose load is discarded), so load
+  # here. That is once per process only when jev_ask itself runs in the main
+  # shell; callers that wrap it in $(...) load first (bin/dotfiles-jev consult).
+  jev_load_secrets
   body="$JEV_RUN_DIR/body.$$.$RANDOM"
   resp="$JEV_RUN_DIR/resp.$$.$RANDOM"
   if ! jev_redact "$statef" |
