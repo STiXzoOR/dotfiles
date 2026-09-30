@@ -25,12 +25,11 @@ dotfiles apps undo                        put back the latest rescue copy
 - `dotfiles apps check` enforces the rule instead of documenting it. It resolves
   every path each allowlisted app covers (`mackup show <app>`) and fails, naming
   the app and the path, if a path is or contains (or sits inside) a stow target
-  or a `claude/`, `codex/` or `vscode` target, or any `apps/` target whose
-  `macos/defaults-<name>.sh` links (`ln -s`) into the repo (gitkraken, xcode). `backup` and `restore` run it first
+  or a `claude/`, `codex/` or `vscode` target, or any `apps/` target that is not marked as copied (see below). `backup` and `restore` run it first
   and refuse on overlap.
 - **Defaults overlap is allowed.** A path that is the preferences plist (or
   container) of a domain `macos/defaults*.sh` writes, or an `apps/<name>/` target
-  installed by a `macos/defaults-<name>.sh` that copies (terminal, vlc, warp), is reported as one `info:` line per
+  installed by a `macos/defaults-<name>.sh` that carries a `# dotfiles-apps: copies` marker line (terminal, vlc, warp only), is reported as one `info:` line per
   app. After `apps restore`, `dotfiles configure --defaults` re-applies the
   dotfiles' keys over the restored ones, so `restore` ends by printing that
   instruction whenever a restored app overlaps. Domains come from the same key
@@ -79,7 +78,7 @@ that is the owner's decision.
 | `warp` | built-in: `~/.warp` (`apps/warp` overlap) |
 | `zoom` | built-in: the `us.zoom.*` plists |
 | `zoxide` | built-in: Application Support/zoxide |
-| `aws-settings` | custom: `config`, `credentials`, `sso/` (not `cli/cache` or `sso/cache`, which hold rotating tokens) |
+| `aws-settings` | custom: `config` and `credentials` only (no `cli`, `sso` or `login`, which hold rotating tokens) |
 | `illustrator-settings` | custom: the plist, `Adobe Illustrator 29 Settings`, `Application Support/Adobe/Adobe Illustrator 29`. The version is in the paths: update it with the app. Never OOBE |
 | `photoshop-settings` | custom: the plist, `Adobe Photoshop 2025 Settings`, `Application Support/Adobe/Adobe Photoshop 2025`. Same version note. Never OOBE |
 | `transmission-settings` | custom: the plist and `settings.json` (not `stats.json` or blocklists; defaults overlap) |
@@ -110,7 +109,8 @@ that is the owner's decision.
 - `brave`: restoring `Default/Preferences` without `Secure Preferences` trips Chromium's tracked-pref HMAC and Brave resets the settings; Brave Sync covers it.
 - `illustrator`, `photoshop`: the built-ins cover only old versions and `Application Support/Adobe/OOBE`, which holds account state and can break Adobe sign-in; replaced by `illustrator-settings` and `photoshop-settings`.
 - `aws`, `transmission`: the built-ins copy rotating caches, stats and blocklists; replaced by `aws-settings` and `transmission-settings`.
-- `gitkraken`, `xcode`: replaced by `gitkraken-settings` and `xcode-settings` (the dotfiles symlink into them, above). `restore` also refuses any covered path that is a symlink into the dotfiles repo or the private repo.
+- Detecting links by grepping a script fails open, so detection is inverted: an `apps/<name>` target is soft only with the marker, and `check` fails a marked script that mentions `ln` (or `symbolic`) on any code line, so the marker cannot lie.
+- `gitkraken`, `xcode`: replaced by `gitkraken-settings` and `xcode-settings` (the dotfiles symlink into them, above). Backup and restore also refuse any covered path, ancestor up to `$HOME`, or symlink below it that fully resolves (relative links, chains, `/var` vs `/private/var`, symlinked parents) into the dotfiles repo or the private repo, using one `perl` `realpath` pass.
 
 To add an app: put its name under `[applications_to_sync]`, add a
 `processes.list` line (`app|process name`, matched with `pgrep -x`), add a

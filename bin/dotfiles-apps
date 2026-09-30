@@ -168,6 +168,22 @@ owned_sources_ok() {
   return "$rc"
 }
 
+has_copy_marker() {
+  grep -Eq '^# dotfiles-apps: copies' "$DOTFILES_DIR/macos/defaults-$1.sh" 2>/dev/null
+}
+
+# A marked script that could link (any ln, LN or --symbolic on a code line).
+marker_liars() {
+  local name target
+  app_targets | while IFS=$'\t' read -r name target; do
+    has_copy_marker "$name" || continue
+    if sed 's/#.*$//' "$DOTFILES_DIR/macos/defaults-$name.sh" |
+      grep -Eq '(^|[^[:alnum:]_])(ln|LN)([^[:alnum:]_]|$)|symbolic'; then
+      printf '%s\n' "$name"
+    fi
+  done
+}
+
 # Every owned target as why<TAB>home-relative path.
 owned_targets() {
   local e xdg rel name target domain flags
@@ -183,13 +199,13 @@ owned_targets() {
     e=$(basename "$e")
     printf 'stowed from config/%s\t%s/%s\n' "$e" "$rel" "$e"
   done
-  # An apps/ directory installed by a macos/defaults-<name>.sh that COPIES is
-  # re-applied by `dotfiles configure --defaults` after a restore. A script
-  # that `ln -s`es into the repo is always hard: a copy restore would replace
-  # the link.
+  # An apps/ target is soft only when its macos/defaults-<name>.sh says so with
+  # a `# dotfiles-apps: copies` marker (`dotfiles configure --defaults` then
+  # re-applies it after a restore). Everything else is hard: detecting links by
+  # grep fails open, so an unmarked script is assumed to link. cmd_check fails
+  # a marked script that mentions ln anywhere.
   app_targets | while IFS=$'\t' read -r name target; do
-    if [ -f "$DOTFILES_DIR/macos/defaults-$name.sh" ] &&
-      ! grep -Eq '(^|[[:space:]])ln[[:space:]]+-[a-zA-Z]*s' "$DOTFILES_DIR/macos/defaults-$name.sh"; then
+    if has_copy_marker "$name"; then
       printf 'a domain macos/defaults*.sh writes (apps/%s)\t%s\n' "$name" "$target"
     else
       printf 'installed from %s/\t%s\n' "$name" "$target"
@@ -251,6 +267,10 @@ cmd_check() {
   done
 
   owned_sources_ok || return 1
+  for u in $(marker_liars); do
+    err "macos/defaults-$u.sh carries a 'dotfiles-apps: copies' marker but also mentions ln; the marker must not lie, so remove one of them"
+    rc=1
+  done
   # Lowercase once, in one awk each, not with a fork per path and target: the
   # owned list has hundreds of entries, and a tr per pair made every check
   # take seconds.
@@ -419,6 +439,49 @@ validate_tree() {
 
 # 6.5: the old link mode leaves covered paths as symlinks into the storage
 # folder. Refuse to copy through them.
+# A copy restore replaces a symlink with a file, so no covered path may
+# resolve into the dotfiles repos. Every candidate (the covered path, each
+# ancestor up to $HOME, every symlink found below it) is resolved fully and
+# physically (relative links, chains, /var vs /private/var, symlinked parents)
+# by one perl (it ships with macOS) and compared with the resolved repo roots.
+guard_repo_links() {
+  local app p full d hits rc=0 priv="${DOTFILES_PRIVATE_DIR:-$HOME/.dotfiles-private}"
+  hits=$(
+    for app in $(allowlist); do
+      while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        full="$HOME/${p%/}"
+        { [ -L "$full" ] || [ -e "$full" ]; } || continue
+        printf '%s\t%s\n' "$app" "$full"
+        d=$(dirname "$full")
+        while [ "$d" != "$HOME" ] && [ "$d" != / ] && [ "$d" != . ]; do
+          printf '%s\t%s\n' "$app" "$d"
+          d=$(dirname "$d")
+        done
+        find "$full" -type l 2>/dev/null | sed "s|^|$app$(printf '\t')|"
+      done <<EOF
+$(app_paths "$app")
+EOF
+    done | perl -MCwd=realpath -e '
+      my @roots = grep { defined } map { realpath($_) } @ARGV; @ARGV = ();
+      while (my $l = <STDIN>) {
+        chomp $l; my ($app, $c) = split /\t/, $l, 2;
+        my $r = realpath($c); next unless defined $r;
+        for my $root (@roots) {
+          if ($r eq $root || index($r, "$root/") == 0) { print "$app\t$c\t$r\n"; last }
+        }
+      }' "$DOTFILES_DIR" "$priv"
+  )
+  while IFS=$'\t' read -r app p d; do
+    [ -n "$p" ] || continue
+    err "SYMLINK: '$p' ($app) resolves into the dotfiles repo ($d); a copy would replace the link, so this app cannot cover it"
+    rc=1
+  done <<EOF
+$hits
+EOF
+  return "$rc"
+}
+
 guard_symlinks() {
   local app p full l target rc=0
   for app in $(allowlist); do
@@ -436,22 +499,12 @@ guard_symlinks() {
             rc=1
             ;;
         esac
-        # A link into the dotfiles repos would be replaced by a copy.
-        case "$target" in
-          /*) ;;
-          *) target="$(cd "$(dirname "$l")" 2>/dev/null && pwd -P)/$target" ;;
-        esac
-        case "$target" in
-          "$DOTFILES_DIR"/* | "${DOTFILES_PRIVATE_DIR:-$HOME/.dotfiles-private}"/*)
-            err "SYMLINK: '$l' ($app) is a symlink into the dotfiles repo ($target); a copy would replace the link, so this app cannot cover it"
-            rc=1
-            ;;
-        esac
       done < <(find "$full" -type l 2>/dev/null)
     done <<EOF
 $(app_paths "$app")
 EOF
   done
+  guard_repo_links || rc=1
   return "$rc"
 }
 

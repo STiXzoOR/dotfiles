@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
 # Sourced by `dotfiles configure --defaults`, never executed: no `set -e`.
+# dotfiles-apps: copies apps/vlc into place and never links it (checked by dotfiles apps check)
 
 DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
 
