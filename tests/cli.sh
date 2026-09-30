@@ -1102,9 +1102,14 @@ STUB
   cat > "$W/bin/code" <<'STUB'
 #!/bin/bash
 echo "code $*" >> "$SW/log"
+# What the real code CLI prints on every call.
+noise() {
+  echo "(node:4242) [DEP0169] DeprecationWarning: \`url.parse()\` behavior is not standardized and prone to errors that have security implications."
+  echo "(Use \`Code --trace-deprecation ...\` to show where the warning was created)"
+}
 case "$1" in
   --list-extensions) printf 'a.one\nB.Two\n' ;;
-  --install-extension) [ "$2" = "${FAILEXT:-}" ] && exit 1; exit 0 ;;
+  --install-extension) noise >&2; [ "$2" = "${FAILEXT:-}" ] && { echo "real error: boom $2" >&2; exit 1; }; exit 0 ;;
 esac
 STUB
   # Xcode stand-ins: the app is a directory, the licence a flag file, and a
@@ -1163,6 +1168,14 @@ t "N6.8" "Brewfile.local is not bundled when absent" '
 t "N6.9" "a Brewfile.local tap is trusted too" '
   W=$(sandbox); _pk_setup "$W"; printf "tap \"private/tap\"\n" > "$W/repo/Brewfile.local"
   _pk_run "$W" >/dev/null 2>&1; grep -q "brew trust --tap private/tap" "$W/log"'
+
+t "N6.16" "the code CLI's url.parse deprecation noise is filtered out of the extension output" '
+  W=$(sandbox); _pk_setup "$W"; out=$(_pk_run "$W" 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "DEP0169")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "trace-deprecation")" -eq 0 ] &&
+  grep -q "code --install-extension c.three" "$W/log"'
+t "N6.17" "a real extension error still shows and still fails the step" '
+  W=$(sandbox); _pk_setup "$W"; out=$(_pk_run "$W" FAILEXT=c.three 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "real error: boom c.three")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "DEP0169")" -eq 0 ]'
 
 # A fresh Mac: the Brewfile's mas "Xcode" installs Xcode mid-bundle, xcode-select
 # switches to it, and from then on every brew command fails until the licence is

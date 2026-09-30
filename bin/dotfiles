@@ -621,7 +621,7 @@ sub_install_packages() {
     if [[ ! -x "$code_bin" ]]; then
       error "no VS Code CLI found at $code_bin; no extensions were installed"
       rc=1
-    elif ! installed=$("$code_bin" --list-extensions </dev/null); then
+    elif ! installed=$("$code_bin" --list-extensions </dev/null 2>/dev/null); then
       error "the VS Code CLI could not list its extensions; none were installed"
       rc=1
     else
@@ -632,10 +632,15 @@ sub_install_packages() {
         [[ -n "${ext// /}" ]] || continue
         if printf '%s\n' "$installed" | grep -qixF -- "$ext"; then
           have=$((have + 1))
-        elif "$code_bin" --install-extension "$ext" </dev/null; then
-          added=$((added + 1))
         else
-          failed="$failed $ext"
+          # The pipe exists only to drop the CLI's deprecation noise; the
+          # install's own status is the first element.
+          "$code_bin" --install-extension "$ext" </dev/null 2>&1 | filter_code_noise
+          if [[ "${PIPESTATUS[0]}" -eq 0 ]]; then
+            added=$((added + 1))
+          else
+            failed="$failed $ext"
+          fi
         fi
       done <<<"$wanted"
 

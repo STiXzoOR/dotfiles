@@ -167,6 +167,14 @@ repo_sync() {
 $(git -C "$dir" diff --name-only "$old" "$new")
 EOF
         MOVED=1
+        # A moved submodule pointer (mode 160000) leaves the checkout behind
+        # HEAD, which reads as dirty and blocks the next fast-forward. The
+        # shallow setting in .gitmodules applies to this update as well.
+        if git -C "$dir" diff --raw "$old" "$new" | awk '$1 == ":160000" || $2 == "160000" { found = 1 } END { exit !found }'; then
+          say "  submodule pointer moved; updating submodules"
+          git -C "$dir" submodule update --init --recursive -q >/dev/null 2>&1 ||
+            attn "$label repo: submodules could not be updated (git -C $dir submodule update --init --recursive)"
+        fi
       else
         say "  could not fast-forward; try: git -C \"$dir\" pull --ff-only"
         attn "$label repo could not be fast-forwarded (git -C $dir pull --ff-only)"
