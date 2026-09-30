@@ -540,7 +540,7 @@ sub_install_packages() {
   # Nothing below may end the step early. A failure is recorded in rc and the
   # next part still runs, so one bad cask cannot skip the VS Code extensions
   # and the summary always says what actually happened.
-  local rc=0 file tap brewfiles="Brewfile"
+  local rc=0 file tap brewfiles="Brewfile" launcher
   # Brewfile.local is the gitignored companion for packages that should not
   # be in a public repo; it is bundled after the public one.
   [[ -f Brewfile.local ]] && brewfiles="Brewfile Brewfile.local"
@@ -550,10 +550,24 @@ sub_install_packages() {
   # so a fresh bootstrap fails outright at bundle time until every
   # declared tap is trusted. `brew tap` alone no longer suffices.
   action "trusting third-party taps declared in the Brewfile"
+  # The launcher is chosen per Mac (macos/machine.local.sh). The Brewfile reads
+  # it from HOMEBREW_DOTFILES_LAUNCHER, and only a Tinycast Mac trusts the Tinycast tap:
+  # its entry is indented in the Brewfile, so the loop below does not see it.
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/scripts/lib/machine.sh"
+  dotfiles_export_launcher "$ROOT_DIR"
+  launcher="$HOMEBREW_DOTFILES_LAUNCHER"
+  if [[ "$launcher" == tinycast ]]; then
+    if brew tap abue-ammar/tinycast; then
+      brew trust --tap abue-ammar/tinycast || warn "could not trust tap abue-ammar/tinycast"
+    else
+      warn "could not tap abue-ammar/tinycast"
+    fi
+  fi
   for file in $brewfiles; do
     while IFS= read -r tap; do
       [[ -n "$tap" ]] || continue
-      if brew tap "$tap"; then
+      if brew tap "$tap" </dev/null; then
         brew trust --tap "$tap" || warn "could not trust tap $tap"
       else
         warn "could not tap $tap"
@@ -737,13 +751,15 @@ sub_configure() {
     echo
     local _prev_yes="${DOTFILES_YES:-}"
     export DOTFILES_YES=1
-    sub_configure_defaults
+    local _rc=0
+    sub_configure_defaults || _rc=1
     sub_configure_dock
     if [[ -n "$_prev_yes" ]]; then
       export DOTFILES_YES="$_prev_yes"
     else
       unset DOTFILES_YES
     fi
+    return "$_rc"
   else
     skip
   fi
@@ -765,11 +781,19 @@ sub_configure_defaults() {
         warn "could not initialise $_sm_path; its settings will be skipped"
     done < <(sed -n -E 's/^[[:space:]]*path[[:space:]]*=[[:space:]]*(apps\/.*)$/\1/p' "$DOTFILES_DIR/.gitmodules" 2>/dev/null)
 
+    DOTFILES_DEFAULTS_FAILURES=0
     for DEFAULTS_FILE in "$DOTFILES_DIR"/macos/defaults*.sh; do
       . "$DEFAULTS_FILE"
     done
 
     bot "Note: that some of these changes require a logout/restart to take effect."
+
+    # The defaults scripts are sourced and keep going after a failed read-back;
+    # the tally they leave decides the exit status.
+    if [[ "${DOTFILES_DEFAULTS_FAILURES:-0}" -gt 0 ]]; then
+      error "${DOTFILES_DEFAULTS_FAILURES} system setting(s) did not take effect (see the errors above)"
+      return 1
+    fi
   else
     skip
   fi
@@ -842,10 +866,18 @@ GITLOCAL
   local movelog stow_out
   movelog=$(mktemp "${TMPDIR:-/tmp}/dotfiles-link.XXXXXX") || return 1
   export DOTFILES_STOW_MOVELOG="$movelog"
+  # Ctrl-C or a TERM mid-link must not strand the moved files in the backup.
+  # sub_link owns INT/TERM until it returns: every `trap - INT TERM` below
+  # resets to the default and replaces any caller trap (none exist in this repo).
+  # shellcheck disable=SC2064
+  trap "dotfiles_link_abort INT \"$movelog\" \"$backup_dir\"" INT
+  # shellcheck disable=SC2064
+  trap "dotfiles_link_abort TERM \"$movelog\" \"$backup_dir\"" TERM
   if ! { dotfiles_backup_stow_targets "$ROOT_DIR/runcom" "$HOME" "$backup_dir" &&
     dotfiles_backup_stow_targets "$ROOT_DIR/config" "$XDG_CONFIG_HOME" "$backup_dir/.config"; }; then
     dotfiles_undo_backup_moves "$movelog" "$backup_dir"
     unset DOTFILES_STOW_MOVELOG
+    trap - INT TERM
     command rm -f "$movelog"
     error "could not back up the files in the way; nothing was changed"
     return 1
@@ -857,6 +889,7 @@ GITLOCAL
     printf '%s\n' "$stow_out" >&2
     dotfiles_undo_backup_moves "$movelog" "$backup_dir"
     unset DOTFILES_STOW_MOVELOG
+    trap - INT TERM
     command rm -f "$movelog"
     error "stow would conflict; nothing was linked and everything moved was put back"
     return 1
@@ -869,12 +902,14 @@ GITLOCAL
     printf '%s\n' "$stow_out" >&2
     dotfiles_undo_backup_moves "$movelog" "$backup_dir"
     unset DOTFILES_STOW_MOVELOG
+    trap - INT TERM
     command rm -f "$movelog"
     error "stow failed; the files it had moved were put back"
     return 1
   fi
   [[ -n "$stow_out" ]] && printf '%s\n' "$stow_out"
   unset DOTFILES_STOW_MOVELOG
+  trap - INT TERM
   command rm -f "$movelog"
 
   # Files the repo ignores (gh's hosts.yml login) went into the backup with

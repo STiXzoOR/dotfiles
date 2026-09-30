@@ -163,8 +163,8 @@ section "S6 — drift and dead references"
 t "S6.1" "legacy packages/*.list path is gone" \
   '[ ! -f packages/brew.list ] && ! grep -q "brew.list" bin/dotfiles'
 t "S6.2" "no references to non-existent system files" '
-  ! code_of bin/dotfiles-profiler bin/dotfiles-cheatsheet .github/workflows/ci.yml \
-    | grep -qE "system/\.(fix|function_macos)"'
+  [ "$(code_of bin/dotfiles-profiler bin/dotfiles-cheatsheet .github/workflows/ci.yml \
+    | grep -cE "system/\.(fix|function_macos)")" -eq 0 ]'
 t "S6.4" "zpreztorc does not load a non-existent identity" \
   '! grep -q "id_github" runcom/.zpreztorc'
 # S6.5 withdrawn: com.apple.mail keys are valid (defaults write creates a
@@ -236,7 +236,7 @@ t "CB.5" "every skill the settings and hooks invoke is provided by a plugin" '
 t "CB.5b" "the recall venv the Stop hook invokes is created by the installer" \
   'grep -q "setup_recall_venv" scripts/install_claude.sh'
 t "CB.5c" "the venv step tolerates missing graph deps without failing the bootstrap" \
-  'code_of scripts/install_claude.sh | sed -n "/setup_recall_venv()/,/^}/p" | grep -q "|| true"'
+  '[ "$(code_of scripts/install_claude.sh | sed -n "/setup_recall_venv()/,/^}/p" | grep -c "|| true")" -ge 1 ]'
 t "CB.6" "the status line script the settings reference is tracked" \
   '[ -n "$(git ls-files claude/statusline.sh)" ]'
 t "CB.7" "every hook the settings template references exists in the repo" '
@@ -269,7 +269,7 @@ if [ "$_sl_cache" -gt 0 ]; then
   t "SL.3" "cache file is written with restrictive permissions" \
     'grep -qE "chmod 0?600" claude/statusline.sh'
   t "SL.4" "an unreadable cache mtime cannot break the age arithmetic" \
-    'code_of claude/statusline.sh | grep -qE "cache_mtime\) *cache_mtime=0|cache_mtime=0 *;;|cache_mtime:-0"'
+    '[ "$(code_of claude/statusline.sh | grep -cE "cache_mtime\) *cache_mtime=0|cache_mtime=0 *;;|cache_mtime:-0")" -ge 1 ]'
   t "SL.4b" "every stat-derived mtime is normalised before arithmetic" '
     n=$(code_of claude/statusline.sh | grep -cE "_mtime=\\\$\\(stat")
     g=$(code_of claude/statusline.sh | grep -cE "\\*\\[!0-9\\]\\*\\)")
@@ -300,7 +300,7 @@ section "S7.2 — the fnm prune must never delete a live shell's multishell"
 #############################################################################
 
 t "S7.2a" "prune is PID-aware, not age-only" \
-  'code_of scripts/lib/fs.sh | grep -qE "kill -0|/proc/|ps -p"'
+  '[ "$(code_of scripts/lib/fs.sh | grep -cE "kill -0|/proc/|ps -p")" -ge 1 ]'
 t "S7.2b" "prune spares a directory whose PID is still running" '
   W=$(sandbox); mkdir -p "$W/fnm_multishells"
   live="$W/fnm_multishells/$$_1700000000"

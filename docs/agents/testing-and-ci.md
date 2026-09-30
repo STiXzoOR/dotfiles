@@ -55,6 +55,17 @@ direct children (a hung grandchild may be orphaned); CI uses `gtimeout`, which
 signals the whole process group. `tests/repo.sh` (H.11) fails on any tracked script that reads
 `/dev/urandom` or `/dev/zero`, or runs `yes`, without a bound.
 
+Never end a test pipeline in `grep -q` when the left side can write more than a
+pipe buffer (`code_of <file>`, a `bin/` script, `git`, `find`, `cat`). `grep -q`
+exits on the first match and the writer then fails with `EPIPE` (BSD `sed` prints
+`Broken pipe`, 300 of 300 runs), which `pipefail` reports as a failure; on a fast
+local machine it can pass. Use `[ "$(... | grep -c pat)" -ge 1 ]`. `tests/repo.sh`
+(H.13, H.14) fails on the pattern. Run suites with `HOME` pointing at an empty
+directory as well: a test that runs a script without `DOTFILES_DIR` reads
+`~/.dotfiles` locally and finds nothing on a runner (F4.15). CI installs `age` so
+the secrets suite takes the age path; without it `dotfiles-secrets` falls back to
+openssl and F3.32 checks that header instead.
+
 Read `tests/audit-regressions.sh` **before** editing `claude/statusline.sh`,
 `claude/settings.template.json` or anything under `claude/hooks/`. It encodes
 the intent behind those files better than any prose here, and its test ids are

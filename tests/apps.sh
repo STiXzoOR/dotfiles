@@ -576,7 +576,7 @@ t "C9" "the README no longer promises an hourly mackup backup" \
 t "C10" "no tracked mackup config remains at runcom/.mackup.cfg" \
   '[ ! -e runcom/.mackup.cfg ]'
 t "C11" "the wrapper sets its own PATH for launchd (/opt/homebrew/bin first)" \
-  'code_of bin/dotfiles-apps | grep -q "PATH=\"/opt/homebrew/bin:/opt/homebrew/sbin:\$PATH\""'
+  '[ "$(code_of bin/dotfiles-apps | grep -c "PATH=\"/opt/homebrew/bin:/opt/homebrew/sbin:\$PATH\"")" -ge 1 ]'
 t "C12" "minimal PATH (as under launchd) still finds mackup when installed (skipped, visibly, when not installed)" \
   '[ "$HAVE_MACKUP" -eq 0 ] || {
    W=$(sandbox); mkdir -p "$W/home/.config/mackup"; cp -R config/mackup/applications "$W/home/.config/mackup/applications"
@@ -688,5 +688,44 @@ t "L15" "a process name outside the safe charset is left out of the facts" \
 t "L16" "mackup's paths are separated by semicolons" \
   'W=$(newenv); mkapps "$W"; out=$(cands 2>&1)
    [ "$(printf "%s\n" "$out" | grep "^gamma	" | grep -c "paths=2 (Library/Containers/com.example.gamma/Data/Library/Preferences/com.example.gamma.plist; Library/Application Support/Gamma)")" -eq 1 ]'
+
+
+#############################################################################
+section "J -- Jev skip gate in the scheduled backup (Task 15)"
+#############################################################################
+# jev_gate_stub <W>: a stub dotfiles-jev that logs the argv of `skip` and answers
+# $STUB_GATE (DOTFILES_APPS_JEV also serves the staging scan, which it passes).
+jev_gate_stub() {
+  printf '#!/bin/bash\n[ "$1" = scan-tree ] && exit 0\nprintf "%%s\\n" "$*" >>"$STUB_LOG.jev"\nprintf "%%s\\n" "$STUB_GATE"\n' >"$1/jev-stub"; chmod +x "$1/jev-stub"
+}
+jgate() { APPS_ENV="DOTFILES_APPS_JEV=$W/jev-stub STUB_GATE=$1 DOTFILES_JEV=shadow" run_apps backup --scheduled; }
+jlog() { command cat "$W/log.jev" 2>/dev/null; }
+
+t "J1" "SKIP with nothing changed since the last snapshot: no new snapshot, one log line, exit 0" '
+  W=$(newenv); jev_gate_stub "$W"; run_apps backup >/dev/null 2>&1
+  out=$(jgate SKIP_low 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(nsnaps)" -eq 1 ] && [ "$(jlog | grep -c "^skip apps$")" -eq 1 ] &&
+  [ "$(grep -c "skipped: the Jev skip gate" "$W/home/Library/Logs/dotfiles-apps.log")" -eq 1 ]'
+t "J2" "RUN publishes a snapshot as before" '
+  W=$(newenv); jev_gate_stub "$W"; run_apps backup >/dev/null 2>&1
+  jgate RUN_x >/dev/null 2>&1; [ "$(nsnaps)" -eq 2 ]'
+t "J3" "no snapshot yet is a deterministic fact of work: --work" '
+  W=$(newenv); jev_gate_stub "$W"; jgate SKIP_low >/dev/null 2>&1
+  [ "$(jlog | grep -c -- "--work no snapshot")" -eq 1 ]'
+t "J4" "prefs newer than the last snapshot are a deterministic fact of work: --work naming the app" '
+  W=$(newenv); jev_gate_stub "$W"; run_apps backup >/dev/null 2>&1
+  touch -t 203001010000 "$W/home/Library/Application Support/Beta/settings.json"
+  jgate RUN_x >/dev/null 2>&1
+  [ "$(jlog | grep -c -- "--work app prefs changed since the last snapshot: beta")" -eq 1 ]'
+t "J5" "an interactive backup never asks the gate" '
+  W=$(newenv); jev_gate_stub "$W"; APPS_ENV="DOTFILES_APPS_JEV=$W/jev-stub STUB_GATE=SKIP DOTFILES_JEV=shadow" run_apps backup >/dev/null 2>&1
+  [ "$(jlog | grep -c .)" -eq 0 ] && [ "$(nsnaps)" -eq 1 ]'
+t "J6" "a failing gate runs the backup (fail open)" '
+  W=$(newenv); printf "#!/bin/bash\n[ \"\$1\" = scan-tree ] && exit 0\nexit 3\n" >"$W/jev-stub"; chmod +x "$W/jev-stub"; run_apps backup >/dev/null 2>&1
+  APPS_ENV="DOTFILES_APPS_JEV=$W/jev-stub DOTFILES_JEV=shadow" run_apps backup --scheduled >/dev/null 2>&1; [ "$(nsnaps)" -eq 2 ]'
+t "J7" "master switch off: the gate is never asked" '
+  W=$(newenv); jev_gate_stub "$W"; run_apps backup >/dev/null 2>&1
+  APPS_ENV="DOTFILES_APPS_JEV=$W/jev-stub STUB_GATE=SKIP DOTFILES_JEV=off" run_apps backup --scheduled >/dev/null 2>&1
+  [ "$(jlog | grep -c .)" -eq 0 ] && [ "$(nsnaps)" -eq 2 ]'
 
 finish

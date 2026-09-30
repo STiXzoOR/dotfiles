@@ -91,10 +91,13 @@ The completion dump, `~/.cache/prezto/zcompdump`, is rebuilt by `runcom/.zlogin`
 in its background block once it is older than 8 hours (the age test sets
 `extendedglob` locally, so it works without Prezto): a detached `zsh -f`
 (with the parent's `fpath` passed through `FPATH`) writes a temp file that
-replaces the dump with one `mv -f`, and the existing `zcompile` follows. Prezto
-would otherwise regenerate it in the foreground after 20 hours, which put about
-25-300 ms in front of the first prompt of the day and of a new machine's first
-shell. This is plain `compinit`, never `compinit -C`, and not `zsh-defer`.
+replaces the dump with one `mv -f`, and the existing `zcompile` follows. A
+`zcompdump.lock` directory (`mkdir` is atomic) keeps two logins that open
+together from both rebuilding; a lock older than 5 minutes was left by a killed
+shell and is taken over. Prezto would otherwise regenerate the dump in the
+foreground after 20 hours, which put about 25-300 ms in front of the first
+prompt of the day and of a new machine's first shell. This is plain
+`compinit`, never `compinit -C`, and not `zsh-defer`.
 
 ## Startup speed
 

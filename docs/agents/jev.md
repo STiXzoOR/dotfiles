@@ -31,7 +31,7 @@ hook does exactly what it did before plus its deterministic checks.
 | `privacy` | `.githooks/pre-commit`, per added hunk that no deterministic check caught | Does this added text reveal a person's name, a computer or host name, a client or private project name, a private network address or a home directory path? |
 | `secrets` | pre-commit, `dotfiles apps backup` (staging tree), `dotfiles jev scan-vault` | Is this masked value a live credential rather than a placeholder, example, hash or identifier? Asked only for an *ambiguous* hit. |
 | `drift` | `dotfiles sync`, after the deterministic drift report | One `choice` per undeclared item, one batched request per kind: see "Drift" below. |
-| `apps` | `dotfiles sync`, after drift | One `choice` (`backup` / `own-sync` / `not-worth-it`) per installed app mackup supports and nobody has decided on, one batched request per run: see "App-backup suggestions" below. |
+| `apps` | `dotfiles sync`, after drift | One `choice` (`backup` / `own-sync` / `not-worth-it`) per installed app mackup supports and nobody has decided on, one batched request per run: see "App-choice" below. This is app choice, not the `skip` gate on the daily `apps backup` job. |
 
 The `secrets` point also runs in the private repo's pre-commit hook
 (`dotfiles jev guard-private`, installed by `dotfiles private`) and in the daily
@@ -175,8 +175,7 @@ What `on` mode does with an answer:
   write <domain> <key> -bool true`) and ask a **strict prompt**: it needs a
   terminal and a typed `y` or `yes`, and `DOTFILES_YES=1` does not answer it, so
   a line chosen by a model is never appended unattended. Yes appends it to that
-  file; nothing is committed. (`DOTFILES_STRICT_ANSWERS=<file>` feeds answers,
-  one per line: the test seam.)
+  file; nothing is committed.
 - A name is written only if it fits a conservative character set (brew and cask
   `A-Za-z0-9@._+/-`; App Store names also allow spaces, `&`, `:` and `'"'"'`, never
   `"`, `#`, `\` or `$`; extension ids `publisher.name`; a defaults domain
@@ -275,7 +274,7 @@ hits.
   plists are converted with `plutil`, other binary files are read as their
   printable runs; only an unreadable file is reported as not scanned.
 
-## App-backup suggestions (`apps`)
+## App-choice: app-backup suggestions (`apps`)
 
 `dotfiles sync` runs `dotfiles-apps candidates`, which lists apps in
 `/Applications` (and its `Setapp/` folder) that `mackup list` supports and that
@@ -284,7 +283,19 @@ on the owner's declined list. Facts are computed in shell: how many paths mackup
 covers and the first three (home-relative), whether the build is Setapp, App
 Store or direct, and whether the app's preferences live in a sandbox container.
 At most `JEV_APPS_MAX_ITEMS` (25) apps go in **one** request through
-`dotfiles jev apps`, which returns one `choice` per app.
+`dotfiles jev apps`, which returns one `choice` per app: `backup` (worth keeping
+in the mackup allowlist), `own-sync` (the app already syncs its own settings) or
+`not-worth-it`. It is a different question from the `skip` gate below, which
+decides whether the daily `dotfiles apps backup --scheduled` job runs at all.
+
+What it sends: the state is a header line and one `iN: <name> <facts>` line per
+app (mackup's paths, build kind, sandbox container, the process name), redacted
+like every other request (never-send list, secret shapes, size cap); no file
+contents. The question comes from one place (`apps_criteria`, `apps_header`,
+`apps_instructions` in `bin/dotfiles-jev`), and the replay cases in
+`tests/fixtures/jev/replay/apps.jsonl` use the same line format, so
+`dotfiles jev replay apps` calibrates exactly what sync sends: calibrate before
+`dotfiles jev promote apps`.
 
 - `shadow` (the default): asked and logged, nothing shown, nothing written.
   Interactive timeout 2 s.
@@ -330,3 +341,49 @@ per hunk: a few cents a month at most.
 - Permanently: export it in `profiles/local.zsh`, or `dotfiles jev promote
   <point> off`, or delete the key (`dotfiles secrets delete typesafe_api_key`).
 - Jev is never required for a commit to succeed.
+
+## Skip gate
+
+The `skip` point sits in front of the two daily jobs, `dotfiles sync
+--scheduled` and `dotfiles apps backup --scheduled`, and answers one question:
+would running now do useful work? It is the one point whose answer can make
+something *not* happen, so it is deliberately asymmetric.
+
+- **What it sends:** one `noul` request per run, with facts computed in shell:
+  for sync, upstream commits since the last run per repo and the paths they touch
+  (at most 30), whether the lockfiles changed, unpushed commits; for apps, how
+  many allowlisted apps have preference files newer than the last snapshot;
+  for both, the hours since the last run. The facts are capped
+  (`JEV_SKIP_MAX_FACTS`, 3000 bytes) and redacted first. The scheduled timeout
+  is 10 seconds.
+- **When it skips:** only when P(useful) is **below 0.2** (`skip.skip_p` in the
+  config overrides it), and only in `on` mode. Never more than **3 skips in a
+  row**: a counter in `~/.local/state/dotfiles/skip-<job>.streak` forces the
+  fourth run, without a request. Never when a deterministic fact says there is
+  work: upstream commits touching `Brewfile*`, `config/mise/`, lockfiles,
+  `packages/`, `claude/`, `codex/` or `secrets.age`; changed lockfile hashes or a
+  first run; unpushed commits; pending actions from an earlier run; app
+  preferences newer than the last snapshot; no snapshot yet. Those run with no
+  request at all.
+- **Fail open:** no key, a timeout, a 5xx, a 401, a malformed answer or the
+  request cap all mean the job runs. Only the literal word `SKIP` from
+  `dotfiles jev skip <sync|apps>` skips anything.
+- **Log:** every decision is a line in `jev.jsonl`: `run: sync: deterministic
+  work: ...`, `skipped: sync: P(useful)=0.05 ...`, or in shadow `shadow: would
+  have skipped: ...` (and the job runs).
+- **Shadow to on:** starts in `shadow`: the gate decides, logs what it would have
+  skipped, and the job always runs. Read `dotfiles jev log`, run `dotfiles jev
+  replay skip` (the `wrongly=` column is the only one that costs anything: a
+  skipped run that had work), then `dotfiles jev promote skip`. `DOTFILES_JEV=off`
+  or `skip=off` removes the gate and the request.
+
+## Replay cases for drift, app-choice and skip
+
+`tests/fixtures/jev/replay/` gains `drift.jsonl` (each case has a `kind` of
+`pkg`, `defaults` or `config` and the expected `choice` as its label),
+`apps.jsonl` (label `backup`, `own-sync` or `not-worth-it`) and `skip.jsonl`
+(label `true` when useful work existed). All are synthetic and public-safe.
+`dotfiles jev replay drift`, `replay apps` and `replay skip` call the real API
+on them, only when you run it by hand with a key, and print accuracy by
+probability (skip: the cost of skipping below each threshold). Add your own
+scrubbed cases before trusting the numbers; calibration is contested.

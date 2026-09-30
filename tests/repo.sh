@@ -75,6 +75,36 @@ _shell_files() { # every tracked shell script under tests/, bin/, scripts/
 t "H.11" "no tracked shell script under tests/, bin/ or scripts/ reads an endless source unbounded" '
   hits=$(_unbounded_producers $(_shell_files)); [ -z "$hits" ]'
 
+# _grepq_hits <files...> -- print file:line for every pipeline that ends in a
+# quiet grep after a producer that can write more than a pipe buffer: code_of,
+# a bin/ script, git, find or cat. grep -q exits on the first match; the writer
+# then dies of SIGPIPE, or fails with EPIPE where SIGPIPE is ignored (CI), and
+# pipefail fails the pipeline -- only sometimes. Capture and grep -c instead.
+# Only the stage list after the last ; && || $( or opening quote is examined,
+# so `body=$(code_of x); printf "%s" "$body" | grep -q y` is not flagged.
+_grepq_hits() {
+  local f
+  for f in "$@"; do
+    code_of "$f" | awk -v f="$f" '
+      { line = $0
+        while (line ~ /\\$/ && (getline nxt) > 0) { sub(/\\$/, "", line); line = line " " nxt }
+        gsub(/\|\|/, ";;", line)
+        n = split(line, parts, /\|[[:space:]]*grep[[:space:]]+-q/)
+        if (n < 2) next
+        pre = parts[1]
+        gsub(/.*(;|&&|\|\||\$\(|'"'"')[[:space:]]*/, "", pre)
+        if (pre ~ /(code_of|bin\/|git |find |cat )/) print f ":" NR }'
+  done
+}
+_gq="grep ""-q"
+t "H.13" "the quiet-grep scan flags a big-producer pipeline and passes a captured one" '
+  W=$(sandbox)
+  printf "%s\n" "code_of bin/x | $_gq y" "git ls-files | ${_gq}x z" "code_of a \\" "  | ${_gq}E y" "cmd  | $_gq y" >"$W/bad.sh"
+  printf "%s\n" "body=\$(code_of x); printf \"%s\" \"\$body\" | $_gq y" "# code_of x | $_gq y" "[ \"\$(code_of x | grep -c y)\" -ge 1 ]" >"$W/ok.sh"
+  [ "$(_grepq_hits "$W/bad.sh" | wc -l | tr -d " ")" -eq 3 ] && [ -z "$(_grepq_hits "$W/ok.sh")" ]'
+t "H.14" "no test pipes code_of, bin/, git, find or cat into grep -q" '
+  hits=$(_grepq_hits tests/*.sh tests/fixtures/*.sh); [ -z "$hits" ]'
+
 #############################################################################
 section "R -- submodules that no longer earn their weight are gone"
 #############################################################################

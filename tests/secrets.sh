@@ -283,7 +283,11 @@ t "F3.32" "export with no file writes secrets.age into the private repo" '
     W=$(box); _priv "$W"; K="$W/p.keychain-db"
     printf "v\n" | seck "$W" "$K" set p1 >/dev/null 2>&1
     DOTFILES_PRIVATE_DIR="$W/priv" expect tests/fixtures/secrets-roundtrip.exp export "$W" "$K" - pw >/dev/null 2>&1 &&
-    [ -s "$W/priv/secrets.age" ] && head -c 21 "$W/priv/secrets.age" | grep -q "age-encryption.org"
+    # dotfiles-secrets encrypts with age when installed and falls back to
+    # openssl (header "Salted__") when not, so the header depends on the tool.
+    if command -v age >/dev/null 2>&1; then want="age-encryption.org"; else want="Salted__"; fi
+    [ -s "$W/priv/secrets.age" ] && hdr=$(head -c 21 "$W/priv/secrets.age") &&
+    [ "$(printf "%s" "$hdr" | grep -c "$want")" -ge 1 ]
   }'
 t "F3.33" "an explicit file inside the private repo is allowed too" '
   ! command -v expect >/dev/null 2>&1 || {

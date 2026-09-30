@@ -71,7 +71,9 @@ ENVEOF
   printf '%s\n' '[[ -n $DOTFILES_TEST_ZPROF ]] && zmodload zsh/zprof' >"$h/.zshenv"
   write_tool_stubs "$h" || return 1
   local s
-  for s in ssh-add ssh-agent ${ZSHRUN_STUBS:-}; do
+  # fnm is stubbed as well: system/.fnm runs `fnm env` whenever the mise shims are
+# absent, and the real one creates a multishell link per shell.
+for s in ssh-add ssh-agent fnm ${ZSHRUN_STUBS:-}; do
     printf '#!/bin/sh\nexit 0\n' >"$h/.stubs/$s"
     chmod +x "$h/.stubs/$s"
   done
@@ -685,14 +687,19 @@ _hosts_sandbox() {
   local h
   h=$(_zsh_sandbox) || return 1
   mkdir -p "$h/.ssh"
-  printf '%s\n' 'alpha.example,10.0.0.1 ssh-rsa AAAA' '[bravo.example]:2222 ssh-ed25519 BBBB' >"$h/.ssh/known_hosts"
+  printf '%s\n' 'alpha.example,192.0.2.1 ssh-rsa AAAA' '[bravo.example]:2222 ssh-ed25519 BBBB' >"$h/.ssh/known_hosts"
   printf '%s\n' 'Host charlie delta' '  HostName ignored.example' 'Host *' 'Host wild*' >"$h/.ssh/config"
   printf '%s' "$h"
 }
 _HOSTS_PROBE='zstyle -a ":completion:*:hosts" hosts _h; _w=(${=_h}); _w=(${(o)_w}); print -r -- "HOSTS=${(j:,:)_w}"'
+# The style also reads /etc/ssh/ssh_known_hosts, which is the machine's, not
+# the sandbox's. A sandbox with no ~/.ssh shows what /etc contributes; the
+# expected list is that plus the sandbox's own entries.
 t "P6.1" "the hosts style is exactly known_hosts plus ssh config, and never /etc/hosts" \
-  'H=$(_hosts_sandbox) &&
-   [ "$(ZSHRUN_HOME="$H" zshrun "$_HOSTS_PROBE")" = "HOSTS=10.0.0.1,alpha.example,bravo.example,charlie,delta" ]'
+  'H=$(_hosts_sandbox) && E=$(_zsh_sandbox) &&
+   base=$(ZSHRUN_HOME="$E" zshrun "$_HOSTS_PROBE") && base=${base#HOSTS=} &&
+   want=$(printf "%s\n" 192.0.2.1 alpha.example bravo.example charlie delta $(printf "%s" "$base" | tr "," " ") | LC_ALL=C sort -u | paste -sd, -) &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "$_HOSTS_PROBE")" = "HOSTS=$want" ]'
 t "P6.2" "the style runs the real cat, whatever cat is aliased to" \
   '[ "$(code_of system/.completion | grep -c "command cat")" -ge 2 ]'
 
@@ -713,7 +720,9 @@ _dump_sandbox() {
   local h
   h=$(_zsh_sandbox) || return 1
   ZSHRUN_HOME="$h" zshrun true || return 1
-  sleep 2  # the first shell's own background zcompile
+  # The first shell's own background zcompile: wait for it, do not guess.
+  local i=0
+  while [ "$i" -lt 40 ] && [ ! -s "$h/.cache/prezto/zcompdump.zwc" ]; do sleep 0.5; i=$((i + 1)); done
   [ -s "$h/.cache/prezto/zcompdump" ] || return 1
   _age_dump "$h/.cache/prezto/zcompdump" "$1"
   printf '%s' "$h"
@@ -726,9 +735,24 @@ t "P8.1" "a dump 12 h old is rebuilt in the background, compiled, and leaves no 
    ZSHRUN_HOME="$H" zshrun true && _wait_newer "$D" "$H/marker" &&
    [ "$(grep -c "^#files:" "$D")" -eq 1 ] && _wait_newer "$D.zwc" "$H/marker" &&
    [ "$(ls "$H/.cache/prezto" | grep -c "zcompdump[.].*tmp")" -eq 0 ]'
+# The stale check runs before the zcompile at the end of the same background
+# block, so a fresh .zwc proves the block has run to the end: only then can
+# "the dump was left alone" be asserted without a fixed sleep. _zwc_done
+# removes the .zwc, runs a login shell and waits for the new one.
+_zwc_done() { # _zwc_done <H> <marker>
+  rm -f "$1/.cache/prezto/zcompdump.zwc"
+  ZSHRUN_HOME="$1" zshrun true && _wait_newer "$1/.cache/prezto/zcompdump.zwc" "$2"
+}
 t "P8.2" "a dump 2 h old is left alone" \
   'H=$(_dump_sandbox 2) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 1 &&
-   ZSHRUN_HOME="$H" zshrun true && sleep 4 && [ ! "$D" -nt "$H/marker" ]'
+   _zwc_done "$H" "$H/marker" && [ ! "$D" -nt "$H/marker" ]'
+t "P8.6" "a live rebuild lock keeps a second login shell from rebuilding" \
+  'H=$(_dump_sandbox 12) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 11 &&
+   mkdir "$D.lock" && _zwc_done "$H" "$H/marker" && [ ! "$D" -nt "$H/marker" ] && [ -d "$D.lock" ]'
+t "P8.7" "a rebuild lock left by a killed shell (10 min old) is taken over, then released" \
+  'H=$(_dump_sandbox 12) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 11 &&
+   mkdir "$D.lock" && perl -e "utime time-600, time-600, q($D.lock)" &&
+   _zwc_done "$H" "$H/marker" && [ "$D" -nt "$H/marker" ] && [ ! -e "$D.lock" ]'
 t "P8.3" "the rebuild is a detached zsh -f, and never a bare compinit -C" \
   '[ "$(code_of runcom/.zlogin | grep -c "zsh -f")" -ge 1 ] &&
    [ "$(code_of runcom/.zlogin | grep -cE "compinit -C|zsh-defer")" -eq 0 ]'
@@ -807,5 +831,23 @@ t "P10.7" "pay-respects: a successful run leaves only the cache, and the second 
    ZSHRUN_HOME="$H" zshrun true && [ "$(_cache_files "$H" "pay-respects-init*")" -eq 1 ] &&
    ZSHRUN_HOME="$H" zshrun true && [ "$(_calls "$L" "pay-respects")" -eq 1 ]'
 
+section "P11 — a sandboxed login shell writes nothing under the caller's XDG dirs"
+# The caller's XDG_STATE_HOME / XDG_DATA_HOME / XDG_RUNTIME_DIR are decoys
+# outside the sandbox: a real `fnm env` used to put fnm_multishells into the
+# owner's XDG_RUNTIME_DIR.
+_xdg_leaks() { # _xdg_leaks <zshrun function> -- files a login shell put in the decoys
+  local d n
+  d=$(sandbox) || return 1
+  mkdir -p "$d/state" "$d/data" "$d/run" || return 1
+  XDG_STATE_HOME="$d/state" XDG_DATA_HOME="$d/data" XDG_RUNTIME_DIR="$d/run" "$1" true >/dev/null 2>&1
+  n=$(find "$d/state" "$d/data" "$d/run" -mindepth 1 | wc -l)
+  printf '%s' "$((n))"
+}
+t "P11.1" "zshrun leaves the caller's XDG state, data and runtime dirs untouched" \
+  '[ "$(_xdg_leaks zshrun)" -eq 0 ]'
+t "P11.2" "pty_zshrun leaves them untouched too" \
+  '[ "$(_xdg_leaks pty_zshrun)" -eq 0 ]'
+t "P11.3" "the sandbox stubs fnm, so the real one never runs" \
+  'H=$(_zsh_sandbox) && [ -x "$H/.stubs/fnm" ]'
 
 finish

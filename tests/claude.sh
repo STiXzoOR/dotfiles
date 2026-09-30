@@ -129,7 +129,7 @@ t "E4.9" "the hook dry run still reports what it resolved" '
     bash claude/hooks/index-sessions.sh 2>&1)
   [ "$(printf "%s" "$out" | grep -c "index-sessions: timeout=")" -eq 1 ] &&
   [ "$(printf "%s" "$out" | grep -c "qmd=")" -eq 1 ]'
-t "E4.7" "installer imports the rules into CLAUDE.md idempotently" 'grep -q "link_rule_imports" scripts/install_claude.sh && code_of scripts/install_claude.sh | sed -n "/link_rule_imports()/,/^}/p" | grep -q "claude/rules"'
+t "E4.7" "installer imports the rules into CLAUDE.md idempotently" 'grep -q "link_rule_imports" scripts/install_claude.sh && [ "$(code_of scripts/install_claude.sh | sed -n "/link_rule_imports()/,/^}/p" | grep -c "claude/rules")" -ge 1 ]'
 
 section "E5 — docs"
 t "E5.1" "architecture.md lists no dead package lists" '! grep -qE "brew.list|cask.list|mas.list|tap.list" docs/agents/architecture.md'
@@ -175,8 +175,11 @@ STUB
   cat >| "$w/claude-stub" <<'STUB'
 #!/bin/sh
 echo "claude $*" >> "$STUBLOG"
+[ -z "${CLAUDE_CONFIG_DIR:-}" ] || echo "LEAK CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR" >> "$STUBLOG"
 case "$*" in
   "--version") echo "9.9.9 (Claude Code)" ;;
+  "plugin uninstall "*) [ -n "${STUB_FAIL_UNINSTALL:-}" ] && exit 1 ;;
+  "plugin install cc-safety-net"*) [ -n "${STUB_FAIL_CC:-}" ] && exit 1 ;;
   "plugin list"*) cat "$STUBDIR/plugin-list" 2>/dev/null ;;
   "mcp get "*) grep -qx "$3" "$STUBDIR/have-mcp" 2>/dev/null; exit $? ;;
 esac
@@ -200,7 +203,7 @@ _full_run() {
   local w="$1"; shift
   (
     export HOME="$w/home" PATH="$w/bin:/usr/bin:/bin" STUBLOG="$w/log" STUBDIR="$w"
-    unset VAULT_DIR
+    unset VAULT_DIR CLAUDE_CONFIG_DIR
     env "$@" bash scripts/install_claude.sh >| "$w/out" 2>&1
   )
 }
@@ -209,7 +212,7 @@ _in_env() {
   local w="$1"; shift
   (
     export HOME="$w/home" PATH="$w/bin:/usr/bin:/bin" STUBLOG="$w/log" STUBDIR="$w"
-    unset VAULT_DIR
+    unset VAULT_DIR CLAUDE_CONFIG_DIR
     # shellcheck source=/dev/null
     source scripts/install_claude.sh --lib
     mkdir -p "$(dirname "$CLAUDE_INSTALL_LOG")"
@@ -373,14 +376,14 @@ section "N6 — find-docs skill (item 2.6)"
 t "N6.1" "skills.list names the find-docs skill and its source" 'grep -qx "upstash/context7 find-docs" claude/skills.list'
 t "N6.2" "the skill is installed with the skills CLI for claude-code and codex" '
   W=$(sandbox); _stubs "$W"; _full_run "$W"
-  [ "$(grep -c "^npx -y skills add upstash/context7 --skill find-docs -g -a claude-code -a codex -y$" "$W/log")" -eq 1 ]'
+  [ "$(grep -c "^npx -y skills@1.7.0 add upstash/context7 --skill find-docs -g -a claude-code -a codex -y$" "$W/log")" -eq 1 ]'
 t "N6.3" "a hand-placed real directory is moved out of the skills tree to backups/skills/find-docs.<epoch>" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/.claude/skills/find-docs"; printf old >| "$W/home/.claude/skills/find-docs/SKILL.md"
   _full_run "$W"
   [ "$(ls "$W/home/.claude/backups/skills" | grep -c "^find-docs\.[0-9]*$")" -eq 1 ] &&
   [ "$(cat "$W"/home/.claude/backups/skills/find-docs.*/SKILL.md)" = old ] &&
   [ "$(ls "$W/home/.claude/skills" | grep -c "find-docs")" -eq 0 ] &&
-  [ "$(grep -c "^npx -y skills add" "$W/log")" -eq 1 ]'
+  [ "$(grep -c "^npx -y skills@1.7.0 add" "$W/log")" -eq 1 ]'
 t "N6.4" "an already-installed (symlinked) skill is left alone" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/.claude/skills" "$W/home/.agents/skills/find-docs"
   ln -s ../../.agents/skills/find-docs "$W/home/.claude/skills/find-docs"
@@ -389,25 +392,67 @@ t "N6.4" "an already-installed (symlinked) skill is left alone" '
 t "N6.6" "a dangling skill symlink is not installed: it is removed and the skill reinstalled" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/.claude/skills"
   ln -s ../../.agents/skills/find-docs "$W/home/.claude/skills/find-docs"
-  _full_run "$W"; [ "$(grep -c "^npx -y skills add" "$W/log")" -eq 1 ] &&
+  _full_run "$W"; [ "$(grep -c "^npx -y skills@1.7.0 add" "$W/log")" -eq 1 ] &&
   [ ! -L "$W/home/.claude/skills/find-docs" ]'
 t "N6.5" "a failing skills install fails the run and names the skill" '
   W=$(sandbox); _stubs "$W"; ! _full_run "$W" STUB_FAIL_npx=1 &&
   [ "$(grep -c -- "- skill: find-docs" "$W/out")" -eq 1 ]'
 
-section "N12 — two Safety Net plugins (legacy and renamed)"
+section "N12 — the Safety Net rename: the legacy plugin is migrated away"
 _sn_json() { printf '[{"id":"%s@cc-marketplace"}]\n' "$2" >> "$1/plugin-list"; }
-t "N12.1" "both installed: a warning names the exact uninstall command for the legacy one" '
+_uninstalls() { grep -c "^claude plugin uninstall safety-net@cc-marketplace$" "$1/log"; }
+t "N12.1" "both installed: the legacy one is uninstalled once and the run says so" '
   W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; _sn_json "$W" cc-safety-net; _full_run "$W"
-  [ "$(grep -c "claude plugin uninstall safety-net@cc-marketplace" "$W/out")" -ge 1 ]'
-t "N12.2" "the installer never uninstalls anything itself" '
-  W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; _sn_json "$W" cc-safety-net; _full_run "$W"
-  [ "$(grep -c "^claude plugin uninstall" "$W/log")" -eq 0 ]'
-t "N12.3" "only the renamed plugin installed: no warning" '
-  W=$(sandbox); _stubs "$W"; _sn_json "$W" cc-safety-net; _full_run "$W"
-  [ "$(grep -c "claude plugin uninstall" "$W/out")" -eq 0 ]'
-t "N12.4" "only the legacy plugin installed: no duplicate warning" '
+  [ "$(_uninstalls "$W")" -eq 1 ] && [ "$(grep -c "uninstalled the legacy safety-net" "$W/out")" -eq 1 ]'
+t "N12.2" "only the legacy one installed: cc-safety-net is installed, then the legacy one goes" '
   W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; _full_run "$W"
-  [ "$(grep -c "claude plugin uninstall" "$W/out")" -eq 0 ]'
+  [ "$(_uninstalls "$W")" -eq 1 ] &&
+  [ "$(_first_line "claude plugin install cc-safety-net@cc-marketplace" "$W/log")" -lt "$(_first_line "claude plugin uninstall safety-net@cc-marketplace" "$W/log")" ]'
+t "N12.3" "only the renamed plugin installed: nothing is uninstalled" '
+  W=$(sandbox); _stubs "$W"; _sn_json "$W" cc-safety-net; _full_run "$W"
+  [ "$(grep -c "^claude plugin uninstall" "$W/log")" -eq 0 ]'
+t "N12.4" "cc-safety-net failed to install: the legacy plugin stays" '
+  W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; ! _full_run "$W" STUB_FAIL_CC=1
+  [ "$(grep -c "^claude plugin uninstall" "$W/log")" -eq 0 ]'
+t "N12.5" "a failed uninstall names the manual command and does not fail the run" '
+  W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; _full_run "$W" STUB_FAIL_UNINSTALL=1 &&
+  [ "$(grep -c "claude plugin uninstall safety-net@cc-marketplace" "$W/out")" -ge 1 ]'
+t "N12.6" "nothing else is ever uninstalled" '
+  W=$(sandbox); _stubs "$W"; _sn_json "$W" safety-net; _full_run "$W"
+  [ "$(grep "^claude plugin uninstall" "$W/log" | grep -vc "^claude plugin uninstall safety-net@cc-marketplace$")" -eq 0 ]'
+t "N12.7" "a trailing space on the plugins.list line does not stop the migration" '
+  W=$(sandbox); _stubs "$W"; ln -s "$W/claude-stub" "$W/bin/claude"; mkdir -p "$W/cl"
+  printf "cc-safety-net@cc-marketplace  \n" >| "$W/cl/plugins.list"; _sn_json "$W" safety-net
+  ( export HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" STUBLOG="$W/log" STUBDIR="$W"
+    source scripts/install_claude.sh --lib; mkdir -p "$(dirname "$CLAUDE_INSTALL_LOG")"; CLAUDE_DIR="$W/cl"; FAILURES=()
+    migrate_legacy_safety_net >/dev/null 2>&1 )
+  [ "$(_uninstalls "$W")" -eq 1 ]'
+
+section "N13 — deferred minors (Task 16)"
+t "N13.1" "a missing binary is one failure, not also a failed release verification" '
+  W=$(sandbox); _stubs "$W"; ! _full_run "$W" STUB_INSTALLER=noop
+  [ "$(grep -c -- "- claude binary" "$W/out")" -eq 1 ] && [ "$(grep -c -- "- release verification" "$W/out")" -eq 0 ]'
+t "N13.2" "a glob character in skills.list is not expanded against the working directory" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/cl"; printf "acme/tools *\n" >| "$W/cl/skills.list"
+  ( export HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" STUBLOG="$W/log" STUBDIR="$W"
+    source scripts/install_claude.sh --lib; mkdir -p "$(dirname "$CLAUDE_INSTALL_LOG")"; CLAUDE_DIR="$W/cl"; install_skills >/dev/null 2>&1 )
+  [ "$(grep -c -- "--skill \*" "$W/log")" -eq 1 ]'
+t "N13.3" "a marketplace whose name only contains a listed one is not taken for it" '
+  W=$(sandbox); _stubs "$W"; ln -s "$W/claude-stub" "$W/bin/claude"
+  CLAUDE_MARKETPLACES_CACHE="[{\"source\":\"kenryu42/cc-marketplace-extras\"}]" _in_env "$W" require_claude_marketplace kenryu42/cc-marketplace >/dev/null 2>&1
+  [ "$(grep -c "^claude plugin marketplace add kenryu42/cc-marketplace$" "$W/log")" -eq 1 ]'
+t "N13.4" "a listed marketplace, bare or as a git URL, is not added again" '
+  W=$(sandbox); _stubs "$W"; ln -s "$W/claude-stub" "$W/bin/claude"
+  export CLAUDE_MARKETPLACES_CACHE="[{\"source\":\"kenryu42/cc-marketplace\"},{\"source\":\"https://github.com/warpdotdev/claude-code-warp.git\"}]"
+  _in_env "$W" require_claude_marketplace kenryu42/cc-marketplace >/dev/null 2>&1 &&
+  _in_env "$W" require_claude_marketplace warpdotdev/claude-code-warp >/dev/null 2>&1; rc=$?; unset CLAUDE_MARKETPLACES_CACHE
+  [ "$rc" -eq 0 ] && [ "$(grep -c "marketplace add" "$W/log")" -eq 0 ]'
+t "N13.5" "a plugin whose name only ends with a listed one is not taken for it" '
+  W=$(sandbox); _stubs "$W"; ln -s "$W/claude-stub" "$W/bin/claude"
+  CLAUDE_PLUGINS_CACHE="[{\"id\":\"cc-safety-net@cc-marketplace\"}]" _in_env "$W" require_claude_plugin safety-net@cc-marketplace >/dev/null 2>&1
+  [ "$(grep -c "^claude plugin install safety-net@cc-marketplace$" "$W/log")" -eq 1 ]'
+t "N13.6" "an exported CLAUDE_CONFIG_DIR never reaches the claude stub" '
+  W=$(sandbox); _stubs "$W"; ( export CLAUDE_CONFIG_DIR="$W/leak"; _full_run "$W" )
+  [ "$(grep -c "^LEAK" "$W/log")" -eq 0 ] && [ "$(grep -c "^claude " "$W/log")" -ge 1 ]'
 
 finish

@@ -2,7 +2,7 @@
 # Format: "<source> <skill>"  (source is a GitHub owner/repo)
 # Used by: scripts/install_claude.sh  (dotfiles install --claude)
 #
-# Each entry runs:  npx -y skills add <source> --skill <skill> -g -a claude-code -a codex -y
+# Each entry runs:  npx -y skills@<pinned> add <source> --skill <skill> -g -a claude-code -a codex -y
 # which keeps one canonical copy in ~/.agents/skills and symlinks it into
 # ~/.claude/skills and ~/.codex/skills. `npx skills update -g` refreshes them.
 # A skill whose ~/.claude/skills/<skill> is already a symlink is skipped; a

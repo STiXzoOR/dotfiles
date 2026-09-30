@@ -96,7 +96,7 @@ register_marketplaces() {
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "${line// /}" ]] && continue
-    if printf '%s' "$CODEX_MARKETPLACES_CACHE" | grep -Fq "$line"; then
+    if list_has_token "$CODEX_MARKETPLACES_CACHE" "$line"; then
       ok "marketplace $line already added"
     elif codex plugin marketplace add "$line" >>"$CODEX_INSTALL_LOG" 2>&1; then
       ok "marketplace $line"

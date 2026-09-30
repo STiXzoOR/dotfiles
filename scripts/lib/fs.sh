@@ -205,20 +205,35 @@ EOF
   return "$_dfu_ret"
 }
 
-# usage: dotfiles_stow <-n|-> <target-dir> <package>   (run from the repo root)
+# usage: dotfiles_link_abort <INT|TERM> <movelog> <backup-dir>
+#
+# The signal handler for `dotfiles link` while it holds moved files: put them
+# all back, drop the log, then die of the same signal so the caller sees it.
+dotfiles_link_abort() {
+  dotfiles_undo_backup_moves "$2" "$3"
+  command rm -f "$2"
+  trap - INT TERM
+  kill -s "$1" "$$"
+}
+
+# usage: dotfiles_stow <-n|-> <stow-dir> <target-dir> <package>
 #
 # The one place the stow command line is spelled, so `dotfiles link` and
 # `dotfiles-sync` cannot drift. --restow makes a re-run idempotent (not
 # --adopt: that pulls the machine's files into the tracked tree). --ignore
-# keeps Finder litter out: an untracked, gitignored runcom/.DS_Store made stow
+# keeps Finder litter out (stow matches it against the whole name, so it is
+# anchored: an unanchored one also dropped a real file called notes.DS_Store):
+# an untracked, gitignored runcom/.DS_Store made stow
 # abort with "neither a link nor a directory" against ~/.DS_Store. A
 # .stow-local-ignore would REPLACE stow's built-in ignore list; a command-line
 # --ignore adds to it.
 dotfiles_stow() {
+  # -d is explicit: stow's default source directory is $STOW_DIR when that is
+  # exported, which silently beat the caller's `cd` to the repo root.
   if [ "$1" = "-n" ]; then
-    stow -n --restow --ignore='\.DS_Store$' -t "$2" "$3"
+    stow -n --restow --ignore='^\.DS_Store$' -d "$2" -t "$3" "$4"
   else
-    stow --restow --ignore='\.DS_Store$' -t "$2" "$3"
+    stow --restow --ignore='^\.DS_Store$' -d "$2" -t "$3" "$4"
   fi
 }
 
@@ -230,7 +245,7 @@ dotfiles_stow() {
 dotfiles_stow_all() {
   (
     cd "$2" || exit 1
-    dotfiles_stow "$1" "$3" runcom && dotfiles_stow "$1" "$4" config
+    dotfiles_stow "$1" "$2" "$3" runcom && dotfiles_stow "$1" "$2" "$4" config
   )
 }
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Machine identity: what kind of Mac this is and what it is called.
+# Machine identity: what kind of Mac this is, what it is called, its launcher.
 #
-# Sourced by macos/defaults.sh, bin/dotfiles-apps and bin/dotfiles-sync. No
+# Sourced by macos/defaults.sh, bin/dotfiles, bin/dotfiles-apps and bin/dotfiles-sync. No
 # side effects on load. Both helpers use only tools the BSD userland has, so
 # they work under launchd and `bash script.sh`.
 
@@ -49,4 +49,44 @@ dotfiles_machine_name() {
     return 1
   fi
   printf '%s' "$n"
+}
+
+# tinycast | raycast: which launcher this Mac uses.
+#
+# DOTFILES_LAUNCHER from the environment, else from macos/machine.local.sh
+# (per Mac, gitignored, never synced), else from macos/local.sh (shared through
+# the private repo), else tinycast. Any other value warns once and becomes
+# tinycast, which is also what the Brewfile does with an unknown value.
+# Takes the dotfiles dir as $1, else DOTFILES_DIR, else ~/.dotfiles. The files
+# are read in a subshell, so nothing they set leaks into the caller.
+dotfiles_launcher() {
+  local dir="${1:-${DOTFILES_DIR:-$HOME/.dotfiles}}" v="${DOTFILES_LAUNCHER:-}" f
+  for f in machine.local.sh local.sh; do
+    [ -n "$v" ] && break
+    [ -e "$dir/macos/$f" ] || continue
+    # A file that cannot be read or does not parse gives no value. Say so:
+    # falling through to tinycast silently would put Tinycast on a Raycast Mac.
+    if [ ! -r "$dir/macos/$f" ] || ! bash -n "$dir/macos/$f" >/dev/null 2>&1; then
+      printf 'warning: cannot read %s/macos/%s (unreadable or a syntax error); ignoring it\n' "$dir" "$f" >&2
+      continue
+    fi
+    # shellcheck disable=SC1090
+    v=$(unset DOTFILES_LAUNCHER; . "$dir/macos/$f" >/dev/null 2>&1; printf '%s' "${DOTFILES_LAUNCHER:-}")
+  done
+  case "$v" in
+    tinycast | raycast) printf '%s\n' "$v" ;;
+    "") printf 'tinycast\n' ;;
+    *)
+      printf 'warning: ignoring DOTFILES_LAUNCHER=%s (use tinycast or raycast); using tinycast\n' "$v" >&2
+      printf 'tinycast\n'
+      ;;
+  esac
+}
+
+# Export the resolved launcher where `brew bundle` can see it. brew hides every
+# variable that does not start with HOMEBREW_ from the Brewfile, so this is
+# HOMEBREW_DOTFILES_LAUNCHER. Call it before any `brew bundle check|install`.
+dotfiles_export_launcher() {
+  HOMEBREW_DOTFILES_LAUNCHER=$(dotfiles_launcher "$@")
+  export HOMEBREW_DOTFILES_LAUNCHER
 }

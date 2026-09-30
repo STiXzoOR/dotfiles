@@ -642,7 +642,8 @@ The following is the software installed by default:
 - Bambu Studio
 - ChatGPT, Claude
 - PrusaSlicer/SuperSlicer
-- Raycast (Spotlight replacement)
+- Tinycast (Spotlight replacement, the default launcher; Raycast on a Mac that opts in with `DOTFILES_LAUNCHER=raycast` in `macos/machine.local.sh`)
+- Blender (the `blender` MCP needs 5.1+)
 - Setapp
 - Shottr (screenshot tool)
 - Slack

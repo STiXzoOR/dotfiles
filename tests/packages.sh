@@ -70,8 +70,13 @@ t "D2.7" "the documented manual list install strips the comment header" \
 section "D3 — git config"
 t "D3.1" "no hardcoded /opt/homebrew gh path" \
   '! grep -q "/opt/homebrew/bin/gh" config/git/config'
-t "D3.2" "github user moved out" \
-  '! grep -qE "^\\s*user = STiXzoOR" config/git/config'
+# The handle is read from remote-install.sh's SOURCE url instead of being
+# spelled out here, and a probe file proves the pattern would catch it.
+t "D3.2" "github user moved out" '
+  h=$(sed -n "s#^SOURCE=\"https://github.com/\([^/]*\)/.*#\1#p" remote-install.sh); [ -n "$h" ] &&
+  W=$(sandbox) && printf "[github]\n\tuser = %s\n" "$h" >| "$W/probe" &&
+  grep -qE "^\\s*user = $h" "$W/probe" &&
+  [ "$(grep -cE "^\\s*user = $h" config/git/config)" -eq 0 ]'
 t "D3.3" "lastupdate state removed" \
   '! grep -q "lastupdate" config/git/config'
 t "D3.4" "autocorrect prompts" \

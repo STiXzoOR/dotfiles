@@ -43,7 +43,11 @@ install (System Settings, Privacy & Security, Full Disk Access): without it
 `systemsetup` and `socketfilterfw` change nothing, and the firewall setters
 still exit 0. A notice is printed at the start of the block, and the firewall
 state is read back afterwards; an unchanged state is an `error` naming Full Disk
-Access. Revoke the grant when the install is done.
+Access. `State = 1` (on) and `State = 2` (block all incoming) both count as on.
+Each failed read-back (firewall, stealth mode, Remote Login) is added to
+`DOTFILES_DEFAULTS_FAILURES`, and `dotfiles configure --defaults` then exits
+non-zero instead of ending in a success banner. Revoke the grant when the
+install is done.
 
 Declared here: firewall on with stealth mode, Remote Login on, restart after a
 power failure, no Power Nap, no disk sleep, no wake-on-LAN, password required
@@ -77,8 +81,21 @@ with `systemsetup -getremotelogin`, and a Mac where it is still off gets an
   `AppleKeyboardUIMode` 3, Finder info panes written with `-dict-add`). Change a
   value in the script, not on the machine, or the next run reverts it.
 - The Spotlight (Cmd-Space), Finder search and screenshot symbolic hotkeys are
-  disabled because Raycast and Shottr replace them. Set Raycast's own hotkey in
-  Raycast.
+  disabled because the launcher (Tinycast or Raycast) and Shottr replace them.
+- The launcher block (`dotfiles_launcher`, see [new-mac.md](new-mac.md#launcher))
+  runs after them. On a Tinycast Mac it first reads the stored hotkey and switch
+  (raw, through PlistBuddy: `defaults read` quotes and escapes strings) and does
+  nothing when both are already right. Otherwise it says so, quits a running
+  Tinycast (skipping with a warning if it will not quit), writes
+  `hotkey.togglePalette` (Cmd-Space,
+  `{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}`) and
+  `settingsFileEnabled` to `com.tinycast.app`, and reads both back the same way;
+  a hotkey mismatch is an error and a switch mismatch a warning, neither
+  ignored. The hotkey format is documented upstream as not stable, so this is
+  best-effort with Tinycast > Settings > General as the
+  fallback. If Raycast.app is still installed it warns once and names
+  `brew uninstall --cask raycast`; nothing is uninstalled. On a Raycast Mac the
+  block does nothing: Raycast's hotkey is set inside Raycast.
 - Theme blocks (Xcode, GitKraken, Terminal.app, Warp) skip with a warning when
   the theme submodule has not been checked out
   (`git submodule update --init --recursive`), and never remove installed themes

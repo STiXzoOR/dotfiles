@@ -39,6 +39,7 @@ _run() {
   local w="$1"; shift
   (
     export HOME="$w/home" PATH="$w/bin:/usr/bin:/bin" STUBLOG="$w/log" STUBDIR="$w"
+    unset CODEX_HOME
     env "$@" bash scripts/install_codex.sh >| "$w/out" 2>&1
   )
 }
@@ -136,5 +137,18 @@ t "X4.2" "codex is found through the mise shims" '
 t "X4.3" "the script has a --lib mode and is shellcheck clean" '
   grep -q -- "--lib" scripts/install_codex.sh &&
   shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 scripts/install_codex.sh scripts/lib/mcp.sh'
+
+section "X5 — deferred minors (Task 16)"
+t "X5.1" "an exported CODEX_HOME never leaks into a test run" '
+  W=$(sandbox); _stubs "$W"; ( export CODEX_HOME="$W/leak"; _run "$W" )
+  [ ! -e "$W/leak" ] && [ -f "$W/home/.codex/config.toml" ]'
+t "X5.2" "a marketplace whose name only contains a listed one is not taken for it" '
+  W=$(sandbox); _stubs "$W"
+  printf "[{\"source\":\"https://github.com/kenryu42/cc-marketplace-extras.git\"}]\n" >| "$W/markets.json"
+  _run "$W"; [ "$(grep -c "^codex plugin marketplace add kenryu42/cc-marketplace$" "$W/log")" -eq 1 ]'
+t "X5.3" "the same marketplace as a full git URL is recognised" '
+  W=$(sandbox); _stubs "$W"
+  printf "[{\"source\":\"https://github.com/kenryu42/cc-marketplace.git\"}]\n" >| "$W/markets.json"
+  _run "$W"; [ "$(grep -c "^codex plugin marketplace add kenryu42/cc-marketplace$" "$W/log")" -eq 0 ]'
 
 finish

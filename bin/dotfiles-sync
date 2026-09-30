@@ -73,6 +73,8 @@ source "$SELF_DIR/../scripts/echos.sh"
 source "$SELF_DIR/../scripts/lib/lists.sh"
 # shellcheck source=../scripts/lib/fs.sh
 source "$SELF_DIR/../scripts/lib/fs.sh"
+# shellcheck source=../scripts/lib/machine.sh
+source "$SELF_DIR/../scripts/lib/machine.sh"
 # shellcheck source=../scripts/lib/jev.sh
 source "$SELF_DIR/../scripts/lib/jev.sh"
 
@@ -278,6 +280,7 @@ brewfiles() {
 brew_unsatisfied() {
   local f rc=1
   command -v brew >/dev/null 2>&1 || return 1
+  dotfiles_export_launcher "$DOTFILES_DIR"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     brew bundle check --file="$f" >/dev/null 2>&1 || { printf '%s\n' "$f"; rc=0; }
@@ -305,6 +308,7 @@ run_action() { # run_action <name> <description> <command...>
 
 install_brew_bundle() {
   local f rc=0
+  dotfiles_export_launcher "$DOTFILES_DIR"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     brew bundle install --file="$f" || rc=1
@@ -578,8 +582,8 @@ drift_header() {
 
 # strict_confirm <prompt>: yes only from a person. It needs a terminal and a
 # typed y or yes, and ignores DOTFILES_YES, which answers the ordinary
-# confirm. DOTFILES_STRICT_ANSWERS names a file of answers, one per line: the
-# test seam, since a test has no terminal.
+# confirm. The test harness (tests/lib.sh) may script the answers, but only
+# with no terminal, inside its own marked sandbox and from a file under it.
 strict_confirm() {
   strict_answer "$1" && return 0
   return 1
@@ -590,7 +594,7 @@ strict_confirm() {
 # was decided (end of input, an empty line, anything else, no terminal).
 strict_answer() {
   local a
-  if [ -n "${DOTFILES_STRICT_ANSWERS:-}" ]; then
+  if [ ! -t 0 ] && scripted_answers_ok; then
     if [ "$STRICT_FD_OPEN" -eq 0 ]; then
       exec 4<"$DOTFILES_STRICT_ANSWERS" || return 2
       STRICT_FD_OPEN=1
@@ -606,6 +610,20 @@ strict_answer() {
     n | N | no | NO | No) return 1 ;;
   esac
   return 2
+}
+
+scripted_answers_ok() {
+  local root="${DOTFILES_TEST_SANDBOX:-}" f="${DOTFILES_STRICT_ANSWERS:-}"
+  case "$root" in /?*) ;; *) return 1 ;; esac
+  case "$f" in "$root"/*) ;; *) return 1 ;; esac
+  case "/$f/" in */../*) return 1 ;; esac
+  [ -f "$f" ]
+}
+
+close_strict_answers() {
+  [ "$STRICT_FD_OPEN" -eq 1 ] || return 0
+  exec 4<&-
+  STRICT_FD_OPEN=0
 }
 
 # append_line <file> <line>: never twice, and never onto an unterminated line.
@@ -811,6 +829,7 @@ jev_drift() {
   drift_pkg
   drift_defaults
   drift_config
+  close_strict_answers
   jev_cleanup
   if [ "$DRIFT_SUGGESTED" -gt 0 ] && [ "$SCHEDULED" -eq 1 ]; then
     attn "Jev suggests $DRIFT_SUGGESTED drift item(s) to classify (run dotfiles sync)"
@@ -902,7 +921,7 @@ apps_offer() {
   esac
   [ "$SCHEDULED" -eq 1 ] && return 0
   # No terminal and no seam means nobody answered: that is not a "no".
-  [ -t 0 ] || [ -n "${DOTFILES_STRICT_ANSWERS:-}" ] || return 0
+  [ -t 0 ] || scripted_answers_ok || return 0
   case "$choice" in
     backup) strict_answer "Will you add $name to the mackup allowlist? (no: stop suggesting it)" ;;
     *) strict_answer "Agree? Stop suggesting $name" ;;
@@ -954,6 +973,7 @@ jev_apps() {
 $DRIFT_OUT
 EOF
   fi
+  close_strict_answers
   if [ "$APPS_SUGGESTED" -gt 0 ] && [ "$SCHEDULED" -eq 1 ]; then
     attn "Jev suggests $APPS_SUGGESTED app(s) for settings backup (run dotfiles sync)"
   fi
@@ -998,6 +1018,81 @@ scan_vault_daily() {
   if [ "$n" -eq 0 ] && [ "$rc" -eq 1 ]; then
     attn "vault scan: possible credential(s) in the vault, see the sync log (dotfiles jev scan-vault)"
   fi
+}
+
+#############################################################################
+# The skip gate: should the daily run do its work at all?
+#############################################################################
+#
+# Scheduled runs only. Facts are computed here in shell: upstream commits per
+# repo and the paths they touch, the hash of the lockfiles, the hours since the
+# last run (added by dotfiles-jev). A deterministic fact that work exists is
+# passed as --work and always runs, with no request: upstream touching a
+# package list, the lockfiles, claude/ codex/ or secrets.age; unpushed commits;
+# actions still pending; a first run. Otherwise `dotfiles-jev skip sync` asks
+# one question. Only its literal SKIP (`on` mode, P(useful) < 0.2, fewer than 3
+# skips in a row) skips; a failure, a timeout or shadow mode runs the job.
+
+SKIP_MAX_PATHS=30
+SKIP_HASH=""
+
+skip_upstream_facts() { # skip_upstream_facts <label> <dir>: appends to SKIP_FACTS / SKIP_WORK
+  local label="$1" dir="$2" behind ahead all paths p fetch_ssh
+  [ -d "$dir/.git" ] || return 0
+  # A hung network must not stall the scheduled job: bound the connect and
+  # abort a transfer that has all but stopped. A failed fetch is work: the
+  # counts below would be stale, so the gate must not judge on them.
+  fetch_ssh="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes} -o ConnectTimeout=10"
+  if ! GIT_SSH_COMMAND="$fetch_ssh" git -C "$dir" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 fetch --quiet 2>/dev/null; then
+    SKIP_WORK="${SKIP_WORK}${label} fetch failed"$'\n'
+    SKIP_FACTS="${SKIP_FACTS}${label} repo: fetch failed"$'\n'
+  fi
+  behind=$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null) || behind=0
+  ahead=$(git -C "$dir" rev-list --count '@{u}..HEAD' 2>/dev/null) || ahead=0
+  # The work scan sees the whole diff; only the copy sent as a fact is capped.
+  all=$(git -C "$dir" diff --name-only 'HEAD..@{u}' 2>/dev/null)
+  paths=$(printf '%s\n' "$all" | sed -n "1,${SKIP_MAX_PATHS}p" | paste -sd' ' -)
+  SKIP_FACTS="${SKIP_FACTS}${label} repo: upstream commits since last run: ${behind}; unpushed commits: ${ahead}"$'\n'
+  [ -n "$paths" ] && SKIP_FACTS="${SKIP_FACTS}${label} repo: paths touched upstream: ${paths}"$'\n'
+  [ "$ahead" -gt 0 ] && SKIP_WORK="${SKIP_WORK}${label} repo has unpushed commits"$'\n'
+  while IFS= read -r p; do
+    case "$p" in
+      Brewfile* | config/mise/* | *.lock | *lock*.json | packages/* | claude/* | codex/* | secrets.age)
+        SKIP_WORK="${SKIP_WORK}upstream ${label} commits touch ${p}"$'\n'
+        break
+        ;;
+    esac
+  done <<EOF
+$all
+EOF
+}
+
+skip_lock_hash() {
+  { cat "$DOTFILES_DIR"/config/mise/mise.lock "$DOTFILES_DIR"/config/mise/locks/* "$DOTFILES_DIR"/Brewfile.lock.json 2>/dev/null; } | shasum | cut -d' ' -f1
+}
+
+skip_gate() {
+  local out hash prev w
+  SKIP_FACTS="" SKIP_WORK=""
+  [ -x "$JEV_BIN" ] || return 0
+  [ "$(jev_mode skip)" = off ] && return 0
+  skip_upstream_facts public "$DOTFILES_DIR"
+  skip_upstream_facts private "$PRIVATE_DIR"
+  hash=$(skip_lock_hash)
+  prev=$(cat "$STATE_DIR/skip-sync.lockhash" 2>/dev/null)
+  SKIP_FACTS="${SKIP_FACTS}lockfile hash changed since last run: $([ "$hash" = "$prev" ] && echo no || echo yes)"$'\n'
+  [ "$hash" = "$prev" ] || SKIP_WORK="${SKIP_WORK}lockfiles changed or first run"$'\n'
+  [ -s "$PENDING_FILE" ] && SKIP_WORK="${SKIP_WORK}pending actions from an earlier run"$'\n'
+  SKIP_HASH="$hash" # stamped by main, and only after a run that succeeded
+  w=$(printf '%s' "$SKIP_WORK" | sed -n 1p)
+  if [ -n "$w" ]; then
+    out=$(printf '%s' "$SKIP_FACTS" | JEV_SCHEDULED=1 "$JEV_BIN" skip sync --work "$w" 2>/dev/null) || return 0
+  else
+    out=$(printf '%s' "$SKIP_FACTS" | JEV_SCHEDULED=1 "$JEV_BIN" skip sync 2>/dev/null) || return 0
+  fi
+  say "== skip gate: $out"
+  case "$out" in SKIP*) return 1 ;; esac
+  return 0
 }
 
 #############################################################################
@@ -1050,9 +1145,17 @@ main() {
       return 2
       ;;
   esac
+  # setup_scheduled sets the scheduled GIT_SSH_COMMAND (BatchMode); either way
+  # it is exported before the gate, whose fetch needs it too. A first-seen
+  # GitHub host key must not stop a fetch at a prompt.
   [ "$SCHEDULED" -eq 1 ] && setup_scheduled
-  # A first-seen GitHub host key must not stop a fetch at a prompt.
   export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}"
+  if [ "$SCHEDULED" -eq 1 ]; then
+    skip_gate || {
+      say "=== skipped (Jev gate)"
+      return 0
+    }
+  fi
 
   if [ -d "$DOTFILES_DIR/.git" ]; then
     repo_sync public "$DOTFILES_DIR"
@@ -1075,6 +1178,9 @@ main() {
 
   if [ "$SCHEDULED" -eq 1 ]; then
     [ -n "$ATTN" ] && notify
+    if [ "$FAILED" -eq 0 ] && [ -n "$SKIP_HASH" ]; then
+      mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "$SKIP_HASH" >"$STATE_DIR/skip-sync.lockhash" 2>/dev/null
+    fi
     say "=== done"
     return 0
   fi

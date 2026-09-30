@@ -1,0 +1,9 @@
+{"id": "a01", "label": "backup", "state": "example-editor mackup covers a macOS app; paths=2 (Library/Application Support/Example Editor/settings.json; Library/Application Support/Example Editor/keybindings.json); build=direct; sandbox container=no"}
+{"id": "a02", "label": "backup", "state": "example-terminal mackup covers a macOS app; paths=1 (Library/Preferences/com.example.terminal.plist); build=direct; sandbox container=no"}
+{"id": "a03", "label": "backup", "state": "example-notes-pro mackup covers a macOS app; paths=1 (.examplenotes/config.json); build=direct; sandbox container=no"}
+{"id": "a04", "label": "own-sync", "state": "example-password-vault mackup covers a macOS app; paths=1 (Library/Preferences/com.example.vault.plist); build=direct; sandbox container=no"}
+{"id": "a05", "label": "own-sync", "state": "example-browser mackup covers a macOS app; paths=1 (Library/Application Support/Example Browser); build=direct; sandbox container=no"}
+{"id": "a06", "label": "own-sync", "state": "example-clipboard mackup covers a macOS app; paths=1 (Library/Preferences/com.example.clipboard.plist); build=App Store; sandbox container=no"}
+{"id": "a07", "label": "not-worth-it", "state": "example-calculator mackup covers a macOS app; paths=1 (Library/Preferences/com.example.calc.plist); build=App Store; sandbox container=no"}
+{"id": "a08", "label": "not-worth-it", "state": "example-trial-game mackup covers a macOS app; paths=1 (Library/Preferences/com.example.game.plist); build=Setapp; sandbox container=yes"}
+{"id": "a09", "label": "not-worth-it", "state": "example-updater mackup covers a macOS app; paths=1 (Library/Caches/com.example.updater); build=direct; sandbox container=no"}

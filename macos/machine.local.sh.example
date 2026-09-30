@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# Per-Mac choices. macos/local.sh is shared between the Macs through the
+# private repo (dotfiles private), so anything that differs per Mac lives here
+# instead:
+#
+#   cp macos/machine.local.sh.example macos/machine.local.sh
+#
+# macos/machine.local.sh is gitignored and never linked or synced. Sourced,
+# never executed.
+
+# Which launcher this Mac uses: tinycast (the default) or raycast. Read by
+# `dotfiles install --packages` (which cask) and `dotfiles configure` (whether
+# to set Tinycast's Cmd-Space). The environment wins over this file, which wins
+# over macos/local.sh.
+DOTFILES_LAUNCHER="raycast"

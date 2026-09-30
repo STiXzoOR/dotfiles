@@ -13,7 +13,8 @@ cannot be synced safely are left manual on purpose.
 | Role-specific settings (Remote Login, power)     | `dotfiles_machine_role`: `desktop` or `laptop`, read from `pmset -g batt`    | `dotfiles configure` (each Mac decides for itself) |
 | The Obsidian vault                               | iCloud Drive; `~/Vault` is a symlink to the vault folder there               | iCloud; `dotfiles vault migrate` once |
 | App settings snapshots (mackup)                  | iCloud Drive, one folder per Mac (`dotfiles apps`, see [app-settings.md](app-settings.md)) | The daily backup agent; restore is deliberate |
-| Raycast, VS Code, Warp, Paste, Brave, atuin      | Each app's own sync                                                          | The apps                           |
+| VS Code, Warp, Paste, Brave, atuin, Raycast      | Each app's own sync                                                          | The apps                           |
+| Tinycast (the launcher on new Macs)              | No cloud sync: `config/tinycast/settings.json` travels through this repo; the launcher choice is per Mac in `macos/machine.local.sh`, which is never synced | `dotfiles link`; you |
 | Projects                                         | Their own git remotes                                                        | You                                |
 
 ## Roles

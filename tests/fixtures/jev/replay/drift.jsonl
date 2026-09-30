@@ -1,0 +1,12 @@
+{"id": "d01", "kind": "pkg", "label": "public", "state": "brew:ripgrep kind=brew formula; desc=Search tool like grep; dependency=no; first seen 2026-09-01"}
+{"id": "d02", "kind": "pkg", "label": "public", "state": "cask:visual-studio-code kind=cask; desc=Code editor; dependency=no; first seen 2026-09-02"}
+{"id": "d03", "kind": "pkg", "label": "private", "state": "cask:acme-vpn kind=cask; desc=Client VPN for a contractor engagement; dependency=no; first seen 2026-09-10"}
+{"id": "d04", "kind": "pkg", "label": "ignore", "state": "brew:libexample kind=brew formula; desc=Helper library; dependency=yes; first seen 2026-08-30"}
+{"id": "d05", "kind": "pkg", "label": "ignore", "state": "brew:trial-tool kind=brew formula; desc=Tried once for a demo; dependency=no; first seen 2026-09-27"}
+{"id": "d06", "kind": "pkg", "label": "remove", "state": "brew:old-cli kind=brew formula; desc=Abandoned project, replaced by a newer tool that is installed; dependency=no; first seen 2025-01-05"}
+{"id": "d07", "kind": "defaults", "label": "public", "state": "com.apple.dock tilesize changed from 48 to 36"}
+{"id": "d08", "kind": "defaults", "label": "transient", "state": "com.apple.finder FXRecentFolders changed"}
+{"id": "d09", "kind": "defaults", "label": "local-only", "state": "com.apple.menuextra.clock ShowSeconds changed (display specific to one desk setup)"}
+{"id": "d10", "kind": "config", "label": "capture", "state": "~/.config/example-editor contains init.toml and keymap.toml (hand-written, 40 lines)"}
+{"id": "d11", "kind": "config", "label": "ignore", "state": "~/.config/example-app contains cache/ and session.db (generated at runtime)"}
+{"id": "d12", "kind": "config", "label": "ignore", "state": "~/.config/example-cli contains credentials.json"}

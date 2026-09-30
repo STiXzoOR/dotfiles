@@ -22,13 +22,13 @@ mk() {
 }
 
 t "B1.1" "keys with spaces survive" \
-  'W=$(mk "defaults write com.apple.print.PrintingPrefs \"Quit When Finished\" -bool true"); DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -q "Quit When Finished"'
+  'W=$(mk "defaults write com.apple.print.PrintingPrefs \"Quit When Finished\" -bool true"); out=$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list); [ "$(printf "%s\n" "$out" | grep -c "Quit When Finished")" -ge 1 ]'
 t "B1.2" "indented writes are captured" \
-  'W=$(mk "  defaults write com.apple.terminal \"Default Window Settings\" -string Nord"); DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -q "Default Window Settings"'
+  'W=$(mk "  defaults write com.apple.terminal \"Default Window Settings\" -string Nord"); out=$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list); [ "$(printf "%s\n" "$out" | grep -c "Default Window Settings")" -ge 1 ]'
 t "B1.3" "sudo writes are captured with their domain path" \
-  'W=$(mk "sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false"); DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -q "GuestEnabled"'
+  'W=$(mk "sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false"); out=$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list); [ "$(printf "%s\n" "$out" | grep -c "GuestEnabled")" -ge 1 ]'
 t "B1.4" "-currentHost writes are captured" \
-  'W=$(mk "defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true"); DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -q "disableHotPlug"'
+  'W=$(mk "defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true"); out=$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list); [ "$(printf "%s\n" "$out" | grep -c "disableHotPlug")" -ge 1 ]'
 t "B1.5" "a write with no key is rejected, not recorded as domain=-bool" \
   'W=$(mk "defaults write com.apple.sound.beep.feedback -bool false"); [ "$(DOTFILES_DIR="$W" bash bin/dotfiles-baseline list | grep -c -- "-bool")" -eq 0 ]'
 
@@ -281,6 +281,35 @@ _g_env() {
     _stub "$W/bin" "$n"
   done
   _stub "$W/bin" sudo 'exec "$@"'
+  # `defaults` for com.tinycast.app: write records into $HK_STATE / $SFE_STATE,
+  # `export <domain> <file>` writes a real plist holding them (what the script
+  # reads through PlistBuddy), and `read` prints the value the way the real tool
+  # does: quoted, inner quotes escaped. HK_FORCE replaces the stored hotkey.
+  _stub "$W/bin" defaults '
+if [ "$1 $2" = "write com.tinycast.app" ]; then
+  case "$3" in
+    hotkey.togglePalette) printf "%s" "$4" >"$HK_STATE" ;;
+    settingsFileEnabled) [ "$4" = "-bool" ] && printf "%s" "$5" >"$SFE_STATE" ;;
+  esac
+fi
+if [ "$1 $2" = "export com.tinycast.app" ]; then
+  {
+    printf "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\n"
+    if [ -n "${HK_FORCE:-}" ]; then printf "<key>hotkey.togglePalette</key><string>%s</string>\n" "$HK_FORCE"
+    elif [ -f "$HK_STATE" ]; then printf "<key>hotkey.togglePalette</key><string>%s</string>\n" "$(cat "$HK_STATE")"; fi
+    if [ -n "${SFE_FORCE:-}" ]; then printf "<key>settingsFileEnabled</key><%s/>\n" "$SFE_FORCE"
+    elif [ -f "$SFE_STATE" ]; then printf "<key>settingsFileEnabled</key><%s/>\n" "$(cat "$SFE_STATE")"; fi
+    printf "</dict></plist>\n"
+  } >"$3"
+fi
+if [ "$1 $2 $3" = "read com.tinycast.app hotkey.togglePalette" ]; then
+  v=$(cat "$HK_STATE" 2>/dev/null); printf "\"%s\"\n" "$(printf "%s" "$v" | sed "s/\"/\\\\\"/g")"
+fi
+exit 0'
+  _stub "$W/bin" pgrep '[ -e "$W_STATE/running" ] && [ "$1 $2" = "-x Tinycast" ]'
+  _stub "$W/bin" osascript '
+case "$*" in *"quit app \"Tinycast\""*) [ -n "${HK_STUCK:-}" ] || command rm -f "$W_STATE/running" ;; esac
+exit 0'
   # A desktop unless a test says otherwise: a positive AC Power marker.
   _stub "$W/bin" pmset 'case "$*" in "-g batt") printf "%s\n" "Now drawing from '"'"'AC Power'"'"'" ;; esac'
   # Remote Login: the setter only takes effect when RL_TAKES is set (without
@@ -304,7 +333,8 @@ case "$1" in
   --setstealthmode) [ -n "${FW_TAKES:-}" ] && echo "$2" >"$FW_STATE/stealth" ;;
   --getglobalstate)
     if [ "$(cat "$FW_STATE/global" 2>/dev/null)" = on ]; then
-      echo "Firewall is enabled. (State = 1)"; else echo "Firewall is disabled. (State = 0)"; fi ;;
+      if [ -n "${FW_BLOCKALL:-}" ]; then echo "Firewall is enabled. (State = 2)"; else echo "Firewall is enabled. (State = 1)"; fi
+    else echo "Firewall is disabled. (State = 0)"; fi ;;
   --getstealthmode)
     if [ "$(cat "$FW_STATE/stealth" 2>/dev/null)" = on ]; then
       echo "Stealth mode enabled"; else echo "Stealth mode disabled"; fi ;;
@@ -322,11 +352,14 @@ _g_run() {
   awk '/^# Ask for the administrator password upfront/ { skip = 1 }
        !skip { print }
        skip && /^done 2>\/dev\/null &/ { skip = 0 }' "$ROOT_DIR/macos/$f" >"$W/df/macos/$f"
+  # G_TAIL: a line appended to the copy, to read variables the script leaves set.
+  [ -z "${G_TAIL:-}" ] || printf '\n%s\n' "$G_TAIL" >>"$W/df/macos/$f"
   env -i HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" DOTFILES_DIR="$W/df" \
     STUB_LOG="$W/log" FW_STATE="$W/fw" TMPDIR="$W" \
     DOTFILES_SOCKETFILTERFW="$W/bin/socketfilterfw" \
     DOTFILES_ACTIVATE_SETTINGS="$W/bin/activateSettings" \
     DOTFILES_LSREGISTER="$W/bin/lsregister" \
+    HK_STATE="$W/hk" SFE_STATE="$W/sfe" W_STATE="$W" DOTFILES_RAYCAST_APP="$W/Raycast.app" \
     "$@" /bin/bash "$W/df/macos/$f" </dev/null >"$W/out" 2>&1
 }
 
@@ -457,7 +490,7 @@ t "G2.9" "a missing activateSettings is skipped, not an error" '
   W=$(_g_env) && command rm -f "$W/bin/activateSettings" && _g_run "$W" defaults.sh &&
   [ "$(_logcount "$W" "activateSettings")" -eq 0 ]'
 t "G2.10" "activateSettings is guarded by an executable test" \
-  'code_of macos/defaults.sh | grep -qE "\[ -x .*ACTIVATE_SETTINGS"'
+  '[ "$(code_of macos/defaults.sh | grep -cE "\[ -x .*ACTIVATE_SETTINGS")" -ge 1 ]'
 
 #############################################################################
 section "G3 -- security and power"
@@ -473,8 +506,21 @@ t "G3.3" "a firewall that took effect prints no error naming Full Disk Access" \
   '[ "$(grep -c "error.*Full Disk Access" "$FWOK/out")" -eq 0 ]'
 t "G3.4" "an unchanged firewall state is an error naming Full Disk Access" \
   '[ "$(grep -c "error.*Full Disk Access" "$DEF/out")" -ge 1 ]'
-t "G3.5" "stealth and global state are checked separately" \
-  '[ "$(grep -c "error.*Full Disk Access" "$DEF/out")" -ge 2 ]'
+t "G3.5" "stealth and global state are each reported by name" \
+  '[ "$(grep -c "error.*application firewall is still off" "$DEF/out")" -ge 1 ] &&
+   [ "$(grep -c "error.*stealth mode is still off" "$DEF/out")" -ge 1 ]'
+# State = 2 is "block all incoming connections": the firewall is on, more so.
+BLK=$(_g_env); _g_run "$BLK" defaults.sh FW_TAKES=1 FW_BLOCKALL=1
+t "G3.5b" "a firewall reading back State = 2 (block all) is on, not an error" \
+  '[ "$(grep -c "error.*application firewall" "$BLK/out")" -eq 0 ]'
+# The failed read-backs are tallied in DOTFILES_DEFAULTS_FAILURES, which
+# `configure --defaults` turns into a non-zero status.
+_tally() { G_TAIL='echo "TALLY=${DOTFILES_DEFAULTS_FAILURES:-0}"' _g_run "$1" defaults.sh "${@:2}"; sed -n 's/^TALLY=//p' "$1/out"; }
+t "G3.5c" "unchanged firewall and stealth read-backs are tallied as failures" \
+  'W=$(_g_env) && [ "$(_tally "$W")" -ge 2 ]'
+t "G3.5d" "a firewall that took effect leaves the failure tally at zero" \
+  'W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1 RL_TAKES=1)" -eq 0 ]'
+
 t "G3.6" "the Full Disk Access notice comes first in the security block" '
   a=$(grep -n "Full Disk Access" "$FWOK/out" | head -1 | cut -d: -f1)
   b=$(grep -n "remote apple events" "$FWOK/out" | head -1 | cut -d: -f1)
@@ -612,6 +658,8 @@ t "G5.9" "gh config carries no token" \
   '[ "$(grep -ciE "oauth_token|ghp_|gho_|github_pat" config/gh/config.yml)" -eq 0 ]'
 t "G5.10" "the VS Code keybindings are valid JSON with the two ctrl+d bindings" \
   'jq -e "map(select(.key == \"ctrl+d\")) | length == 2" <(sed "/^[[:space:]]*\/\//d" apps/vscode/keybindings.json) >/dev/null'
+t "G5.10b" "the VS Code keybindings end with a newline" \
+  '[ "$(tail -c 1 apps/vscode/keybindings.json | od -An -c | tr -d " ")" = "\\n" ]'
 t "G5.11" "the VS Code installer links keybindings.json beside settings.json" '
   W=$(_g_env) && mkdir -p "$W/df/apps/vscode" && echo "{}" >"$W/df/apps/vscode/settings.json" && echo "[]" >"$W/df/apps/vscode/keybindings.json" &&
   _g_run "$W" defaults-vscode.sh &&
@@ -670,6 +718,93 @@ t "G6.8" "nothing in defaults.sh ever turns Remote Login off" \
   '[ "$(code_of macos/defaults.sh | grep -c -- "-setremotelogin.* off")" -eq 0 ]'
 
 #############################################################################
+section "G8 -- the launcher block: Tinycast's Cmd-Space, or Raycast left alone"
+#############################################################################
+# The stubs are in _g_env. `defaults` remembers the hotkey it is asked to write
+# and reads it back (HK_FORCE overrides the read-back); `pgrep` says Tinycast is
+# running while $W/running exists; `osascript` quitting Tinycast removes it
+# (HK_STUCK makes the quit fail). Nothing touches a real domain.
+HK='{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}'
+_g_launch_run() { # _g_launch_run <W> [VAR=val ...]
+  local W=$1
+  shift
+  _g_run "$W" defaults.sh "$@"
+}
+
+TC=$(_g_env); _g_launch_run "$TC"
+t "G8.1" "default (no launcher configured): Tinycast's summon hotkey is set to Cmd-Space" \
+  '_logged "$TC" "defaults write com.tinycast.app hotkey.togglePalette $HK"'
+t "G8.2" "the Tinycast settings-file switch is turned on (the documented settingsFileEnabled default)" \
+  '_logged "$TC" "defaults write com.tinycast.app settingsFileEnabled -bool true"'
+t "G8.3" "the hotkey is read back after the write, as the raw value (not through defaults read, which quotes it)" \
+  '[ "$(_first_line "defaults write com.tinycast.app hotkey.togglePalette" "$TC/log")" -gt 0 ] &&
+   [ "$(sed -n "/defaults write com.tinycast.app hotkey.togglePalette/,\$p" "$TC/log" | grep -c "defaults export com.tinycast.app")" -ge 1 ] &&
+   [ "$(_logcount "$TC" "defaults read com.tinycast.app")" -eq 0 ]'
+t "G8.4" "a matching read-back reports no error and no warning about Tinycast (the real defaults read output is quoted and escaped, and must not matter)" \
+  '! grep -qiE "tinycast.*(read back|still running)" "$TC/out" && ! grep -q "hotkey read back" "$TC/out"'
+t "G8.5" "Spotlight Cmd-Space stays disabled (symbolic hotkey 64)" \
+  '_logged "$TC" "$(_hk 64 32 49 1048576)"'
+
+MM=$(_g_env); _g_launch_run "$MM" HK_FORCE=bogus
+t "G8.6" "a read-back that differs is reported, not ignored" \
+  'grep -qi "read back" "$MM/out" && grep -q "bogus" "$MM/out"'
+t "G8.7" "a mismatch does not stop the rest of defaults.sh" \
+  '_logged "$MM" "activateSettings -u"'
+
+RUN=$(_g_env); : >"$RUN/running"; _g_launch_run "$RUN"
+t "G8.8" "a running Tinycast is quit, then the hotkey is written" \
+  '[ "$(_first_line "osascript -e quit app \"Tinycast\"" "$RUN/log")" -gt 0 ] &&
+   [ "$(_first_line "osascript -e quit app \"Tinycast\"" "$RUN/log")" -lt "$(_first_line "defaults write com.tinycast.app hotkey.togglePalette" "$RUN/log")" ]'
+t "G8.9" "a Tinycast that is not running is not quit" \
+  '[ "$(_logcount "$TC" "quit app \"Tinycast\"")" -eq 0 ]'
+STK=$(_g_env); : >"$STK/running"; _g_launch_run "$STK" HK_STUCK=1
+t "G8.10" "a Tinycast that will not quit is skipped with a clear message, and nothing is written" \
+  '[ "$(_logcount "$STK" "defaults write com.tinycast.app")" -eq 0 ] && grep -qi "still running" "$STK/out"'
+
+RC=$(_g_env); mkdir -p "$RC/Raycast.app"; _g_launch_run "$RC" DOTFILES_LAUNCHER=raycast
+t "G8.11" "launcher=raycast: Tinycast's domain is never touched" \
+  '[ "$(_logcount "$RC" "com.tinycast.app")" -eq 0 ]'
+t "G8.12" "launcher=raycast: no warning about Raycast holding Cmd-Space" \
+  '! grep -q "brew uninstall --cask raycast" "$RC/out"'
+t "G8.13" "launcher=raycast: the rest of defaults.sh still runs (hotkey activation)" \
+  '_logged "$RC" "activateSettings -u"'
+
+RP=$(_g_env); mkdir -p "$RP/Raycast.app"; _g_launch_run "$RP"
+t "G8.14" "tinycast with Raycast.app present: one warning with the exact removal command" \
+  '[ "$(grep -c "brew uninstall --cask raycast" "$RP/out")" -eq 1 ]'
+t "G8.15" "the warning is only a warning: Raycast is never uninstalled and Tinycast is still set up" \
+  '[ "$(_logcount "$RP" "uninstall")" -eq 0 ] && _logged "$RP" "defaults write com.tinycast.app hotkey.togglePalette $HK"'
+t "G8.16" "tinycast without Raycast.app: no Raycast warning" \
+  '! grep -q "brew uninstall --cask raycast" "$TC/out"'
+
+PM=$(_g_env); printf "DOTFILES_LAUNCHER=raycast\n" >"$PM/df/macos/local.sh"; printf "DOTFILES_LAUNCHER=tinycast\n" >"$PM/df/macos/machine.local.sh"; _g_launch_run "$PM"
+t "G8.17" "macos/machine.local.sh beats macos/local.sh (sourcing local.sh must not hide it)" \
+  '_logged "$PM" "defaults write com.tinycast.app hotkey.togglePalette $HK"'
+PL=$(_g_env); printf "DOTFILES_LAUNCHER=raycast\n" >"$PL/df/macos/local.sh"; _g_launch_run "$PL"
+t "G8.18" "a launcher set only in macos/local.sh is honoured" \
+  '[ "$(_logcount "$PL" "com.tinycast.app")" -eq 0 ]'
+t "G8.19" "the environment beats both files" '
+  W=$(_g_env); printf "DOTFILES_LAUNCHER=tinycast\n" >"$W/df/macos/machine.local.sh"; _g_launch_run "$W" DOTFILES_LAUNCHER=raycast
+  [ "$(_logcount "$W" "com.tinycast.app")" -eq 0 ]'
+
+ALR=$(_g_env); printf '%s' "$HK" >"$ALR/hk"; printf true >"$ALR/sfe"; : >"$ALR/running"; _g_run "$ALR" defaults.sh
+t "G8.20" "hotkey and settings switch already right: a running Tinycast is left running and nothing is written" \
+  '[ "$(_logcount "$ALR" "quit app")" -eq 0 ] && [ "$(_logcount "$ALR" "defaults write com.tinycast.app")" -eq 0 ] && [ -e "$ALR/running" ]'
+t "G8.21" "already right: the run says so and reports no error" \
+  'grep -qi "already set" "$ALR/out" && ! grep -q "hotkey read back" "$ALR/out"'
+SFO=$(_g_env); printf '%s' "$HK" >"$SFO/hk"; _g_run "$SFO" defaults.sh
+t "G8.22" "hotkey right but the settings switch off: both are written again" \
+  '_logged "$SFO" "defaults write com.tinycast.app settingsFileEnabled -bool true"'
+t "G8.23" "a running Tinycast that must be quit is announced first" '
+  grep -qi "quitting tinycast" "$RUN/out"'
+t "G8.24" "a Tinycast that is not running is not announced as quit" \
+  '! grep -qi "quitting tinycast" "$TC/out"'
+
+SFM=$(_g_env); _g_run "$SFM" defaults.sh SFE_FORCE=false
+t "G8.25" "a settings switch that reads back off is reported, not ignored" \
+  'grep -q "settingsFileEnabled read back" "$SFM/out"'
+t "G8.26" "a settings switch that reads back on is not reported" \
+  '! grep -q "settingsFileEnabled read back" "$TC/out"'
 section "K -- Task 13: baseline changed (defaults that moved since the snapshot)"
 #############################################################################
 # kenv: a DOTFILES_DIR declaring three keys, a snapshot "t" and a stub

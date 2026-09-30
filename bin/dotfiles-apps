@@ -585,6 +585,49 @@ publish() {
 }
 
 #############################################################################
+# The skip gate: should the daily backup do its work at all?
+#############################################################################
+
+# Scheduled runs only. A deterministic fact that work exists (no snapshot yet,
+# or a file under an allowlisted app's prefs newer than the last snapshot) is
+# passed as --work and always runs. Otherwise `dotfiles-jev skip apps` asks one
+# question; only its literal SKIP skips, and a failure runs the backup.
+skip_gate() { # skip_gate <machine>
+  local jev="${DOTFILES_APPS_JEV:-$SELF_DIR/dotfiles-jev}" latest app p full changed="" facts="" work="" out n=0
+  [ -x "$jev" ] || return 0
+  [ "${DOTFILES_JEV:-}" = off ] && return 0
+  latest="$STORE/$1/latest"
+  if [ ! -f "$latest" ]; then
+    work="no snapshot has been published yet"
+  else
+    for app in $(allowlist); do
+      while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        full="$HOME/${p%/}"
+        [ -e "$full" ] || continue
+        if [ -n "$(find "$full" -newer "$latest" 2>/dev/null | sed -n 1p)" ]; then
+          n=$((n + 1))
+          [ "$n" -le 20 ] && changed="${changed:+$changed, }$app"
+          break
+        fi
+      done <<EOF
+$(app_paths "$app")
+EOF
+    done
+    [ "$n" -gt 0 ] && work="app prefs changed since the last snapshot: $changed"
+  fi
+  facts="allowlisted apps with prefs changed since the last snapshot: $n"
+  if [ -n "$work" ]; then
+    out=$(printf '%s\n' "$facts" | JEV_SCHEDULED=1 "$jev" skip apps --work "$work" 2>/dev/null) || return 0
+  else
+    out=$(printf '%s\n' "$facts" | JEV_SCHEDULED=1 "$jev" skip apps 2>/dev/null) || return 0
+  fi
+  printf '%s skip gate: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$out"
+  case "$out" in SKIP*) return 1 ;; esac
+  return 0
+}
+
+#############################################################################
 # backup
 #############################################################################
 
@@ -632,6 +675,10 @@ cmd_backup() {
 
   machine=$(dotfiles_machine_name) || return 1
   store_ready || return 1
+  if [ "$scheduled" -eq 1 ] && ! skip_gate "$machine"; then
+    printf '%s skipped: the Jev skip gate judged there was nothing to back up\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    return 0
+  fi
   take_lock || return 1
   cmd_check || return 1
   guard_symlinks || return 1

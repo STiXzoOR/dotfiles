@@ -20,7 +20,12 @@ used to fail with "command not found".
 2. **Register marketplaces** from `claude/marketplaces.list`.
 3. **Install plugins** from `claude/plugins.list`. The plugin is
    `cc-safety-net` (upstream renamed it from `safety-net`; the old name fails
-   on a fresh machine), plus `warp`.
+   on a fresh machine), plus `warp`. Once `cc-safety-net` is installed (and did
+   not fail), a leftover `safety-net@cc-marketplace` from before the rename is
+   uninstalled and the run says so; if `cc-safety-net` failed, the old one is
+   kept. Installed-plugin and marketplace lookups match whole names
+   (`list_has_token` in `scripts/lib/lists.sh`), so `safety-net` is not taken
+   for `cc-safety-net`.
 3b. **Register MCP servers** from `claude/mcp.list` with
    `claude mcp add --scope user`, skipping any server `claude mcp get` already
    knows. The format is one `name command args...` per line; a literal `$HOME`
@@ -33,10 +38,12 @@ used to fail with "command not found".
    release, Blender 5.1+) is installed from inside Blender; the script prints
    the reminder. Shared helpers live in `scripts/lib/mcp.sh`.
 3c. **Install skills** from `claude/skills.list` (`<source> <skill>`) with
-   `npx -y skills add <source> --skill <skill> -g -a claude-code -a codex -y`
+   `npx -y skills@<pinned> add <source> --skill <skill> -g -a claude-code -a codex -y`
+   (`SKILLS_CLI_VERSION` in `scripts/install_claude.sh`)
    (currently `find-docs`, which replaces the context7 MCP; its `ctx7` CLI comes
    from `config/mise/config.toml`). An existing symlink means installed; a
-   hand-placed real directory is first moved to `<skill>.bak.<epoch>`.
+   hand-placed real directory is first moved to `~/.claude/backups/skills/<skill>.<epoch>`
+   (outside the skills tree). A dangling symlink is not an install.
 4. **Copy `claude/rules/` → `~/.claude/rules/`**, then append an
    `@~/.claude/rules/<name>.md` import line per rule to `~/.claude/CLAUDE.md`,
    idempotently and only if that file already exists.

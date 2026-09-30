@@ -15,6 +15,11 @@
 # shellcheck disable=SC2016
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# `dotfiles test` runs under the bin/dotfiles launcher, which exports STOW_DIR.
+# Every real stow the link tests run in a sandbox repo would then use the
+# checkout's runcom/config instead of the sandbox's.
+unset STOW_DIR
+
 #############################################################################
 section "A0 — scripts/echos.sh helpers"
 #############################################################################
@@ -259,7 +264,7 @@ t "A9.1c" "a foreign symlink is preserved in the backup" '
   (source scripts/lib/fs.sh; dotfiles_backup_stow_targets "$W/pkg" "$W/target" "$W/backup")
   [ -L "$W/backup/.testrc" ]'
 t "A9.1d" "link stows config against XDG_CONFIG_HOME through the shared helper" \
-  'grep -q "dotfiles_stow_all - \"\$ROOT_DIR\" \"\$HOME\" \"\$XDG_CONFIG_HOME\"" <(code_of bin/dotfiles) && grep -q "dotfiles_stow \"\$1\" \"\$4\" config" <(code_of scripts/lib/fs.sh)'
+  'grep -q "dotfiles_stow_all - \"\$ROOT_DIR\" \"\$HOME\" \"\$XDG_CONFIG_HOME\"" <(code_of bin/dotfiles) && grep -q "dotfiles_stow \"\$1\" \"\$2\" \"\$4\" config" <(code_of scripts/lib/fs.sh)'
 t "A9.2" "unlink on an empty backup does not claim success" '
   W=$(sandbox); mkdir -p "$W/h/.dotfiles_backup/2026.01.01"
   out=$(HOME="$W/h" bash bin/dotfiles unlink 2026.01.01 2>&1 || true)
@@ -331,7 +336,7 @@ t "A9.19" "lastupdate goes to config.local" \
 t "A9.19b" "lastupdate never touches the global or the tracked git config" \
   '! grep -q "git config --global dotfiles.lastupdate" <(code_of bin/dotfiles)'
 t "A9.20" "install --claude propagates failure" \
-  'sed -n "/^sub_install_claude()/,/^}/p" <(code_of bin/dotfiles) | grep -qE "\|\| return 1|return \$\?"'
+  '[ "$(sed -n "/^sub_install_claude()/,/^}/p" <(code_of bin/dotfiles) | grep -cE "\|\| return 1|return \$\?")" -ge 1 ]'
 # The brief spelled the first grep as "launchctl bootstrap gui"; the domain
 # target is quoted here ("gui/$UID"), so match the two parts separately.
 t "A9.21" "launchagents use bootstrap/bootout and copy" \
@@ -384,7 +389,7 @@ t "A10.1" "configure prompts once" \
 t "A10.1b" "configure calls the functions directly, not through a subprocess" \
   '[ "$(sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -c "\$0 configure")" -eq 0 ]'
 t "A10.1c" "configure restores DOTFILES_YES afterwards" \
-  'sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -q "_prev_yes"'
+  '[ "$(sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -c "_prev_yes")" -ge 1 ]'
 t "A10.2" "claude subcommand routes to bin/dotfiles-claude" \
   'grep -q "\"claude\"" <(code_of bin/dotfiles) && grep -q "dotfiles-claude" <(code_of bin/dotfiles)'
 t "A10.2b" "claude appears in the top-level help" \
@@ -515,6 +520,7 @@ t "A13.4" "DOTFILES_YES skips the git identity prompt and warns instead" '
   cat > "$W/run.sh" <<RUN
 PATH="$W/bin:\$PATH"; HOME="$W/h"; XDG_CONFIG_HOME="$W/xdg"; ROOT_DIR="$W/df"; DOTFILES_YES=1
 cd "$PWD" || exit 1
+echo \$\$ >"$W/pid"
 . scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
 sub_link
 RUN
@@ -729,7 +735,7 @@ case "$1" in
     n=$(($(cat "$SW/list.n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$SW/list.n"
     echo "softwareupdate --list (sentinel: $([ -e "$DOTFILES_CLT_SENTINEL" ] && echo present || echo absent))" >> "$SW/log"
     [ -f "$SW/list.$n" ] && cat "$SW/list.$n" ;;
-  --install) echo "softwareupdate $*" >> "$SW/log"; exit "$(cat "$SW/install.rc" 2>/dev/null || echo 0)" ;;
+  --install) echo "softwareupdate $*" >> "$SW/log"; [ -e "$SW/install.sleep" ] && sleep "$(cat "$SW/install.sleep")"; exit "$(cat "$SW/install.rc" 2>/dev/null || echo 0)" ;;
 esac
 STUB
   cat > "$W/bin/sudo" <<'STUB'
@@ -794,6 +800,41 @@ t "N2.15" "the licence is accepted when the selected path is inside Xcode.app" '
   grep -q "^sudo xcodebuild -license accept" "$W/log"'
 t "N2.16" "sub_install_clt is a thin wrapper over dotfiles_install_clt" '
   [ "$(fn_of sub_install_clt | grep -c "dotfiles_install_clt")" -eq 1 ] && [ "$(fn_of sub_install_clt | grep -c softwareupdate)" -eq 0 ]'
+
+t "N2.17" "a trailing beta counter is not read as the version" '
+  b="Command Line Tools for Xcode 27.0 beta 3"; s="Command Line Tools for Xcode 26.6-26.6"
+  [ "$(_clt_pick "$b" "$s")" = "$b" ] && [ "$(_clt_pick "$s" "$b")" = "$b" ]'
+t "N2.18" "sudo is kept alive while softwareupdate runs and stops afterwards" '
+  W=$(sandbox); _clt_stubs "$W"; echo 1 > "$W/install.sleep"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+  DOTFILES_CLT_KEEPALIVE_INTERVAL=0.1 _clt_run "$W" dotfiles_install_clt >/dev/null 2>&1 &&
+  [ "$(grep -c "^sudo -n true" "$W/log")" -ge 2 ] &&
+  n=$(grep -c "^sudo -n true" "$W/log") && sleep 0.5 && [ "$(grep -c "^sudo -n true" "$W/log")" -eq "$n" ]'
+t "N2.19" "a TERM during the install removes the sentinel and stops the keep-alive" '
+  W=$(sandbox); _clt_stubs "$W"; echo 2 > "$W/install.sleep"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+  DOTFILES_CLT_KEEPALIVE_INTERVAL=0.1 _clt_run "$W" "echo \$\$ > \"\$SW/pid\"; dotfiles_install_clt" >/dev/null 2>&1 &
+  bgpid=$!
+  i=0; while [ ! -e "$W/sentinel" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$W/sentinel" ]; kill -TERM "$(cat "$W/pid")"; wait "$bgpid" 2>/dev/null
+  [ ! -e "$W/sentinel" ] &&
+  n=$(grep -c "^sudo -n true" "$W/log") && sleep 0.5 && [ "$(grep -c "^sudo -n true" "$W/log")" -eq "$n" ]'
+
+t "N2.20" "a SIGKILLed parent does not leave the keep-alive holding sudo warm" '
+  W=$(sandbox); _clt_stubs "$W"; echo 8 > "$W/install.sleep"; : >> "$W/log"
+  _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
+  DOTFILES_CLT_KEEPALIVE_INTERVAL=0.1 _clt_run "$W" "echo \$\$ > \"\$SW/pid\"; dotfiles_install_clt" >/dev/null 2>&1 &
+  bgpid=$!
+  # Wait for the keep-alive to have fired (bounded, so a loaded machine is fine).
+  i=0; while [ "$(grep -c "^sudo -n true" "$W/log")" -lt 2 ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  pid=$(command cat "$W/pid"); kids=$(pgrep -P "$pid")
+  kill -KILL "$pid"; wait "$bgpid" 2>/dev/null
+  sleep 1
+  n=$(grep -c "^sudo -n true" "$W/log"); sleep 0.8
+  [ "$n" -ge 1 ] && [ "$(grep -c "^sudo -n true" "$W/log")" -eq "$n" ]; rc=$?
+  # A loop that survived (the failure being tested) must not outlive the test.
+  [ -z "$kids" ] || kill $kids 2>/dev/null
+  [ "$rc" -eq 0 ]'
 
 
 #############################################################################
@@ -1036,6 +1077,7 @@ _pk_setup() { # _pk_setup <W> -- repo with a Brewfile, code.list and stub brew/c
 #!/bin/bash
 echo "brew $*" >> "$SW/log"
 [ "$1" = bundle ] && exit "${BUNDLE_RC:-0}"
+[ "$1" = tap ] && [ -n "${TAP_EATS_STDIN:-}" ] && cat >/dev/null
 if [ "$1" = trust ] && [ -n "${TRUST_FAIL:-}" ]; then echo "Error: trust nope" >&2; exit 1; fi
 exit 0
 STUB
@@ -1112,6 +1154,10 @@ t "N6.15" "declining the Brewfile prompt skips the step without failing" '
   SW="$W" bash "$W/run2.sh" </dev/null >/dev/null 2>&1; rc=$?
   [ "$rc" -eq 0 ] && [ ! -e "$W/log" ]'
 
+t "N6.16" "a brew that reads stdin cannot swallow the taps still to come" '
+  W=$(sandbox); _pk_setup "$W"; printf "tap \"acme/tools\"\ntap \"beta/tools\"\n" > "$W/repo/Brewfile"
+  _pk_run "$W" TAP_EATS_STDIN=1 >/dev/null 2>&1; grep -q "brew tap beta/tools" "$W/log"'
+
 
 #############################################################################
 section "N7 — submodules and Prezto runcoms (1.7)"
@@ -1157,6 +1203,36 @@ t "N7.4" "a submodule that cannot be initialised warns and the defaults still ru
   out=$(FAIL_SM=apps/a/one _sm_run "$W" sub_configure_defaults 2>&1); rc=$?
   [ "$rc" -eq 0 ] && grep -q "^defaults$" "$W/log" && grep -q "^ensure apps/b/two$" "$W/log" &&
   case "$out" in *warning*"apps/a/one"*) true ;; *) false ;; esac'
+t "N7.5b" "configure --defaults exits non-zero and names the count when a read-back failed" '
+  W=$(sandbox); mkdir -p "$W/df/macos" "$W/h"; : > "$W/df/.gitmodules"
+  printf "DOTFILES_DEFAULTS_FAILURES=2\n" > "$W/df/macos/defaults-x.sh"
+  out=$(_sm_run "$W" sub_configure_defaults 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && case "$out" in *error*"2 "*) true ;; *) false ;; esac'
+t "N7.5c" "configure --defaults still exits zero when every read-back held" '
+  W=$(sandbox); mkdir -p "$W/df/macos" "$W/h"; : > "$W/df/.gitmodules"
+  printf "DOTFILES_DEFAULTS_FAILURES=0\n" > "$W/df/macos/defaults-x.sh"
+  _sm_run "$W" sub_configure_defaults >/dev/null 2>&1'
+t "N7.5d" "configure returns the status of configure --defaults" \
+  '[ "$(sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -c "sub_configure_defaults ||")" -ge 1 ]'
+_cfg_run() { # _cfg_run <W> <defaults rc> -- sub_configure with both steps stubbed
+  local W="$1"
+  fn_of sub_configure > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="/usr/bin:/bin"; HOME="$W"
+cd "$PWD" || exit 1
+. scripts/echos.sh
+confirm() { return 0; }
+sub_configure_defaults() { return $2; }
+sub_configure_dock() { echo dock >> "$W/log"; }
+. "$W/fn.sh"
+sub_configure
+RUN
+  timeout 20 bash "$W/run.sh" </dev/null
+}
+t "N7.5e" "configure returns non-zero when configure --defaults fails, and still runs the dock" \
+  'W=$(sandbox); _cfg_run "$W" 1 >/dev/null 2>&1; rc=$?; [ "$rc" -ne 0 ] && [ "$(grep -c dock "$W/log")" -eq 1 ]'
+t "N7.5f" "configure returns zero when configure --defaults succeeds" \
+  'W=$(sandbox); _cfg_run "$W" 0 >/dev/null 2>&1'
 t "N7.5" "no apps/* path is hardcoded in bin/dotfiles" \
   '[ "$(code_of bin/dotfiles | grep -c "ensure_submodule apps/")" -eq 0 ]'
 
@@ -1493,6 +1569,7 @@ STOW
   cat > "$W/run.sh" <<RUN
 PATH="$W/bin:\$PATH"; HOME="$W/h"; XDG_CONFIG_HOME="$W/h/.config"; ROOT_DIR="$W/repo"; DOTFILES_YES=1
 cd "$PWD" || exit 1
+echo \$\$ >"$W/pid"
 . scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
 sub_link
 RUN
@@ -1557,6 +1634,7 @@ _lk_env() {
   cat >"$W/run.sh" <<RUN
 PATH="$W/bin:\$PATH"; HOME="$W/h"; XDG_CONFIG_HOME="$W/h/.config"; ROOT_DIR="$W/repo"; DOTFILES_YES=1
 cd "$PWD" || exit 1
+echo \$\$ >"$W/pid"
 . scripts/echos.sh; . scripts/lib/fs.sh; . "$W/fn.sh"
 sub_link
 RUN
@@ -1606,11 +1684,46 @@ t "L4.1" "the shared helper passes the .DS_Store ignore to stow, simulated or no
   W=$(sandbox); mkdir -p "$W/bin" "$W/repo/runcom" "$W/repo/config"; : >"$W/log"
   printf "#!/bin/bash\necho \"\$*\" >>\"$W/log\"\n" >"$W/bin/stow"; chmod +x "$W/bin/stow"
   (PATH="$W/bin:$PATH"; source scripts/lib/fs.sh; dotfiles_stow_all -n "$W/repo" "$W/h" "$W/x"; dotfiles_stow_all - "$W/repo" "$W/h" "$W/x")
-  [ "$(grep -cF -- "--ignore=\\.DS_Store\$" "$W/log")" -eq 4 ] && [ "$(grep -c -- "^-n " "$W/log")" -eq 2 ]'
+  [ "$(grep -cF -- "--ignore=^\\.DS_Store\$" "$W/log")" -eq 4 ] && [ "$(grep -c -- "^-n " "$W/log")" -eq 2 ]'
 
 t "L4.2" "link and sync both go through the helper (no bare stow --restow left)" '
   ! grep -q "stow --restow" <(code_of bin/dotfiles bin/dotfiles-sync) &&
   grep -q dotfiles_stow_all <(code_of bin/dotfiles) && grep -q dotfiles_stow_all <(code_of bin/dotfiles-sync)'
 
+
+t "L5.1" "a Finder-litter lookalike is linked: the ignore matches the whole name" '
+  _have_stow || return 0
+  W=$(sandbox); _lk_env "$W"; : >"$W/repo/runcom/keep.DS_Store"; : >"$W/repo/runcom/.DS_Store"
+  _lk_run "$W" && [ -L "$W/h/keep.DS_Store" ] && [ ! -e "$W/h/.DS_Store" ]'
+
+t "L5.2" "a real directory nested under ~/.config is put back when the real stow fails" '
+  _have_stow || return 0
+  W=$(sandbox); _lk_env "$W" "case \"\$*\" in *-n*) ;; *config*) echo \"stow: real run failed\"; exit 1;; esac"
+  (cd "$W/repo" && command stow --restow -t "$W/h" runcom)
+  mkdir -p "$W/h/.config/git/sub/deep"; echo MINE >"$W/h/.config/git/sub/deep/file"
+  before=$(_lk_state "$W")
+  _lk_run "$W"; rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_lk_state "$W")" = "$before" ] &&
+  [ "$(command cat "$W/h/.config/git/sub/deep/file")" = MINE ] && [ ! -e "$W/h/.dotfiles_backup" ]'
+
+t "L5.3" "a TERM while stow runs rolls back what the sweep moved and stops link" '
+  _have_stow || return 0
+  W=$(sandbox); _lk_env "$W" "case \"\$*\" in *-n*) ;; *) kill -TERM \$(command cat $W/pid); sleep 1; exit 0;; esac"
+  (cd "$W/repo" && command stow --restow -t "$W/h" runcom && command stow --restow -t "$W/h/.config" config)
+  rm "$W/h/.hushlogin"; echo MINE >"$W/h/.hushlogin"
+  before=$(_lk_state "$W")
+  _lk_run "$W"; rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_lk_state "$W")" = "$before" ] && [ "$(command cat "$W/h/.hushlogin")" = MINE ] &&
+  [ "$(ls "$W"/dotfiles-link.* 2>/dev/null | wc -l)" -eq 0 ]'
+
+t "L5.4" "the link tests never inherit a STOW_DIR from the launcher" '[ -z "${STOW_DIR+set}" ]'
+
+t "L5.5" "an exported STOW_DIR does not redirect stow away from the repo it was given" '
+  _have_stow || return 0
+  W=$(sandbox); mkdir -p "$W/repo/runcom" "$W/repo/config/git" "$W/decoy/runcom" "$W/decoy/config" "$W/h/.config"
+  echo sb >"$W/repo/runcom/.sbfile"; echo sb >"$W/repo/config/git/config"; echo decoy >"$W/decoy/runcom/.decoyfile"
+  ( export STOW_DIR="$W/decoy"; source scripts/lib/fs.sh
+    dotfiles_stow_all -n "$W/repo" "$W/h" "$W/h/.config" && dotfiles_stow_all - "$W/repo" "$W/h" "$W/h/.config" ) >/dev/null 2>&1
+  [ -L "$W/h/.sbfile" ] && [ ! -e "$W/h/.decoyfile" ] && [ -L "$W/h/.config/git" ]'
 
 finish

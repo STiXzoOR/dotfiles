@@ -157,10 +157,10 @@ t "S1.1" "behind and clean: fast-forwards the public repo" \
   'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1; [ "$(_head pub)" = "$(_remote pub)" ] && [ "$(command cat "$W/pub/README.md")" = new ]'
 t "S1.2" "after a move both stow packages are simulated first, then restowed, ignoring .DS_Store" \
   'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1
-   grep -qxF -- "stow -n --restow --ignore=\\.DS_Store\$ -t $W/home runcom" "$W/log" &&
-   grep -qxF -- "stow -n --restow --ignore=\\.DS_Store\$ -t $W/home/.config config" "$W/log" &&
-   grep -qxF -- "stow --restow --ignore=\\.DS_Store\$ -t $W/home runcom" "$W/log" &&
-   grep -qxF -- "stow --restow --ignore=\\.DS_Store\$ -t $W/home/.config config" "$W/log"'
+   grep -qxF -- "stow -n --restow --ignore=^\\.DS_Store\$ -d $W/pub -t $W/home runcom" "$W/log" &&
+   grep -qxF -- "stow -n --restow --ignore=^\\.DS_Store\$ -d $W/pub -t $W/home/.config config" "$W/log" &&
+   grep -qxF -- "stow --restow --ignore=^\\.DS_Store\$ -d $W/pub -t $W/home runcom" "$W/log" &&
+   grep -qxF -- "stow --restow --ignore=^\\.DS_Store\$ -d $W/pub -t $W/home/.config config" "$W/log"'
 t "S1.2b" "the simulation runs before any real stow" \
   'W=$(senv); push_change "$W" pub README.md new; syn >/dev/null 2>&1
    [ "$(grep "^stow" "$W/log" | sed -n "1p;2p" | grep -c -- "^stow -n")" -eq 2 ]'
@@ -241,6 +241,16 @@ t "S4.4" "an action that ran is no longer pending: the next run does not repeat 
   sy_env "DOTFILES_YES=1" syn >/dev/null 2>&1; [ "$(_calls "^mise")" -eq 0 ] && [ "$(_calls "^dotfiles-stub")" -eq 0 ]'
 t "S4.5" "a failing action is reported and keeps the exit status non-zero" '
   W=$(senv); _actions "$W"; stub "$W/bin" mise "exit 1"; sy_env "DOTFILES_YES=1" syn >/dev/null 2>&1; [ "$?" -ne 0 ]'
+t "S4.10" "a raycast Mac: the sync bundle check and bundle install see HOMEBREW_DOTFILES_LAUNCHER=raycast" '
+  W=$(senv); _actions "$W"; mkdir -p "$W/pub/macos"; printf "DOTFILES_LAUNCHER=raycast\n" >"$W/pub/macos/machine.local.sh"
+  stub "$W/bin" brew "case \"\$*\" in
+  \"bundle check\"*) echo \"seen-check \${HOMEBREW_DOTFILES_LAUNCHER-unset}\" >>\"\$STUB_LOG\"; [ -f \"\$STUB_STATE/unsatisfied\" ] && exit 1 ;;
+  \"bundle install\"*) echo \"seen-install \${HOMEBREW_DOTFILES_LAUNCHER-unset}\" >>\"\$STUB_LOG\" ;;
+esac
+exit 0"
+  sy_env "DOTFILES_YES=1" syn >/dev/null 2>&1
+  grep -qx "seen-check raycast" "$W/log" && grep -qx "seen-install raycast" "$W/log" &&
+  [ "$(grep -c "seen-.* tinycast\|seen-.* unset" "$W/log")" -eq 0 ]'
 t "S4.6" "secrets.age changing upstream is only reported: no import, no prompt" '
   W=$(senv); push_change "$W" priv secrets.age "age"; out=$(sy_env "DOTFILES_YES=1" syn 2>&1)
   printf "%s\n" "$out" | grep -q "dotfiles secrets import" && [ "$(_calls "secrets")" -eq 0 ] && [ "$(_calls "^dotfiles-stub")" -eq 0 ]'
@@ -384,9 +394,13 @@ dstub() {
 # dsyn <args>: syn with Jev switched on and pointed at the stubs. $DX adds VAR=val.
 dsyn() {
   local ans=""
-  # DXY=1 answers the strict prompt "y" through the documented test seam
-  # (DOTFILES_STRICT_ANSWERS), since the strict prompt ignores DOTFILES_YES.
-  if [ -n "${DXY:-}" ]; then printf 'y\ny\ny\ny\ny\ny\ny\ny\ny\ny\n' >"$W/yes"; ans="DOTFILES_STRICT_ANSWERS=$W/yes"; fi
+  # DXY=1 answers "y" to every strict prompt, DXA=1 uses the answers already in
+  # $W/yes. The strict prompt ignores DOTFILES_YES; a test has no terminal, so
+  # the harness marks its sandbox (see tests/lib.sh) and names an answers file
+  # inside it.
+  local xa="${DXA:-}"
+  if [ -n "${DXY:-}" ]; then printf 'y\ny\ny\ny\ny\ny\ny\ny\ny\ny\n' >"$W/yes"; xa=1; fi
+  [ -n "$xa" ] && ans="DOTFILES_TEST_SANDBOX=$DOTFILES_TEST_SANDBOX DOTFILES_STRICT_ANSWERS=$W/yes"
   local SYNENV="$ans DOTFILES_JEV= DOTFILES_JEV_CONFIG=$W/jev.conf DOTFILES_JEV_BIN=$W/bin/dotfiles-jev-stub DOTFILES_BASELINE_BIN=$W/bin/dotfiles-baseline-stub ${DX:-}"
   syn "$@"
 }
@@ -512,7 +526,7 @@ t "D6.1" "DOTFILES_YES=1 with no terminal and no seam appends nothing: the model
   out=$(DX="DOTFILES_YES=1" dsyn 2>&1); [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && printf "%s\n" "$out" | grep -qF "Jev suggests public: brew \"jq\""'
 t "D6.2" "an answer that is not y or yes appends nothing" '
   W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile"); printf "n\nyep\n" >"$W/yes"
-  DX="DOTFILES_STRICT_ANSWERS=$W/yes" dsyn >/dev/null 2>&1; [ "$(shasum "$W/pub/Brewfile")" = "$b" ]'
+  DXA=1 dsyn >/dev/null 2>&1; [ "$(shasum "$W/pub/Brewfile")" = "$b" ]'
 t "D6.3" "a hostile App Store name (quote, Ruby interpolation) is never written into a Brewfile; it is shown to add by hand" '
   W=$(senv); dstub "$W"; printf "111  Evil\"App #{system(1)}  (5.0)\n222  Fine App  (1.0)\n" >"$W/state/mas"
   _suggest pkg mas:111 public; _suggest pkg mas:222 public; out=$(DXY=1 dsyn 2>&1)
@@ -546,6 +560,20 @@ t "D6.10" "a defaults integer like 5-3 and a domain with a shell metacharacter a
   printf "com.example.a\tBeta\t5\t5-3\nevil;dom\tK\t1\t2\n" >"$W/state/changed"
   _suggest defaults "com.example.a Beta" public; _suggest defaults "evil;dom K" public; out=$(DXY=1 dsyn 2>&1)
   [ ! -s "$W/pub/macos/defaults.sh" ] && [ "$(printf "%s\n" "$out" | grep -c "by hand")" -eq 2 ]'
+
+t "D6.11" "an exported answers file without the sandbox marker is ignored: a real run appends nothing" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; printf "y\ny\n" >"$W/yes"; b=$(shasum "$W/pub/Brewfile")
+  DX="DOTFILES_STRICT_ANSWERS=$W/yes" dsyn >/dev/null 2>&1; [ "$(shasum "$W/pub/Brewfile")" = "$b" ]'
+t "D6.12" "with the marker, an answers file outside the sandbox root, or reached through .., is ignored" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile")
+  o=$(mktemp -d "${TMPDIR:-/tmp}/dfout.XXXXXX"); printf "y\ny\n" >"$o/yes"; printf "y\ny\n" >"$W/yes"
+  DX="DOTFILES_TEST_SANDBOX=$DOTFILES_TEST_SANDBOX DOTFILES_STRICT_ANSWERS=$o/yes" dsyn >/dev/null 2>&1; a=$(shasum "$W/pub/Brewfile")
+  DX="DOTFILES_TEST_SANDBOX=$DOTFILES_TEST_SANDBOX DOTFILES_STRICT_ANSWERS=$DOTFILES_TEST_SANDBOX/../$(basename "$o")/yes" dsyn >/dev/null 2>&1; c=$(shasum "$W/pub/Brewfile")
+  DX="DOTFILES_TEST_SANDBOX= DOTFILES_STRICT_ANSWERS=$W/yes" dsyn >/dev/null 2>&1; d=$(shasum "$W/pub/Brewfile")
+  command rm -f "$o/yes"; rmdir "$o"
+  [ "$a" = "$b" ] && [ "$c" = "$b" ] && [ "$d" = "$b" ]'
+t "D6.13" "the answers descriptor the seam opens is closed again, and the seam is not advertised in the docs" '
+  [ "$(code_of bin/dotfiles-sync | grep -c "exec 4<&-")" -ge 1 ] && [ "$(grep -c "STRICT_ANSWERS" docs/agents/jev.md docs/agents/two-mac-sync.md | grep -vc ":0$")" -eq 0 ]'
 
 t "D5.1" "sync never writes to a Brewfile or a defaults file without going through confirm" '
   c=$(code_of bin/dotfiles-sync)
@@ -685,7 +713,7 @@ esyn() {
   local ans=""
   # shellcheck disable=SC2086
   if [ -n "${EA:-}" ]; then printf '%s\n' $EA >"$W/yes"; ans="DOTFILES_STRICT_ANSWERS=$W/yes"; fi
-  local SYNENV="$ans DOTFILES_JEV= DOTFILES_JEV_CONFIG=$W/jev.conf DOTFILES_JEV_BIN=$W/bin/dotfiles-jev-stub DOTFILES_APPS_BIN=$W/bin/dotfiles-apps-stub DOTFILES_BASELINE_BIN=$W/bin/dotfiles-baseline-stub ${DX:-}"
+  local SYNENV="$ans DOTFILES_TEST_SANDBOX=$DOTFILES_TEST_SANDBOX DOTFILES_JEV= DOTFILES_JEV_CONFIG=$W/jev.conf DOTFILES_JEV_BIN=$W/bin/dotfiles-jev-stub DOTFILES_APPS_BIN=$W/bin/dotfiles-apps-stub DOTFILES_BASELINE_BIN=$W/bin/dotfiles-baseline-stub ${DX:-}"
   syn "$@"
 }
 _asuggest() { printf 'SUGGEST\t%s\t%s\t0.9\t0.9\n' "$1" "$2" >>"$W/state/suggest-apps"; }
@@ -766,5 +794,74 @@ t "E17" "the declined list alone does not make the private repo dirty: no notifi
   printf "b\n" >>"$W/priv/jev/apps-declined.list"; push_change "$W" priv Brewfile.local2 "z"; h=$(_remote priv)
   esyn >/dev/null 2>&1
   [ "$a" -eq 0 ] && [ "$b" -eq 1 ] && [ "$(_head priv)" = "$h" ] && [ "$(grep -cx b "$W/priv/jev/apps-declined.list")" -eq 1 ]'
+
+
+#############################################################################
+section "G -- Jev skip gate in the scheduled run (Task 15)"
+#############################################################################
+# gate_env <W> <answer line>: a stub dotfiles-jev that logs its argv and
+# answers the gate; the lock hash is primed so only a real fact counts as work.
+gate_env() {
+  local w="$1"
+  printf '#!/bin/bash\nprintf "%%s\\n" "$*" >>"$STUB_LOG.jev"\nprintf "%%s\\n" "$STUB_GATE"\n' >"$w/bin/jev-stub"; chmod +x "$w/bin/jev-stub"
+  mkdir -p "$w/home/.local/state/dotfiles"
+  printf '' | shasum | cut -d' ' -f1 >"$w/home/.local/state/dotfiles/skip-sync.lockhash"
+}
+gsyn() { SYNENV="DOTFILES_JEV=shadow DOTFILES_JEV_BIN=$W/bin/jev-stub STUB_GATE=$1" syn --scheduled; }
+jevlog() { command cat "$W/log.jev" 2>/dev/null; }
+
+t "G1" "SKIP from the gate ends the scheduled run before any git work" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub README.md new
+  gsyn SKIP_low >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && [ "$(_head pub)" != "$(_remote pub)" ] && [ "$(_calls "^stow")" -eq 0 ] &&
+  [ "$(jevlog | grep -c "^skip sync$")" -eq 1 ] &&
+  [ "$(grep -c "skipped (Jev gate)" "$W/home/Library/Logs/dotfiles-sync.log")" -eq 1 ]'
+t "G2" "RUN from the gate does the work as before" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub README.md new
+  gsyn RUN_shadow >/dev/null 2>&1; [ "$(_head pub)" = "$(_remote pub)" ]'
+t "G3" "upstream touching a package list is a deterministic fact, passed as --work" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub Brewfile "brew \"jq\""
+  gsyn RUN_x >/dev/null 2>&1
+  [ "$(jevlog | grep -c -- "--work upstream public commits touch Brewfile")" -eq 1 ]'
+t "G4" "unpushed commits are deterministic work too" '
+  W=$(senv); gate_env "$W"; git -C "$W/pub" commit -q --allow-empty -m local
+  gsyn RUN_x >/dev/null 2>&1; [ "$(jevlog | grep -c -- "--work public repo has unpushed commits")" -eq 1 ]'
+t "G5" "a first run (no lock hash yet) is work" '
+  W=$(senv); gate_env "$W"; command rm -f "$W/home/.local/state/dotfiles/skip-sync.lockhash"
+  gsyn RUN_x >/dev/null 2>&1; [ "$(jevlog | grep -c -- "--work lockfiles changed or first run")" -eq 1 ]'
+t "G6" "quiet upstream, primed hash: no --work; the facts carry the upstream counts" '
+  W=$(senv); gate_env "$W"; gsyn RUN_x >/dev/null 2>&1
+  [ "$(jevlog | grep -c -- "--work")" -eq 0 ] && [ "$(jevlog | grep -c "^skip sync$")" -eq 1 ]'
+t "G7" "an interactive run never asks the gate" '
+  W=$(senv); gate_env "$W"; SYNENV="DOTFILES_JEV=shadow DOTFILES_JEV_BIN=$W/bin/jev-stub STUB_GATE=SKIP" syn >/dev/null 2>&1
+  [ "$(jevlog | grep -c .)" -eq 0 ]'
+t "G8" "master switch off: the gate is never asked, the run proceeds" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub README.md new
+  SYNENV="DOTFILES_JEV=off DOTFILES_JEV_BIN=$W/bin/jev-stub STUB_GATE=SKIP" syn --scheduled >/dev/null 2>&1
+  [ "$(jevlog | grep -c .)" -eq 0 ] && [ "$(_head pub)" = "$(_remote pub)" ]'
+t "G9" "a gate that fails runs the job (fail open)" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub README.md new
+  printf "#!/bin/bash\nexit 3\n" >"$W/bin/jev-stub"
+  SYNENV="DOTFILES_JEV=shadow DOTFILES_JEV_BIN=$W/bin/jev-stub" syn --scheduled >/dev/null 2>&1
+  [ "$(_head pub)" = "$(_remote pub)" ]'
+
+t "G10" "the work scan sees the whole upstream diff: Brewfile as the 41st path is still work, with no request" '
+  W=$(senv); gate_env "$W"; c=$(sandbox); git clone -q "$W/pub.git" "$c/x" 2>/dev/null
+  i=0; while [ "$i" -lt 40 ]; do i=$((i + 1)); printf "x\n" >"$c/x/A$(printf %02d "$i")"; done; printf "brew \"jq\"\n" >>"$c/x/Brewfile"
+  git -C "$c/x" add -A && git -C "$c/x" commit -q -m many && git -C "$c/x" push -q origin main 2>/dev/null
+  gsyn SKIP_low >/dev/null 2>&1
+  [ "$(jevlog | grep -c -- "--work upstream public commits touch Brewfile")" -eq 1 ] &&
+  [ "$(jevlog | sed -n 1p | wc -w | tr -d " ")" -le 20 ]'
+t "G11" "a failed fetch is work: the job runs, --work fetch failed" '
+  W=$(senv); gate_env "$W"; command mv "$W/pub.git" "$W/gone.git"
+  gsyn SKIP_low >/dev/null 2>&1
+  [ "$(jevlog | grep -c -- "--work public fetch failed")" -eq 1 ]'
+t "G12" "the lock hash is stamped only after a successful run" '
+  W=$(senv); gate_env "$W"; h="$W/home/.local/state/dotfiles/skip-sync.lockhash"; command rm -f "$h"
+  push_change "$W" pub README.md new; stub "$W/bin" stow "case \"\$*\" in -n*) printf \"cannot stow x\\n\"; exit 1;; esac"
+  gsyn RUN_x >/dev/null 2>&1; [ ! -e "$h" ] &&
+  stub "$W/bin" stow ":" && push_change "$W" pub README.md newer && { gsyn RUN_x >/dev/null 2>&1; [ -s "$h" ]; }'
+t "G13" "the gate fetch has a connect timeout" '
+  [ "$(code_of bin/dotfiles-sync | grep -c "ConnectTimeout=10")" -ge 1 ] && [ "$(code_of bin/dotfiles-sync | grep -c "http.lowSpeedTime")" -ge 1 ]'
 
 finish

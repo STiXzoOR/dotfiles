@@ -5,6 +5,10 @@
 # @author Adam Eivy
 ###
 
+# list_has_token, for the marketplace and plugin lookups below.
+# shellcheck source=lib/lists.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/lists.sh"
+
 # Apple silicon only: the prefix is fixed. See the arch guard in bin/dotfiles.
 function source_brew() {
   HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-/opt/homebrew}"
@@ -162,7 +166,7 @@ function require_mise() {
 
 function require_claude_marketplace() {
   running "marketplace $1"
-  if echo "$CLAUDE_MARKETPLACES_CACHE" | grep -Fq "$1"; then
+  if list_has_token "$CLAUDE_MARKETPLACES_CACHE" "$1"; then
     ok
   else
     if claude plugin marketplace add "$1" 2>>"${CLAUDE_INSTALL_LOG:-/dev/null}"; then
@@ -177,7 +181,7 @@ function require_claude_marketplace() {
 function require_claude_plugin() {
   local plugin_name="${1%%@*}"
   running "plugin $1"
-  if echo "$CLAUDE_PLUGINS_CACHE" | grep -Fq "$plugin_name"; then
+  if list_has_token "$CLAUDE_PLUGINS_CACHE" "$plugin_name"; then
     ok
   else
     if claude plugin install "$1" 2>>"${CLAUDE_INSTALL_LOG:-/dev/null}"; then
