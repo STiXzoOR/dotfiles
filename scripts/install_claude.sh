@@ -825,32 +825,37 @@ setup_qmd() {
 # Collections, index and embeddings. Only runs against a vault that exists:
 # registering collections on a tree the owner has not copied in yet indexes
 # nothing and leaves qmd pointing at an empty scaffold.
+# qmd 2.x syntax: `collection add <path> --name <name>` (a bare name is read
+# as a path) and `context add qmd://<name>/ <text>`. Adding a collection that
+# exists is an error, which on a re-run means it is already registered.
+qmd_register_collection() { # qmd_register_collection <name> <path>
+  local name="$1" dir="$2" out
+  if out=$(qmd collection add "$dir" --name "$name" 2>&1); then
+    ok "QMD collection: $name -> $dir"
+  else
+    printf '%s\n' "$out" >>"$CLAUDE_INSTALL_LOG"
+    case "$out" in
+      *"already exists"*) ok "QMD collection $name already registered" ;;
+      *) warn "QMD collection '$name' setup failed" ;;
+    esac
+  fi
+}
+
 setup_qmd_index() {
-  # Register collections (idempotent — qmd ignores duplicates)
   action "Configuring QMD collections"
 
-  if qmd collection add notes "$VAULT_DIR" 2>>"$CLAUDE_INSTALL_LOG"; then
-    ok "QMD collection: notes -> $VAULT_DIR"
-  else
-    warn "QMD collection 'notes' setup failed"
-  fi
+  qmd_register_collection notes "$VAULT_DIR"
 
   # The transcripts under ~/.claude/projects are raw JSONL plus per-project
   # memory; qmd's pattern is **/*.md, so it would index almost none of it.
   # sync-claude-sessions writes the markdown into the vault, and that is what
   # the "sessions" collection has always pointed at on a working machine.
   local sessions_dir="$VAULT_DIR/Claude-Sessions"
-  if [[ -d "$sessions_dir" ]]; then
-    if qmd collection add sessions "$sessions_dir" 2>>"$CLAUDE_INSTALL_LOG"; then
-      ok "QMD collection: sessions -> $sessions_dir"
-    else
-      warn "QMD collection 'sessions' setup failed"
-    fi
-  fi
+  [[ -d "$sessions_dir" ]] && qmd_register_collection sessions "$sessions_dir"
 
   # Add context descriptions for collections
-  qmd context add notes "Obsidian vault — notes, resources, projects, daily logs" 2>>"$CLAUDE_INSTALL_LOG" || true
-  qmd context add sessions "Claude Code session transcripts and conversation history" 2>>"$CLAUDE_INSTALL_LOG" || true
+  qmd context add "qmd://notes/" "Obsidian vault — notes, resources, projects, daily logs" 2>>"$CLAUDE_INSTALL_LOG" >/dev/null || true
+  qmd context add "qmd://sessions/" "Claude Code session transcripts and conversation history" 2>>"$CLAUDE_INSTALL_LOG" >/dev/null || true
 
   # Update index (fast — only processes changed files)
   action "Updating QMD index"
@@ -860,14 +865,15 @@ setup_qmd_index() {
     warn "QMD update timed out or failed (run 'qmd update' manually)"
   fi
 
-  # Run embedding if models are available (first run downloads ~2GB)
-  action "Building QMD embeddings (may take a moment on first run)"
-  if run_bounded 120 qmd embed 2>>"$CLAUDE_INSTALL_LOG"; then
-    ok "QMD embeddings ready"
+  # Embeddings: the first run downloads ~2 GB of models and outlasts any sane
+  # timeout, so it runs detached with all three streams redirected (nothing
+  # holds this script or a parent pipe open). One already running is left be.
+  if pgrep -f 'qmd embed' >/dev/null 2>&1; then
+    ok "QMD embeddings already building (see 'qmd status')"
   else
-    warn "QMD embed timed out or failed (run 'qmd embed' manually)"
+    nohup qmd embed >>"$CLAUDE_INSTALL_LOG" 2>&1 </dev/null &
+    ok "QMD embeddings building in the background, log: $CLAUDE_INSTALL_LOG ('qmd status' shows progress)"
   fi
-
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────────────

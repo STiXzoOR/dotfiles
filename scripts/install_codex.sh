@@ -114,8 +114,15 @@ plugin_installed() { # plugin_installed <plugin@marketplace>
   printf '%s' "$CODEX_PLUGINS_CACHE" | grep -Fq "\"$1\""
 }
 
+# The openai-curated marketplace is a remote catalogue that needs a ChatGPT
+# login; a fresh Mac has none until the owner runs `codex login`.
+codex_logged_in() {
+  codex login status >>"$CODEX_INSTALL_LOG" 2>&1
+}
+
 install_plugins() {
-  local line
+  local line signed_in=1 skipped=0
+  codex_logged_in || signed_in=0
   if [[ ! -f "$CODEX_DIR/plugins.list" && ! -f "$CODEX_DIR/plugins.local.list" ]]; then
     warn "No plugins.list found, skipping"
     return 0
@@ -130,6 +137,10 @@ install_plugins() {
       ok "plugin $line already installed"
       continue
     fi
+    if [[ "$signed_in" -eq 0 && "$line" == *@openai-curated ]]; then
+      skipped=$((skipped + 1))
+      continue
+    fi
     if codex plugin add "$line" >>"$CODEX_INSTALL_LOG" 2>&1; then
       ok "plugin $line"
     elif [[ "$line" == *@openai-curated ]] &&
@@ -141,6 +152,10 @@ install_plugins() {
       FAILURES+=("plugin: $line")
     fi
   done < <(read_list "$CODEX_DIR" plugins)
+
+  if [[ "$skipped" -gt 0 ]]; then
+    warn "not signed in to Codex, so $skipped openai-curated plugin(s) were skipped: run 'codex login', then 'dotfiles install --codex'"
+  fi
 }
 
 # ─── 5. MCP servers ──────────────────────────────────────────────────────────

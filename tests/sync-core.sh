@@ -105,6 +105,23 @@ t "S1.4" "nothing moved: no restow, no link" \
 t "S1.5" "the private repo is fast-forwarded too, and that alone restows" \
   'W=$(senv); push_change "$W" priv macos/local.sh "DOTFILES_LOCALE=fr_FR"; syn >/dev/null 2>&1
    [ "$(_head priv)" = "$(_remote priv)" ] && [ "$(_calls "^stow --restow")" -eq 2 ]'
+# A moved submodule pointer leaves the checkout out of step with HEAD, which
+# reads as dirty and then blocks every later fast-forward.
+_sub_bump() { # _sub_bump <W>: pub has submodule mod checked out; the remote then bumps its pointer
+  local w="$1" c l
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always
+  export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid
+  l="$w/leaf"; git init -q "$l"; (cd "$l" && echo 1 >f && git add f && git commit -q -m one)
+  c=$(sandbox); git clone -q "$w/pub.git" "$c/x" 2>/dev/null
+  (cd "$c/x" && git submodule add -q "$l" mod >/dev/null 2>&1 && git commit -q -m addsub && git push -q origin main 2>/dev/null)
+  git -C "$w/pub" pull -q --ff-only origin main 2>/dev/null && git -C "$w/pub" submodule update -q --init
+  (cd "$l" && echo 2 >f && git commit -q -am two)
+  (cd "$c/x/mod" && git pull -q origin HEAD 2>/dev/null); (cd "$c/x" && git add mod && git commit -q -m bump && git push -q origin main 2>/dev/null)
+}
+t "S1.8" "a fast-forward that moves a submodule pointer updates the submodule and leaves the repo clean" \
+  'W=$(senv); ( _sub_bump "$W"; SYNENV="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always" syn >/dev/null 2>&1 )
+   [ "$(_head pub)" = "$(_remote pub)" ] && [ "$(git -C "$W/pub/mod" rev-parse HEAD)" = "$(git -C "$W/leaf" rev-parse HEAD)" ] &&
+   [ -z "$(git -C "$W/pub" status --porcelain --untracked-files=no)" ]'
 t "S1.6" "up to date says so and reports everything in sync" \
   'W=$(senv); out=$(syn 2>&1); printf "%s\n" "$out" | grep -q "up to date" && printf "%s\n" "$out" | grep -q "Everything is in sync"'
 t "S1.7" "no private repo yet: says how to get it and carries on" \

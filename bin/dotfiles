@@ -537,6 +537,14 @@ sub_install_packages() {
     return 1
   fi
 
+  # Xcode and its licence before the first brew command, so no later brew
+  # call can hit "You have not agreed to the Xcode license".
+  source "$ROOT_DIR/scripts/lib/xcode.sh" || {
+    error "cannot read $ROOT_DIR/scripts/lib/xcode.sh"
+    popd >/dev/null 2>&1 || true
+    return 1
+  }
+
   # Nothing below may end the step early. A failure is recorded in rc and the
   # next part still runs, so one bad cask cannot skip the VS Code extensions
   # and the summary always says what actually happened.
@@ -544,6 +552,8 @@ sub_install_packages() {
   # Brewfile.local is the gitignored companion for packages that should not
   # be in a public repo; it is bundled after the public one.
   [[ -f Brewfile.local ]] && brewfiles="Brewfile Brewfile.local"
+  # shellcheck disable=SC2086
+  dotfiles_xcode_prepare $brewfiles
 
   # Homebrew 7 refuses to load formulae, casks or commands from an
   # untrusted third-party tap, with no environment-variable escape hatch,
@@ -604,6 +614,8 @@ sub_install_packages() {
   if confirm "Install VS Code extensions?"; then
     action "Installing VS Code extensions..."
     local code_bin wanted installed ext have=0 added=0 failed=""
+    local code_err
+    code_err=$(mktemp "${TMPDIR:-/tmp}/dotfiles-code.XXXXXX")
     code_bin=$(command -v code || true)
     [[ -n "$code_bin" ]] ||
       code_bin="${DOTFILES_CODE_BIN_FALLBACK:-/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code}"
@@ -611,8 +623,9 @@ sub_install_packages() {
     if [[ ! -x "$code_bin" ]]; then
       error "no VS Code CLI found at $code_bin; no extensions were installed"
       rc=1
-    elif ! installed=$("$code_bin" --list-extensions </dev/null); then
+    elif ! installed=$("$code_bin" --list-extensions </dev/null 2>"$code_err"); then
       error "the VS Code CLI could not list its extensions; none were installed"
+      filter_code_noise <"$code_err"
       rc=1
     else
       # One --list-extensions call, not one per extension: each launches
@@ -622,10 +635,15 @@ sub_install_packages() {
         [[ -n "${ext// /}" ]] || continue
         if printf '%s\n' "$installed" | grep -qixF -- "$ext"; then
           have=$((have + 1))
-        elif "$code_bin" --install-extension "$ext" </dev/null; then
-          added=$((added + 1))
         else
-          failed="$failed $ext"
+          # The pipe exists only to drop the CLI's deprecation noise; the
+          # install's own status is the first element.
+          "$code_bin" --install-extension "$ext" </dev/null 2>&1 | filter_code_noise
+          if [[ "${PIPESTATUS[0]}" -eq 0 ]]; then
+            added=$((added + 1))
+          else
+            failed="$failed $ext"
+          fi
         fi
       done <<<"$wanted"
 
@@ -636,6 +654,7 @@ sub_install_packages() {
         ok "VS Code extensions: $added installed, $have already present"
       fi
     fi
+    rm -f "$code_err"
   fi
 
   # `brew cleanup --force` already clears the cache. The unguarded
@@ -644,6 +663,8 @@ sub_install_packages() {
   # nothing; and the recursive quarantine strip of ~/Library/QuickLook
   # removed Gatekeeper from every QuickLook plugin, which run on a
   # spacebar press.
+  # A bundle that installed Xcode leaves its licence unaccepted.
+  dotfiles_xcode_accept_license && dotfiles_xcode_first_launch
   running "cleanup homebrew"
   if brew cleanup --force >/dev/null 2>&1; then
     ok

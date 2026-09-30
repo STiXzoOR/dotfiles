@@ -37,3 +37,12 @@ list_has_token() {
   esc=$(printf '%s' "$2" | sed 's/[][\.*^$+?(){}|]/\\&/g')
   grep -Eq "(^|[^[:alnum:]_.-])${esc}(\\.git)?([^[:alnum:]_.-]|\$)" <<<"$1"
 }
+
+# Drop the two lines the VS Code CLI prints on every call (Node's url.parse
+# deprecation and its "--trace-deprecation" hint) and pass everything else
+# through, so a real error still shows.
+# Usage: some-code-cli-call 2>&1 | filter_code_noise
+filter_code_noise() {
+  # shellcheck disable=SC2016
+  grep -vE '^\(node:[0-9]+\) \[DEP0169\]|^\(Use `[^`]*--trace-deprecation' || true
+}

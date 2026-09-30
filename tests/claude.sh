@@ -152,13 +152,34 @@ t "E5.11" "archived plans carry a superseded banner" '(for f in docs/plans/archi
 # on PATH (a stub installer drops the stub into $HOME/.local/bin, exactly as
 # the native installer does), and jq is the only real tool linked in.
 _stubs() { # _stubs <W>
-  local w="$1" n
+  local w="$1"
   mkdir -p "$w/bin" "$w/home"; : >| "$w/log"
   ln -s "$(command -v jq)" "$w/bin/jq"
-  for n in qmd npx; do
-    printf '#!/bin/sh\necho "%s $*" >> "$STUBLOG"\n[ -n "${STUB_FAIL_%s:-}" ] && exit 1\nexit 0\n' "$n" "$n" >| "$w/bin/$n"
-    chmod +x "$w/bin/$n"
-  done
+  printf '#!/bin/sh\necho "npx $*" >> "$STUBLOG"\n[ -n "${STUB_FAIL_npx:-}" ] && exit 1\nexit 0\n' >| "$w/bin/npx"
+  chmod +x "$w/bin/npx"
+  # qmd 2.x: `collection add <path> --name <name>` (a bare name is read as a
+  # path), `context add qmd://<name>/ <text>`, and adding a collection twice
+  # fails. State lives in $STUBDIR/qmd-coll.
+  cat >| "$w/bin/qmd" <<'STUB'
+#!/bin/sh
+echo "qmd $*" >> "$STUBLOG"
+[ -n "${STUB_FAIL_qmd:-}" ] && exit 1
+case "$1 $2" in
+  "embed "*) [ -z "${STUB_EMBED_SLEEP:-}" ] || sleep "$STUB_EMBED_SLEEP" ;;
+  "collection add")
+    [ -d "$3" ] || { echo "Collection path does not exist. Received: $3" >&2; exit 1; }
+    [ "$4" = "--name" ] && [ -n "$5" ] || { echo "missing --name" >&2; exit 1; }
+    if grep -qx "$5" "$STUBDIR/qmd-coll" 2>/dev/null; then echo "Collection '$5' already exists." >&2; exit 1; fi
+    echo "$5" >> "$STUBDIR/qmd-coll" ;;
+  "context add")
+    case "$3" in
+      qmd://*) grep -qx "$(printf '%s' "${3#qmd://}" | sed 's|/.*||')" "$STUBDIR/qmd-coll" 2>/dev/null || { echo "no such collection" >&2; exit 1; } ;;
+      *) echo "Path is not in any indexed collection: $3" >&2; exit 1 ;;
+    esac ;;
+esac
+exit 0
+STUB
+  chmod +x "$w/bin/qmd"
   # uv: `tool install` drops the console script, as the real one does.
   cat >| "$w/bin/uv" <<'STUB'
 #!/bin/sh
@@ -234,9 +255,13 @@ t "N1.3" "~/.local/bin is put on PATH exactly once" '
   n=$(export HOME="$W/home" PATH="$W/bin:/usr/bin:/bin"; source scripts/install_claude.sh --lib; source scripts/install_claude.sh --lib; printf "%s" "$PATH" | tr ":" "\n" | grep -cx "$W/home/.local/bin")
   [ "$n" -eq 1 ]'
 
+_wait_log() { # _wait_log <W> <pattern> -- the embed runs detached, so its log line may land a moment later
+  local i; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q "$2" "$1/log" && return 0; sleep 0.25; done; return 1
+}
 section "N2 — a timeout that exists (item 2.2)"
 t "N2.1" "qmd update and embed run when only gtimeout is on PATH (no bare timeout)" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W"
+  _wait_log "$W" "^qmd embed"
   [ "$(grep -c "^qmd update" "$W/log")" -eq 1 ] && [ "$(grep -c "^qmd embed" "$W/log")" -eq 1 ]'
 t "N2.2" "the qmd calls go through the resolved timeout" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W"
@@ -256,9 +281,38 @@ t "N3.2" "a missing vault registers no QMD collections and says why" '
   [ "$(grep -ci "copy your vault" "$W/out")" -ge 1 ]'
 t "N3.3" "an existing vault still gets its collections and templates" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W"
-  [ "$(grep -c "^qmd collection add notes" "$W/log")" -eq 1 ] &&
-  [ "$(grep -c "^qmd collection add sessions" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^qmd collection add .* --name notes$" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^qmd collection add .* --name sessions$" "$W/log")" -eq 1 ] &&
   [ -d "$W/home/Vault/Polaris" ]'
+
+section "N3c — qmd 2.x argument order"
+t "N3c.1" "collections are registered as <path> --name <name>, pointing at real directories" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault/Claude-Sessions"; _full_run "$W"
+  grep -qx "qmd collection add $W/home/Vault --name notes" "$W/log" &&
+  grep -qx "qmd collection add $W/home/Vault/Claude-Sessions --name sessions" "$W/log"'
+t "N3c.2" "context descriptions target qmd://<name>/ for both collections" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault/Claude-Sessions"; _full_run "$W"
+  [ "$(grep -c "^qmd context add qmd://notes/ " "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^qmd context add qmd://sessions/ " "$W/log")" -eq 1 ]'
+t "N3c.3" "a re-run with the collections already registered warns about nothing" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault/Claude-Sessions"; printf "notes\nsessions\n" >| "$W/qmd-coll"; _full_run "$W"
+  [ "$(grep -c "setup failed" "$W/out")" -eq 0 ] && [ "$(grep -c "^qmd context add qmd://notes/ " "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "^qmd update" "$W/log")" -eq 1 ]'
+t "N3c.4" "a genuine collection failure still warns" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W" STUB_FAIL_qmd=1
+  [ "$(grep -c "QMD collection .notes. setup failed" "$W/out")" -eq 1 ]'
+
+section "N3d — qmd embed runs detached"
+t "N3d.1" "a slow embed does not hold the installer: it returns while the embed is still running" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; s=$(date +%s)
+  _full_run "$W" STUB_EMBED_SLEEP=20; e=$(date +%s)
+  [ $((e - s)) -lt 15 ] && _wait_log "$W" "^qmd embed" &&
+  [ "$(grep -c "qmd status" "$W/out")" -ge 1 ]'
+t "N3d.2" "an embed that is already running is not started again" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"
+  bash -c "exec -a \"qmd embed\" sleep 20" & p=$!
+  sleep 0.5; _full_run "$W"; kill "$p" 2>/dev/null
+  [ "$(grep -c "^qmd embed" "$W/log")" -eq 0 ]'
 
 section "N3b — the vault in iCloud Drive (Task 7)"
 # A fake iCloud Drive lives under the sandbox; DOTFILES_VAULT_ICLOUD points at
@@ -277,14 +331,14 @@ t "N3b.1" "a missing ~/Vault with an iCloud vault present becomes a symlink to i
   [ -L "$W/home/Vault" ] && [ "$(readlink "$W/home/Vault")" = "$W/icloud/Vault" ]'
 t "N3b.2" "the iCloud vault is downloaded before it is indexed, then indexed" '
   W=$(sandbox); _icloud_env "$W"; _icloud_run "$W"
-  grep -q "^brctl download .*/icloud/Vault" "$W/log" && [ "$(grep -c "^qmd collection add notes" "$W/log")" -eq 1 ]'
+  grep -q "^brctl download .*/icloud/Vault" "$W/log" && [ "$(grep -c "^qmd collection add .* --name notes$" "$W/log")" -eq 1 ]'
 t "N3b.3" "placeholders that stay: a warning, and nothing is indexed" '
   W=$(sandbox); _icloud_env "$W" placeholder; _icloud_run "$W"
   [ "$(grep -c "^qmd collection add" "$W/log")" -eq 0 ] && [ "$(grep -c "^qmd update" "$W/log")" -eq 0 ] &&
   [ "$(grep -ci "icloud" "$W/out")" -ge 1 ] && [ "$(grep -ci "Keep Downloaded" "$W/out")" -ge 1 ]'
 t "N3b.4" "placeholders that brctl materialises: indexing proceeds" '
   W=$(sandbox); _icloud_env "$W" placeholder; _icloud_run "$W" STUB_BRCTL_MATERIALIZE=1
-  [ "$(grep -c "^qmd collection add notes" "$W/log")" -eq 1 ]'
+  [ "$(grep -c "^qmd collection add .* --name notes$" "$W/log")" -eq 1 ]'
 t "N3b.5" "placeholders block the template copy too: nothing is written into a half-downloaded vault" '
   W=$(sandbox); _icloud_env "$W" placeholder; _icloud_run "$W"; [ ! -d "$W/icloud/Vault/Polaris" ]'
 t "N3b.6" "no iCloud vault and no ~/Vault: the old advice, no symlink" '
@@ -296,7 +350,7 @@ t "N3b.7" "an existing local ~/Vault is never replaced by the iCloud one" '
   [ "$(grep -c "^brctl" "$W/log")" -eq 0 ]'
 t "N3b.8" "a local vault never calls brctl" '
   W=$(sandbox); _icloud_env "$W"; mkdir -p "$W/home/Vault"; _icloud_run "$W"; [ "$(grep -c "^brctl" "$W/log")" -eq 0 ] &&
-  [ "$(grep -c "^qmd collection add notes" "$W/log")" -eq 1 ]'
+  [ "$(grep -c "^qmd collection add .* --name notes$" "$W/log")" -eq 1 ]'
 
 section "N4 — plugins (item 2.4)"
 t "N4.1" "the cc-marketplace and claude-code-warp marketplaces are listed" '

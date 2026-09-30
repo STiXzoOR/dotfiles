@@ -15,6 +15,7 @@ _stubs() { # _stubs <W>
 #!/bin/sh
 echo "codex $*" >> "$STUBLOG"
 case "$*" in
+  "login status") [ -n "${STUB_LOGGED_OUT:-}" ] && { echo "Not logged in" >&2; exit 1; }; echo "Logged in using ChatGPT"; exit 0 ;;
   "plugin list --json") cat "$STUBDIR/installed.json" 2>/dev/null || echo '{"installed":[],"available":[]}'; exit 0 ;;
   "plugin marketplace list --json") cat "$STUBDIR/markets.json" 2>/dev/null || echo '{}'; exit 0 ;;
   "mcp get "*) grep -qx "$3" "$STUBDIR/have-mcp" 2>/dev/null; exit $? ;;
@@ -126,6 +127,25 @@ t "X3.2" "an existing server is skipped" '
 t "X3.3" "the blender tool install is requested from the tagged git source" '
   W=$(sandbox); _stubs "$W"; _run "$W"
   [ "$(grep -c "^uv tool install --force git+https://projects.blender.org/lab/blender_mcp.git@v1.0.3#subdirectory=mcp$" "$W/log")" -eq 1 ]'
+
+section "X5 — codex not signed in yet"
+# Plugins from the openai-curated marketplace come from a remote catalogue that
+# needs a ChatGPT login; on a fresh Mac they failed with "authentication
+# required" and failed the whole step. Everything else still installs.
+t "X5.1" "signed out: the curated plugin is not attempted, in either spelling" '
+  W=$(sandbox); _stubs "$W"; _run "$W" STUB_LOGGED_OUT=1
+  [ "$(grep -c "^codex plugin add superpowers@openai-curated" "$W/log")" -eq 0 ]'
+t "X5.2" "signed out: the plugins from other marketplaces are still installed" '
+  W=$(sandbox); _stubs "$W"; _run "$W" STUB_LOGGED_OUT=1
+  [ "$(grep -c "^codex plugin add" "$W/log")" -eq 3 ] && [ "$(grep -c "^codex plugin marketplace add" "$W/log")" -eq 3 ]'
+t "X5.3" "signed out: the step succeeds and says once to run codex login then dotfiles install --codex" '
+  W=$(sandbox); _stubs "$W"; _run "$W" STUB_LOGGED_OUT=1 &&
+  [ "$(grep -c "codex login" "$W/out")" -eq 1 ] && [ "$(grep "codex login" "$W/out" | grep -c "install --codex")" -eq 1 ] &&
+  [ "$(grep -c "failed to add plugin" "$W/out")" -eq 0 ]'
+t "X5.4" "signed in: login status is asked and the curated plugin is installed" '
+  W=$(sandbox); _stubs "$W"; _run "$W"
+  [ "$(grep -c "^codex login status" "$W/log")" -ge 1 ] && [ "$(grep -c "^codex plugin add superpowers@openai-curated$" "$W/log")" -eq 1 ] &&
+  [ "$(grep -c "codex login" "$W/out")" -eq 0 ]'
 
 section "X4 — environment"
 t "X4.1" "a missing codex fails clearly and non-zero" '

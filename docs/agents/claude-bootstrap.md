@@ -66,7 +66,9 @@ used to fail with "command not found".
     `sessions` collections and update and embed the index. Those two calls run
     under a resolved timeout (`gtimeout`, the Homebrew paths, then `timeout`),
     or unbounded when none exists; a bare `timeout` is not on a default macOS
-    PATH. The `qmd` MCP server is an entry in `claude/mcp.list`, not code.
+    PATH. Collections use the qmd 2.x syntax (`collection add <path> --name
+    <name>`, `context add qmd://<name>/ <text>`); one that already exists counts
+    as registered. The `qmd` MCP server is an entry in `claude/mcp.list`, not code.
 
 Anything that fails is recorded and reported, and `main` returns non-zero, so
 the exit status means something.
@@ -158,7 +160,10 @@ for OpenAI's Codex CLI (installed by mise as `npm:@openai/codex`):
    recorded as such in a comment in `codex/plugins.list`.
 4. Registers the servers in `claude/mcp.list` with `codex mcp add`, skipping
    ones `codex mcp get` knows.
-5. Prints a final reminder: plugin hooks are not trusted on install, so open
+5. Checks `codex login status` first. Signed out, the `@openai-curated` plugins
+   (a remote catalogue that needs the login) are skipped with one line, and the
+   step still succeeds; `codex login`, then `dotfiles install --codex`.
+6. Prints a final reminder: plugin hooks are not trusted on install, so open
    `codex`, run `/hooks` and press `t` on each hook. The script never tries to
    bypass that.
 
