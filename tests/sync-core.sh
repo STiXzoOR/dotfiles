@@ -136,15 +136,6 @@ t "S3.4" "a failed fetch (offline) is reported, and is not an error" '
   W=$(senv); command mv "$W/pub.git" "$W/gone.git"; out=$(syn 2>&1); rc=$?
   [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -q "could not fetch"'
 
-# Three changes that each call for an action.
-_actions() { # _actions <W>: mise, Brewfile and claude/ change on the remote
-  push_change "$1" pub config/mise/config.toml "[tools]
-node = \"1\""
-  push_change "$1" pub Brewfile "brew \"wget\"
-brew \"jq\""
-  push_change "$1" pub claude/rules.md "r2"
-  : >"$1/state/unsatisfied"
-}
 t "S4.1" "interactive, confirmed: mise install, brew bundle install and install --claude run" '
   W=$(senv); _actions "$W"; sy_env "DOTFILES_YES=1" syn >/dev/null 2>&1
   grep -qx "mise install" "$W/log" && grep -qx "brew bundle install --file=$W/pub/Brewfile" "$W/log" &&

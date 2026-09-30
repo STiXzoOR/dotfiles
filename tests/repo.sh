@@ -85,6 +85,9 @@ t "H.P4" "run.sh at TEST_JOBS=1 is serial: two two-second suites take at least 4
   [ "$rc" -eq 0 ] && [ "$el" -ge 4 ] && printf "%s\n" "$out" | grep -q "suites=2 failed_suites=0"'
 t "H.P5" "run.sh starts slow suites first and defaults TEST_JOBS from hw.ncpu" \
   '[ "$(code_of tests/run.sh | grep -c "hw.ncpu")" -ge 1 ] && [ "$(code_of tests/run.sh | grep -c "TEST_JOBS")" -ge 1 ]'
+t "H.P6" "every name in run.sh slow-first list is an existing suite, so a rename cannot disable the ordering" '
+  n=$(code_of tests/run.sh | sed -n "s/^slow_first=\"\(.*\)\"$/\1/p"); [ -n "$n" ] &&
+  ( for x in $n; do [ -f "tests/$x.sh" ] || exit 1; done )'
 t "H.9" "run.sh ignores SIGPIPE before the suite loop" \
   '[ "$(_first_line "trap \"\" PIPE" tests/run.sh)" -gt 0 ] && [ "$(_first_line "trap \"\" PIPE" tests/run.sh)" -lt "$(_first_line "for f in" tests/run.sh)" ]'
 

@@ -67,16 +67,6 @@ t "S6.6" "the extra Brewfile.local entries count as declared" \
 t "S7.1" "an unknown argument is a usage error" \
   'W=$(senv); out=$(syn --frobnicate 2>&1); rc=$?; [ "$rc" -eq 2 ] && printf "%s\n" "$out" | grep -q "Usage"'
 
-# The daily vault scan (Task 12.2). vault_of <W>: the sandbox vault's
-# Claude-Sessions folder. jevstub <W> <exit> [output line]: a dotfiles-jev that
-# logs its argv and JEV_SCHEDULED, prints the line and exits with <exit>.
-vault_of() { mkdir -p "$1/home/Vault/Claude-Sessions"; printf '%s' "$1/home/Vault/Claude-Sessions"; }
-jevstub() {
-  stub "$1/bin" dotfiles-jev-stub 'echo "JEV_SCHEDULED=${JEV_SCHEDULED:-}" >>"$STUB_LOG"; [ -n "'"${3:-}"'" ] && printf "%s\n" "'"${3:-}"'"; exit '"$2"
-}
-JEVSTUB_ENV() { printf 'DOTFILES_JEV_BIN=%s/bin/dotfiles-jev-stub' "$1"; }
-stampf() { printf '%s/home/.local/state/dotfiles/vault-scan-last' "$1"; }
-
 t "S8.1" "scheduled: a real scan of a vault with a pasted token notifies once with file and line, never the value" '
   W=$(senv); d=$(vault_of "$W"); tok="ghp_$(rand_chars 36 A-Za-z0-9)"
   printf "notes\nexport GH_TOKEN=%s\nmore\n" "$tok" >"$d/session-1.md"; printf "fine\n" >"$d/session-2.md"

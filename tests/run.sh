@@ -20,7 +20,8 @@ trap "" PIPE
 # Each suite writes to its own file and is printed as one block, in
 # alphabetical order, as soon as every earlier suite has finished.
 suite_args=("$@")
-jobs_max=${TEST_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null)}
+ncpu=$(sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null)
+jobs_max=${TEST_JOBS:-$ncpu}
 case "$jobs_max" in '' | *[!0-9]*) jobs_max=2 ;; esac
 if [ -z "${TEST_JOBS:-}" ]; then
   [ "$jobs_max" -ge 2 ] || jobs_max=2
@@ -30,16 +31,18 @@ fi
 
 suites=()
 for f in tests/*.sh; do
-  case "$(basename "$f")" in lib.sh | run.sh | sync-lib.sh) continue ;; esac
+  case "$(basename "$f")" in lib.sh | run.sh | *-lib.sh) continue ;; esac
   suites+=("$f")
 done
 total=${#suites[@]}
 
 # Start order: the slowest suites first, so the pool does not end waiting on
 # one long straggler. Serial runs keep alphabetical order (streams as it goes).
+# Measured slowest first; tests/repo.sh (H.P6) checks every name still exists.
+slow_first="macos jev cli shell claude sync-core sync-sched sync-gate sync-vault sync-drift sync-defaults apps"
 order=()
 if [ "$jobs_max" -gt 1 ]; then
-  for name in shell cli sync jev macos apps claude; do
+  for name in $slow_first; do
     for ((i = 0; i < total; i++)); do
       [ "${suites[$i]}" = "tests/$name.sh" ] && order+=("$i")
     done
