@@ -1,0 +1,18 @@
+# Setapp apps, one catalogue name per line (the .app name under /Applications/Setapp).
+# Private extras go in setapp.local.list (gitignored). Installed by
+# `dotfiles install --setapp`: one click in Setapp's own alert per app.
+AirBuddy
+Bartender
+CleanMyMac
+CleanShot X
+GetAPI
+iStat Menus
+JustStream
+Moonlock
+Paste
+PixelSnap
+Proxyman
+Spark Mail
+Supercharge
+Tiny Shield
+Tripsy

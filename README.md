@@ -642,7 +642,7 @@ The following is the software installed by default:
 - PrusaSlicer/SuperSlicer
 - Tinycast (Spotlight replacement, the default launcher; Raycast on a Mac that opts in with `DOTFILES_LAUNCHER=raycast` in `macos/machine.local.sh`)
 - Blender (the `blender` MCP needs 5.1+)
-- Setapp
+- Setapp (and the apps in `packages/setapp.list`, installed by `dotfiles install --setapp`, one click each)
 - Shottr (screenshot tool)
 - Slack
 - TeamViewer

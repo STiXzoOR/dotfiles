@@ -76,6 +76,7 @@ sub_install_help() {
   echo "   --packages         3rd party packages and extensions (brew, cask, code)"
   echo "   --prezto           Zsh framework"
   echo "   --private          Private companion repo (clone it, link its files)"
+  echo "   --setapp           Setapp apps from packages/setapp.list (one click per app)"
   echo "   --ssh              SSH Key"
 }
 
@@ -175,6 +176,7 @@ sub_install() {
   echo "$BIN_NAME link (This should be run after prezto)"
   echo "$BIN_NAME install --node (This should be run after link)"
   echo "$BIN_NAME install --packages"
+  echo "$BIN_NAME install --setapp (Sign in to Setapp first; about one click per app)"
   echo "$BIN_NAME install --fonts"
   echo "$BIN_NAME install --launchagents"
   echo "$BIN_NAME install --claude"
@@ -221,6 +223,9 @@ sub_install_all() {
   dotfiles_run_step link "$0" link
   dotfiles_run_step node "$0" install --node
   dotfiles_run_step packages "$0" install --packages
+  # After packages (the setapp cask is installed there) and before configure,
+  # so the Dock finds Spark Mail. Skips, never fails, when Setapp is not ready.
+  dotfiles_run_step setapp "$0" install --setapp
   dotfiles_run_step fonts "$0" install --fonts
   dotfiles_run_step launchagents "$0" install --launchagents
   dotfiles_run_step claude "$0" install --claude
@@ -674,6 +679,42 @@ sub_install_packages() {
 
   popd >/dev/null 2>&1 || true
   return "$rc"
+}
+
+# Setapp apps, from packages/setapp.list and the gitignored setapp.local.list.
+# Setapp has no CLI, so each install is a setapp:// link and the user clicks
+# Install in Setapp's own alert. See scripts/lib/setapp.sh.
+sub_install_setapp() {
+  bot "Setapp apps\n"
+  source "$ROOT_DIR/scripts/lib/lists.sh" || return 1
+  source "$ROOT_DIR/scripts/lib/setapp.sh" || return 1
+
+  # Not being ready is not a failure: Setapp needs a sign-in that only the
+  # user can do, and install --all must carry on past it.
+  if ! setapp_ready; then
+    warn "Setapp: open Setapp and sign in, then run \`dotfiles install --setapp\`"
+    return 0
+  fi
+
+  local names=() name rc=0 dock_hint=0
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && names+=("$name")
+  done < <(read_list "$ROOT_DIR/packages" setapp)
+  if [[ ${#names[@]} -eq 0 ]]; then
+    skip
+    return 0
+  fi
+
+  setapp_install_list "${names[@]}" || rc=1
+
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    if grep -qxF "  \"/Applications/Setapp/$name.app\"" "$ROOT_DIR/macos/dock.sh" 2>/dev/null; then
+      dock_hint=1
+    fi
+  done <<<"$SETAPP_INSTALLED"
+  [[ "$dock_hint" == 1 ]] && action "run \`dotfiles configure --dock\` to add new apps to the Dock"
+  return $rc
 }
 
 sub_install_launchagents() {

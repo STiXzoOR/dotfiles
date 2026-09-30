@@ -60,6 +60,7 @@ macos/local.sh
 # Private package additions, read by `dotfiles install --packages`
 Brewfile.local
 packages/code.local.list
+packages/setapp.local.list
 
 # gh's login lives in hosts.yml; config.yml is tracked, this never is
 config/gh/hosts.yml

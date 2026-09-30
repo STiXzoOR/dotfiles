@@ -86,5 +86,22 @@ t "D2.10" "scheduled: no prompt, no write, and the single notification says Jev 
   DXY=1 dsyn --scheduled >/dev/null 2>&1
   [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && [ "$(_calls "^osascript")" -eq 1 ] && grep "^osascript" "$W/log" | grep -q "Jev suggests"'
 
+#############################################################################
+section "D -- Setapp drift: /Applications/Setapp apps declared in no list"
+#############################################################################
+
+t "D2.1" "an app in the Setapp dir that no list names is reported with the line to add" '
+  W=$(senv); mkdir -p "$W/setapp/Paste.app" "$W/setapp/Tripsy.app"; printf "Paste\n" >"$W/pub/packages/setapp.list"
+  out=$(syn 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -cF "Tripsy")" -ge 1 ] && printf "%s\n" "$out" | grep -F Tripsy | grep -qF "packages/setapp.list" &&
+  [ "$(printf "%s\n" "$out" | grep -F "Paste" | grep -c "setapp.list")" -eq 0 ]'
+t "D2.2" "setapp.local.list also declares an app, and names match case-insensitively" '
+  W=$(senv); mkdir -p "$W/setapp/Tripsy.app" "$W/setapp/Paste.app"; printf "paste\n" >"$W/pub/packages/setapp.list"; printf "Tripsy\n" >"$W/pub/packages/setapp.local.list"
+  out=$(syn 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "add to packages/setapp")" -eq 0 ]'
+t "D2.3" "no Setapp dir: nothing reported and no error" '
+  W=$(senv); out=$(syn 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "packages/setapp")" -eq 0 ]'
+
 
 finish

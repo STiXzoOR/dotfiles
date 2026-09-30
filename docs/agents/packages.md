@@ -7,6 +7,7 @@
 | `Brewfile`                | Homebrew taps, formulae, casks, Mac App Store        | `brew bundle install`               |
 | `config/mise/config.toml` | Node, Python for tooling, pnpm/yarn/uv, npm-backed CLIs | `./bin/dotfiles install --node`     |
 | `packages/code.list`      | VS Code extensions                                   | `./bin/dotfiles install --packages` |
+| `packages/setapp.list`    | Setapp apps, one catalogue name per line             | `./bin/dotfiles install --setapp`   |
 
 ## Adding Packages
 
@@ -15,6 +16,7 @@
   `config/mise/config.toml`, run `./bin/dotfiles install --node`, commit the
   config and the regenerated `config/mise/mise.lock`
 - **VS Code extension**: Add to `packages/code.list`, run `./bin/dotfiles install --packages`
+- **Setapp app**: Add its name, as Setapp spells it (the `.app` name under `/Applications/Setapp`), to `packages/setapp.list`, run `./bin/dotfiles install --setapp` and click Install in Setapp's alert. See [new-mac.md](new-mac.md).
 - **Launcher**: exactly one of Raycast or Tinycast, picked per Mac by
   `dotfiles_launcher` (see [new-mac.md](new-mac.md#launcher)). `dotfiles install
   --packages` exports the choice as `HOMEBREW_DOTFILES_LAUNCHER` (brew bundle
@@ -61,8 +63,9 @@ removed by hand.
 
 ## Private additions
 
-`Brewfile.local` (brew, cask, mas lines) and `packages/code.local.list` (VS Code
-extensions) are gitignored companions to `Brewfile` and `packages/code.list`.
+`Brewfile.local` (brew, cask, mas lines), `packages/code.local.list` (VS Code
+extensions) and `packages/setapp.local.list` (Setapp apps) are gitignored
+companions to `Brewfile`, `packages/code.list` and `packages/setapp.list`.
 Put anything private or work-only there; this repo is public.
 
 ## Notes on specific entries

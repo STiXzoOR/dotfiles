@@ -50,6 +50,7 @@ install --hosts         # Ad-blocking hosts file
 install --launchagents  # LaunchAgents from launchagents/ (see launchagents/disabled/)
 install --node          # mise, Node and the CLIs in config/mise/config.toml (run link first)
 install --packages      # Brewfile (+ Brewfile.local) and VS Code extensions
+install --setapp        # Setapp apps from packages/setapp.list (one click each)
 install --prezto        # The zsh framework
 install --private       # Clone the private companion repo and link its files (two-mac-sync.md)
 install --ssh           # SSH key (ed25519)

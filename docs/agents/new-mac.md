@@ -21,7 +21,7 @@ live in the owner's private notes, not here: this repo is public.
 1. **Setup Assistant.** Name the computer, sign in to your Apple Account, turn on FileVault, pick a Time Machine disk.
 2. **Check the platform.** Run `sw_vers; /bin/bash --version; zsh --version`. The installer targets bash 3.2 and zsh 5.9.
 3. **Put `~/.ssh` in place** if you carried it (`chmod 700 ~/.ssh`, `chmod 600` the private key), or add the new key to GitHub when the installer generates one: the private repo clone needs GitHub access.
-4. **Sign in to the App Store.** The `mas` entries, Xcode included, need it.
+4. **Sign in to the App Store, and to Setapp.** The `mas` entries, Xcode included, need the App Store. Setapp needs its app opened once and signed in: that creates the catalogue `install --setapp` reads, and starts the agent it drives. Open Setapp after `--packages` has installed it if it is not there yet.
 5. **Grant Full Disk Access to your terminal** (System Settings, Privacy & Security), then restart it. `dotfiles configure` needs it for the firewall, Remote Login and `systemsetup`.
 6. **Run the remote installer:**
    ```sh
@@ -36,15 +36,17 @@ live in the owner's private notes, not here: this repo is public.
    3. `link`
    4. mise and node
    5. packages
-   6. fonts
-   7. LaunchAgents
-   8. Claude
-   9. Codex
-   10. `configure`
-   11. hosts
+   6. Setapp apps
+   7. fonts
+   8. LaunchAgents
+   9. Claude
+   10. Codex
+   11. `configure`
+   12. hosts
 
    It ends with a summary of any failed steps and exits non-zero if one failed. Fix what it lists and re-run the step (`dotfiles install --<step>`).
    - **Xcode.** When the Brewfile declares Xcode, `--packages` installs it first, accepts its licence and runs first launch, so no later brew step fails on "You have not agreed to the Xcode license". It needs sudo and the App Store sign-in from step 4.
+   - **Setapp.** `--setapp` (between `--packages` and `--fonts`, so the Dock finds Spark Mail) installs the apps in `packages/setapp.list` and `packages/setapp.local.list`. Setapp has no CLI: each app is a `setapp://install` link, and Setapp shows its own "Install <App> from Setapp?" alert, so expect about one click per app (and sometimes an "Open <App>?" prompt). The installer prints `Setapp: click Install in the alert for <App>` and waits up to `SETAPP_TIMEOUT` seconds (default 300) for each app. Setapp's agent stays busy after a link install and rejects the next one, so the agent is restarted before every app and again if its log shows the rejection (3 tries per app). If Setapp is missing, never opened or not signed in, the step skips with one line and never fails `--all`: sign in, then run `dotfiles install --setapp`. When it installed a Dock app, run `dotfiles configure --dock`.
    - **Codex.** The curated plugins need a ChatGPT login. Run `codex login` before or after the installer; if it was not done, `--codex` skips those plugins with one line and the rest installs. Then run `dotfiles install --codex` again.
 9. **Restore data:**
    - The vault arrives through iCloud Drive; `dotfiles install --claude` links `~/Vault` to it, waits for the download and registers the QMD collections. Re-run it once the vault has finished downloading. It never creates an empty vault. See [two-mac-sync.md](two-mac-sync.md).
@@ -110,7 +112,7 @@ its own. Override with `DOTFILES_MACHINE_ROLE=desktop|laptop` in
 
 ## Things that are manual on purpose
 
-- Apps outside Homebrew and the App Store (Setapp and direct downloads).
+- Apps outside Homebrew, the App Store and Setapp (direct downloads).
 - Per-app permissions macOS asks for on first launch (Accessibility, Input Monitoring, Screen Recording, system extensions such as Karabiner's).
 - Keyboard modifier remaps and input sources (System Settings, Keyboard). They are stored per keyboard.
 - The default browser (System Settings, Desktop & Dock). macOS asks for confirmation, so it cannot be scripted unattended.

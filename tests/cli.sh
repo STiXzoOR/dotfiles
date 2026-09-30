@@ -954,7 +954,7 @@ _mk_repo() { # _mk_repo <W> <step>... -- steps listed are NOT stubbed
     echo 'dotfiles_sudo_keepalive() { _log keepalive; }'
     echo 'require_brew() { _log "brew:$*"; }'
     local s keep
-    for s in install_clt install_homebrew install_ssh install_prezto install_private install_node install_packages install_fonts \
+    for s in install_clt install_homebrew install_ssh install_prezto install_private install_node install_packages install_setapp install_fonts \
       install_launchagents install_claude install_codex install_hosts link configure hooks; do
       keep=0; for k in "$@"; do [ "$k" = "$s" ] && keep=1; done
       [ "$keep" = 1 ] && continue
@@ -989,10 +989,10 @@ t "N4.5" "a failed Homebrew step does not stop stow and SSH from being tried" '
 t "N4.6" "install --all runs the steps in the documented order with hosts last" '
   W=$(sandbox); _mk_repo "$W"; _run_repo "$W" install --all >/dev/null 2>&1; rc=$?
   [ "$rc" -eq 0 ] &&
-  [ "$(_log_line "$W/log")" = "keepalive prezto private link node packages fonts launchagents claude codex configure hosts" ]'
+  [ "$(_log_line "$W/log")" = "keepalive prezto private link node packages setapp fonts launchagents claude codex configure hosts" ]'
 t "N4.7" "install --all keeps going after a failure, names it and returns non-zero" '
   W=$(sandbox); _mk_repo "$W"; out=$(FAIL=packages _run_repo "$W" install --all 2>&1); rc=$?
-  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive prezto private link node packages fonts launchagents claude codex configure hosts" ] &&
+  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive prezto private link node packages setapp fonts launchagents claude codex configure hosts" ] &&
   case "$out" in *"packages"*) true ;; *) false ;; esac'
 t "N4.8" "install --all names every failed step" '
   W=$(sandbox); _mk_repo "$W"
@@ -1717,7 +1717,7 @@ t "T7.4" "the private step runs after prezto and right before link in install --
   a=$(_first_line private "$W/log"); b=$(_first_line link "$W/log"); [ "$a" -gt 0 ] && [ "$b" -eq $((a + 1)) ]'
 t "T7.5" "a failed private clone is named, does not stop install --all, and the status is non-zero" '
   W=$(sandbox); _mk_repo "$W"; out=$(FAIL=private _run_repo "$W" install --all 2>&1); rc=$?
-  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive prezto private link node packages fonts launchagents claude codex configure hosts" ] &&
+  [ "$rc" -ne 0 ] && [ "$(_log_line "$W/log")" = "keepalive prezto private link node packages setapp fonts launchagents claude codex configure hosts" ] &&
   case "$out" in *private*) true ;; *) false ;; esac'
 t "T7.6" "install --private runs bin/dotfiles-private install after a confirm" '
   W=$(sandbox); mkdir -p "$W/df/bin" "$W/h"

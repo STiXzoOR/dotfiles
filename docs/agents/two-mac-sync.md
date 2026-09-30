@@ -96,7 +96,8 @@ sync only reports the change and never imports.
    `--codex` when `claude/` or `codex/` changed. `secrets.age` changing is
    reported, never applied.
 4. Drift: packages installed on this Mac (`brew leaves --installed-on-request`,
-   casks, `mas list`, VS Code extensions) that neither the public nor the private
+   casks, `mas list`, VS Code extensions, and the apps in `/Applications/Setapp`,
+   which Jev never sees) that neither the public nor the private
    lists declare, each with the line to add. With the Jev `drift` point not `off`,
    the packages, the macOS defaults that read back differently from the baseline
    snapshot and the unmanaged `~/.config` directories are also classified in one

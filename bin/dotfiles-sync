@@ -448,6 +448,22 @@ $("$code_bin" --list-extensions </dev/null 2>/dev/null)
 EOF
   fi
 
+  # Setapp apps: the folder is the truth, there is no CLI to list them. Not
+  # sent to Jev (no facts for them).
+  local setapp_dir app
+  setapp_dir="${DOTFILES_SETAPP_APPS_DIR:-/Applications/Setapp}"
+  if [ -d "$setapp_dir" ]; then
+    decl=$(read_list "$DOTFILES_DIR/packages" setapp)
+    for app in "$setapp_dir"/*.app; do
+      [ -d "$app" ] || continue
+      item=$(basename "$app" .app)
+      if ! in_list "$item" "$decl"; then
+        say "  $item      (add to packages/setapp.list, or packages/setapp.local.list)"
+        n=$((n + 1))
+      fi
+    done
+  fi
+
   if [ "$n" -eq 0 ]; then
     say "  none"
   else

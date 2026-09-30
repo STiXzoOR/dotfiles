@@ -78,7 +78,7 @@ syn() {
   ${SYNWRAP:-} env -i HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" DOTFILES_DIR="$W/pub" DOTFILES_PRIVATE_DIR="$W/priv" \
     DOTFILES_BIN="$W/bin/dotfiles-stub" XDG_CONFIG_HOME="$W/home/.config" STUB_LOG="$W/log" STUB_STATE="$W/state" \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid \
-    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid DOTFILES_JEV=off TYPESAFE_API_KEY=testkey \
+    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid DOTFILES_JEV=off TYPESAFE_API_KEY=testkey DOTFILES_SETAPP_APPS_DIR="$W/setapp" \
     ${SYNENV:-} bash "$ROOT_DIR/bin/dotfiles-sync" "$@" <"${SYNIN:-/dev/null}"
 }
 sy_env() { local SYNENV="$1"; shift; "$@"; }
