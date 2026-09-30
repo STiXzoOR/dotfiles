@@ -94,10 +94,10 @@ in its background block once it is older than 8 hours (the age test sets
 replaces the dump with one `mv -f`, and the existing `zcompile` follows. A
 `zcompdump.lock` directory (`mkdir` is atomic) keeps two logins that open
 together from both rebuilding; a lock older than 5 minutes was left by a killed
-shell and is taken over. Prezto
-would otherwise regenerate it in the foreground after 20 hours, which put about
-25-300 ms in front of the first prompt of the day and of a new machine's first
-shell. This is plain `compinit`, never `compinit -C`, and not `zsh-defer`.
+shell and is taken over. Prezto would otherwise regenerate the dump in the
+foreground after 20 hours, which put about 25-300 ms in front of the first
+prompt of the day and of a new machine's first shell. This is plain
+`compinit`, never `compinit -C`, and not `zsh-defer`.
 
 ## Startup speed
 

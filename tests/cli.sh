@@ -1214,6 +1214,25 @@ t "N7.5c" "configure --defaults still exits zero when every read-back held" '
   _sm_run "$W" sub_configure_defaults >/dev/null 2>&1'
 t "N7.5d" "configure returns the status of configure --defaults" \
   '[ "$(sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -c "sub_configure_defaults ||")" -ge 1 ]'
+_cfg_run() { # _cfg_run <W> <defaults rc> -- sub_configure with both steps stubbed
+  local W="$1"
+  fn_of sub_configure > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="/usr/bin:/bin"; HOME="$W"
+cd "$PWD" || exit 1
+. scripts/echos.sh
+confirm() { return 0; }
+sub_configure_defaults() { return $2; }
+sub_configure_dock() { echo dock >> "$W/log"; }
+. "$W/fn.sh"
+sub_configure
+RUN
+  timeout 20 bash "$W/run.sh" </dev/null
+}
+t "N7.5e" "configure returns non-zero when configure --defaults fails, and still runs the dock" \
+  'W=$(sandbox); _cfg_run "$W" 1 >/dev/null 2>&1; rc=$?; [ "$rc" -ne 0 ] && [ "$(grep -c dock "$W/log")" -eq 1 ]'
+t "N7.5f" "configure returns zero when configure --defaults succeeds" \
+  'W=$(sandbox); _cfg_run "$W" 0 >/dev/null 2>&1'
 t "N7.5" "no apps/* path is hardcoded in bin/dotfiles" \
   '[ "$(code_of bin/dotfiles | grep -c "ensure_submodule apps/")" -eq 0 ]'
 

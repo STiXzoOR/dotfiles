@@ -28,7 +28,8 @@
   _zcompdump_stale() { setopt localoptions extendedglob; [[ -n "$zcompdump"(#qN.mh+8) ]]; }
   # Two logins opening together would both rebuild; a mkdir lock lets one do it.
   # A lock older than 5 minutes belongs to a shell that was killed mid-rebuild
-  # (the rebuild takes about a second), so it is taken over.
+  # (the rebuild takes about a second), so it is taken over. Two shells racing
+  # to take one over is harmless: the temp file is per-PID and the mv atomic.
   _zcompdump_lock() {
     setopt localoptions extendedglob
     [[ -d "$zcompdump.lock"(#qN/mm+5) ]] && command rmdir "$zcompdump.lock" 2>/dev/null

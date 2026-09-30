@@ -71,7 +71,9 @@ ENVEOF
   printf '%s\n' '[[ -n $DOTFILES_TEST_ZPROF ]] && zmodload zsh/zprof' >"$h/.zshenv"
   write_tool_stubs "$h" || return 1
   local s
-  for s in ssh-add ssh-agent ${ZSHRUN_STUBS:-}; do
+  # fnm is stubbed as well: system/.fnm runs `fnm env` whenever the mise shims are
+# absent, and the real one creates a multishell link per shell.
+for s in ssh-add ssh-agent fnm ${ZSHRUN_STUBS:-}; do
     printf '#!/bin/sh\nexit 0\n' >"$h/.stubs/$s"
     chmod +x "$h/.stubs/$s"
   done
@@ -829,5 +831,23 @@ t "P10.7" "pay-respects: a successful run leaves only the cache, and the second 
    ZSHRUN_HOME="$H" zshrun true && [ "$(_cache_files "$H" "pay-respects-init*")" -eq 1 ] &&
    ZSHRUN_HOME="$H" zshrun true && [ "$(_calls "$L" "pay-respects")" -eq 1 ]'
 
+section "P11 — a sandboxed login shell writes nothing under the caller's XDG dirs"
+# The caller's XDG_STATE_HOME / XDG_DATA_HOME / XDG_RUNTIME_DIR are decoys
+# outside the sandbox: a real `fnm env` used to put fnm_multishells into the
+# owner's XDG_RUNTIME_DIR.
+_xdg_leaks() { # _xdg_leaks <zshrun function> -- files a login shell put in the decoys
+  local d n
+  d=$(sandbox) || return 1
+  mkdir -p "$d/state" "$d/data" "$d/run" || return 1
+  XDG_STATE_HOME="$d/state" XDG_DATA_HOME="$d/data" XDG_RUNTIME_DIR="$d/run" "$1" true >/dev/null 2>&1
+  n=$(find "$d/state" "$d/data" "$d/run" -mindepth 1 | wc -l)
+  printf '%s' "$((n))"
+}
+t "P11.1" "zshrun leaves the caller's XDG state, data and runtime dirs untouched" \
+  '[ "$(_xdg_leaks zshrun)" -eq 0 ]'
+t "P11.2" "pty_zshrun leaves them untouched too" \
+  '[ "$(_xdg_leaks pty_zshrun)" -eq 0 ]'
+t "P11.3" "the sandbox stubs fnm, so the real one never runs" \
+  'H=$(_zsh_sandbox) && [ -x "$H/.stubs/fnm" ]'
 
 finish
