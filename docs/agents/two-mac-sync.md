@@ -87,7 +87,9 @@ sync only reports the change and never imports.
    only when the tracked files are clean and the branch is behind. It never
    merges, rebases or stashes. It reports unpushed commits, behind-but-dirty and
    diverged states with the exact command to resolve each.
-2. When anything moved: `stow --restow` for `runcom` and `config`, then
+2. When anything moved: if a submodule pointer moved, `git submodule update
+   --init --recursive` (shallow as `.gitmodules` says), so the checkout is not
+   left dirty; then `stow --restow` for `runcom` and `config`, then
    `dotfiles private link`.
 3. The actions the change calls for: `mise install` when `config/mise/` changed;
    `brew bundle install` when a Brewfile is not satisfied; `install --claude` or

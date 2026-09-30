@@ -13,21 +13,16 @@ live in the owner's private notes, not here: this repo is public.
   - `dotfiles apps backup` (app settings, copy mode, into iCloud Drive; see [app-settings.md](app-settings.md))
   - database dumps
   - app-native exports (Raycast `.rayconfig`, Bartender, iStat Menus)
-- Collect the gitignored files a clone will not bring:
-  - `profiles/local.zsh` and `profiles/local.post.zsh`
-  - `config/git/config.local`
-  - `claude/*.local.list` and `codex/*.local.list`
-  - `Brewfile.local` and `packages/code.local.list`
-  - `macos/local.sh` (computer name, locale, languages, timezone; see `macos/local.sh.example`)
+- Make sure the private repo is pushed (`dotfiles private status`). It carries the gitignored files a clone does not bring: git identity, `profiles/local*.zsh`, the `*.local.list` files, `Brewfile.local`, `macos/local.sh`, the encrypted secrets export. See [two-mac-sync.md](two-mac-sync.md). Nothing is copied by hand.
 - Carry `~/.ssh` if you want to keep the same key. Otherwise the installer generates a new one, and you add it to GitHub.
 
 ## On the new Mac
 
 1. **Setup Assistant.** Name the computer, sign in to your Apple Account, turn on FileVault, pick a Time Machine disk.
 2. **Check the platform.** Run `sw_vers; /bin/bash --version; zsh --version`. The installer targets bash 3.2 and zsh 5.9.
-3. **Put `~/.ssh` in place** if you carried it (`chmod 700 ~/.ssh`, `chmod 600` the private key).
-4. **Sign in to the App Store.** The `mas` entries in the Brewfile need it.
-5. **Grant Full Disk Access to your terminal** (System Settings, Privacy & Security). `dotfiles configure` needs it for the firewall, Remote Login and `systemsetup`; without it those steps report an error, and you re-run `dotfiles configure --defaults` after granting.
+3. **Put `~/.ssh` in place** if you carried it (`chmod 700 ~/.ssh`, `chmod 600` the private key), or add the new key to GitHub when the installer generates one: the private repo clone needs GitHub access.
+4. **Sign in to the App Store.** The `mas` entries, Xcode included, need it.
+5. **Grant Full Disk Access to your terminal** (System Settings, Privacy & Security), then restart it. `dotfiles configure` needs it for the firewall, Remote Login and `systemsetup`.
 6. **Run the remote installer:**
    ```sh
    bash -c "$(curl -fsSL https://raw.githubusercontent.com/STiXzoOR/dotfiles/main/remote-install.sh)"
@@ -35,27 +30,30 @@ live in the owner's private notes, not here: this repo is public.
    - It installs the Command Line Tools headlessly (newest label), clones to `~/.dotfiles`, and runs `dotfiles install`.
    - It is safe to re-run: an existing checkout is reused.
 7. **Pick the launcher.** The default is Tinycast, and then there is nothing to do before `install --all`: `--packages` installs it from its tap, `--link` stows `config/tinycast/settings.json`, and `configure` sets Cmd-Space and switches its settings file on (see [Launcher](#launcher)). A Mac that keeps Raycast says so first, in `macos/machine.local.sh` (`cp macos/machine.local.sh.example macos/machine.local.sh`, `DOTFILES_LAUNCHER="raycast"`). Until the launcher owns Cmd-Space nothing answers it, because `configure` turns off Spotlight's.
-8. **When `install` offers `install --all`, answer no the first time.**
-   - Copy the gitignored files into `~/.dotfiles/`.
-   - Then run `~/.dotfiles/bin/dotfiles install --all`, which works through this order:
-     1. Prezto
-     2. `link`
-     3. mise and node
-     4. packages
-     5. fonts
-     6. LaunchAgents
-     7. Claude
-     8. Codex
-     9. `configure`
-     10. hosts
-   - It ends with a summary of any failed steps and exits non-zero if one failed. Fix what it lists and re-run the step (`dotfiles install --<step>`).
+8. **When `install` offers `install --all`, answer yes.** It works through this order:
+   1. Prezto (with its nested submodules)
+   2. `private` (clones the private repo and links its gitignored files)
+   3. `link`
+   4. mise and node
+   5. packages
+   6. fonts
+   7. LaunchAgents
+   8. Claude
+   9. Codex
+   10. `configure`
+   11. hosts
+
+   It ends with a summary of any failed steps and exits non-zero if one failed. Fix what it lists and re-run the step (`dotfiles install --<step>`).
+   - **Xcode.** When the Brewfile declares Xcode, `--packages` installs it first, accepts its licence and runs first launch, so no later brew step fails on "You have not agreed to the Xcode license". It needs sudo and the App Store sign-in from step 4.
+   - **Codex.** The curated plugins need a ChatGPT login. Run `codex login` before or after the installer; if it was not done, `--codex` skips those plugins with one line and the rest installs. Then run `dotfiles install --codex` again.
 9. **Restore data:**
-   - Copy your vault to `~/Vault`, then run `dotfiles install --claude` again so QMD registers and indexes it. The installer never creates an empty vault.
+   - The vault arrives through iCloud Drive; `dotfiles install --claude` links `~/Vault` to it, waits for the download and registers the QMD collections. Re-run it once the vault has finished downloading. It never creates an empty vault. See [two-mac-sync.md](two-mac-sync.md).
    - Restore app settings with `dotfiles apps restore --from <old-mac>` once the apps are installed and quit.
    - `dotfiles secrets import <file>`.
-10. **Log in** to the CLIs and apps you use (gh, Claude Code, Codex, cloud CLIs, Tailscale, …). In Codex, run `/hooks` once and trust the plugin hooks.
-11. **Record a defaults baseline:** `dotfiles baseline capture <macOS version>`, then `dotfiles baseline diff` against the previous one, to see which settings the new macOS dropped or renamed.
-12. **Run `dotfiles doctor`.** It should report no errors.
+10. **Install the Setapp apps by hand** (Spark Mail and the rest) from Setapp, then run `dotfiles configure --dock` so the Dock finds them.
+11. **Log in** to the CLIs and apps you use (gh, Claude Code, cloud CLIs, Tailscale, ...). In Codex, run `/hooks` once and trust the plugin hooks.
+12. **Record a defaults baseline:** `dotfiles baseline capture <macOS version>`, then `dotfiles baseline diff` against the previous one, to see which settings the new macOS dropped or renamed.
+13. **Run `dotfiles doctor`.** It should report no errors.
 
 ## Launcher
 
