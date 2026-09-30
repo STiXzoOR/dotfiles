@@ -669,4 +669,34 @@ t "G6.12" "a pmset that says nothing is a laptop: Remote Login and the power set
 t "G6.8" "nothing in defaults.sh ever turns Remote Login off" \
   '[ "$(code_of macos/defaults.sh | grep -c -- "-setremotelogin.* off")" -eq 0 ]'
 
+#############################################################################
+section "K -- Task 13: baseline changed (defaults that moved since the snapshot)"
+#############################################################################
+# kenv: a DOTFILES_DIR declaring three keys, a snapshot "t" and a stub
+# `defaults` that reads live values from $W/live (domain<TAB>key<TAB>value).
+kenv() {
+  local w
+  w=$(sandbox); mkdir -p "$w/macos" "$w/bin" "$w/snap"
+  printf 'defaults write com.example.a Alpha -bool true\ndefaults write com.example.a Beta -int 5\ndefaults write com.example.b Gone -bool true\ndefaults write com.example.b Same -string x\n' >"$w/macos/defaults-x.sh"
+  printf 'com.example.a\tAlpha\t1\ncom.example.a\tBeta\t5\ncom.example.b\tGone\t1\ncom.example.b\tSame\tx\n' >"$w/snap/t.tsv"
+  printf '#!/bin/sh\n[ "$1" = read ] || exit 1\nawk -F"\\t" -v d="$2" -v k="$3" '"'"'$1 == d && $2 == k { print $3; f = 1 } END { exit !f }'"'"' "$LIVE"\n' >"$w/bin/defaults"
+  chmod +x "$w/bin/defaults"
+  printf 'com.example.a\tAlpha\t0\ncom.example.a\tBeta\t5\ncom.example.b\tSame\tx\n' >"$w/live"
+  printf '%s' "$w"
+}
+kchanged() { PATH="$W/bin:$PATH" LIVE="$W/live" DOTFILES_DIR="$W" DOTFILES_BASELINE_DIR="$W/snap" bash bin/dotfiles-baseline changed "$@"; }
+
+t "K1" "changed prints domain, key, old and new for a key whose live value differs from the snapshot, and nothing for the rest" '
+  W=$(kenv); out=$(kchanged t 2>/dev/null); rc=$?
+  [ "$rc" -eq 0 ] && [ "$out" = "$(printf "com.example.a\tAlpha\t1\t0")" ]'
+t "K2" "a key the OS no longer honours is BROKE territory, not a change" '
+  W=$(kenv); out=$(kchanged t 2>/dev/null); [ "$(printf "%s\n" "$out" | grep -c "Gone")" -eq 0 ]'
+t "K3" "no snapshot for the label: exit 0, nothing on stdout, a note on stderr" '
+  W=$(kenv); out=$(kchanged nosuch 2>/dev/null); rc=$?; err=$(kchanged nosuch 2>&1 >/dev/null)
+  [ "$rc" -eq 0 ] && [ -z "$out" ] && [ "$(printf "%s\n" "$err" | grep -c "no baseline")" -eq 1 ]'
+t "K4" "changed only reads: the stub defaults saw no write" '
+  W=$(kenv); printf "#!/bin/sh\necho \"\$*\" >>\"%s/calls\"\nexec \"%s/defaults.real\" \"\$@\"\n" "$W" "$W/bin" >"$W/wrap"
+  command mv "$W/bin/defaults" "$W/bin/defaults.real"; command cp "$W/wrap" "$W/bin/defaults"; chmod +x "$W/bin/defaults"
+  kchanged t >/dev/null 2>&1; [ "$(grep -vc "^read " "$W/calls")" -eq 0 ] && [ "$(grep -c "^read " "$W/calls")" -ge 1 ]'
+
 finish
