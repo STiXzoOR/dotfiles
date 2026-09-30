@@ -26,6 +26,10 @@
 # queries for the drift report (`brew leaves`, `brew list --cask`, `mas list`,
 # `code --list-extensions`) do run; pending installs are remembered in
 # ~/.local/state/dotfiles/sync-pending until an interactive run does them.
+# With the Jev `drift` point not off, undeclared packages, changed macOS
+# defaults and unmanaged ~/.config dirs are also classified (one batched request
+# per kind); `on` offers the pre-filled line behind a confirm, nothing is ever
+# written unconfirmed, committed, uninstalled or moved. See docs/agents/jev.md.
 # Once a day it also runs `dotfiles jev scan-vault` over the vault's
 # Claude-Sessions notes (they sync through iCloud, and a token pasted into a
 # session lands there) and notifies on hits: file and line, never the value.
@@ -67,6 +71,8 @@ source "$SELF_DIR/../scripts/echos.sh"
 source "$SELF_DIR/../scripts/lib/lists.sh"
 # shellcheck source=../scripts/lib/fs.sh
 source "$SELF_DIR/../scripts/lib/fs.sh"
+# shellcheck source=../scripts/lib/jev.sh
+source "$SELF_DIR/../scripts/lib/jev.sh"
 
 SCHEDULED=0
 ATTN=""    # one line per thing that needs the owner
@@ -360,6 +366,7 @@ in_list() { printf '%s\n' "$2" | grep -qixF -- "$1"; }
 report_drift() {
   say "== drift: installed on this Mac, declared in no list"
   local n=0 decl item base line id name
+  drift_jev_setup
 
   if command -v brew >/dev/null 2>&1; then
     decl=$(declared_brewfile_names brew)
@@ -368,6 +375,7 @@ report_drift() {
       base=${item##*/}
       if ! in_list "$item" "$decl" && ! in_list "$base" "$decl"; then
         say "  brew \"$item\"      (add to Brewfile, or Brewfile.local for private ones)"
+        [ "$DRIFT_JEV" -eq 1 ] && add_pkg_fact brew "$item"
         n=$((n + 1))
       fi
     done <<EOF
@@ -379,6 +387,7 @@ EOF
       base=${item##*/}
       if ! in_list "$item" "$decl" && ! in_list "$base" "$decl"; then
         say "  cask \"$item\"      (add to Brewfile, or Brewfile.local)"
+        [ "$DRIFT_JEV" -eq 1 ] && add_pkg_fact cask "$item"
         n=$((n + 1))
       fi
     done <<EOF
@@ -394,6 +403,7 @@ EOF
       name=$(printf '%s' "$line" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//; s/[[:space:]]+\([^)]*\)[[:space:]]*$//')
       if [ -n "$id" ] && ! in_list "$id" "$decl"; then
         say "  mas \"$name\", id: $id      (add to Brewfile, or Brewfile.local)"
+        [ "$DRIFT_JEV" -eq 1 ] && add_mas_fact "$id" "$name"
         n=$((n + 1))
       fi
     done <<EOF
@@ -421,6 +431,256 @@ EOF
     say "  none"
   else
     attn "$n installed package(s) are declared nowhere (dotfiles sync lists them)"
+  fi
+}
+
+#############################################################################
+# Drift, second half: Jev classifies what the report above only lists
+#############################################################################
+#
+# Facts are computed here, in shell, and go to `dotfiles-jev drift <kind>` as
+# one batched request per kind: installed packages (brew, casks, App Store),
+# macOS defaults that read back differently from the last baseline snapshot,
+# and directories under ~/.config the repo does not manage. Jev only picks a
+# choice per item; the line offered is built here from the fact, never taken
+# from Jev, and an item Jev names that was not in the facts is ignored.
+# Nothing is written without `confirm`, nothing is committed, nothing is
+# uninstalled or moved. Scheduled runs only notify. In shadow mode Jev is
+# asked and logs, and nothing here acts.
+
+DRIFT_SEEN="$STATE_DIR/drift-first-seen"
+BASELINE_BIN="${DOTFILES_BASELINE_BIN:-$SELF_DIR/dotfiles-baseline}"
+DRIFT_JEV=0   # 1 when Jev is to be asked (jq present, point not off)
+DRIFT_MODE=off
+DRIFT_PKG=""  # "key<TAB>facts" per undeclared package
+DRIFT_LINES="" # "key<TAB>line to add" per undeclared package
+DRIFT_HEADER=0
+DRIFT_SUGGESTED=0
+
+drift_jev_setup() {
+  DRIFT_JEV=0
+  command -v jq >/dev/null 2>&1 || return 0
+  DRIFT_MODE=$(jev_mode drift)
+  [ "$DRIFT_MODE" = off ] && return 0
+  [ -x "$JEV_BIN" ] || return 0
+  DRIFT_JEV=1
+}
+
+# first_seen <key>: the date this item was first seen undeclared. Recorded
+# now when new, so "how long has this been here" is a fact, not a guess.
+first_seen() {
+  local d
+  d=$(awk -F'\t' -v k="$1" '$1 == k { print $2; exit }' "$DRIFT_SEEN" 2>/dev/null)
+  if [ -z "$d" ]; then
+    d=$(date +%Y-%m-%d)
+    mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\t%s\n' "$1" "$d" >>"$DRIFT_SEEN" 2>/dev/null
+  fi
+  printf '%s' "$d"
+}
+
+one_line() { printf '%s' "$1" | tr '\t\n' '  ' | cut -c 1-160; }
+
+# add_pkg_fact <brew|cask> <name>
+add_pkg_fact() {
+  local key="$1:$2" desc dep=no kind
+  if [ "$1" = cask ]; then
+    kind=cask
+    desc=$(brew desc --cask "$2" 2>/dev/null)
+  else
+    kind="brew formula"
+    desc=$(brew desc "$2" 2>/dev/null)
+    [ -n "$(brew uses --installed "$2" 2>/dev/null)" ] && dep=yes
+  fi
+  desc=$(one_line "$(printf '%s' "$desc" | sed 's/^[^:]*: *//')")
+  DRIFT_PKG="${DRIFT_PKG}${key}"$'\t'"kind=$kind;${desc:+ description=$desc;} dependency=$dep; first seen $(first_seen "$key")"$'\n'
+  DRIFT_LINES="${DRIFT_LINES}${key}"$'\t'"$1 \"$2\""$'\n'
+}
+
+add_mas_fact() { # add_mas_fact <id> <name>
+  local key="mas:$1"
+  DRIFT_PKG="${DRIFT_PKG}${key}"$'\t'"kind=App Store app \"$(one_line "$2")\"; dependency=no; first seen $(first_seen "$key")"$'\n'
+  DRIFT_LINES="${DRIFT_LINES}${key}"$'\t'"mas \"$2\", id: $1"$'\n'
+}
+
+# ask_jev <kind> <facts>: the SUGGEST lines Jev returns, nothing on any error.
+# Interactive gets a longer timeout than the 2 s default (a batch is bigger
+# than one hunk); scheduled uses the 10 s scheduled default.
+ask_jev() {
+  local t=6
+  [ "$SCHEDULED" -eq 1 ] && t=""
+  printf '%s' "$2" | JEV_SCHEDULED="$([ "$SCHEDULED" -eq 1 ] && echo 1)" JEV_TIMEOUT="${JEV_TIMEOUT:-$t}" "$JEV_BIN" drift "$1" 2>/dev/null || true
+}
+
+drift_header() {
+  [ "$DRIFT_HEADER" -eq 1 ] && return 0
+  DRIFT_HEADER=1
+  say "== drift: what Jev suggests (nothing is written until you confirm)"
+}
+
+# append_line <file> <line>: never twice, and never onto an unterminated line.
+append_line() {
+  local f="$1"
+  grep -qxF -- "$2" "$f" 2>/dev/null && return 0
+  if [ -s "$f" ] && [ "$(tail -c 1 "$f" | wc -l | tr -d ' ')" -eq 0 ]; then
+    printf '\n' >>"$f"
+  fi
+  printf '%s\n' "$2" >>"$f"
+}
+
+# offer_line <choice-label> <line> <file> <what>: show it, and when
+# interactive and confirmed, append it.
+offer_line() {
+  local label="$1" line="$2" file="$3" what="$4"
+  drift_header
+  DRIFT_SUGGESTED=$((DRIFT_SUGGESTED + 1))
+  say "  Jev suggests $label: $line      (add to $what)"
+  [ "$SCHEDULED" -eq 1 ] && return 0
+  if confirm "Add $line to $what?"; then
+    append_line "$file" "$line" && say "    added to $what (not committed)"
+  else
+    say "    not added"
+  fi
+}
+
+drift_pkg() {
+  local out tag key choice p c line name
+  [ -n "$DRIFT_PKG" ] || return 0
+  out=$(ask_jev pkg "$DRIFT_PKG")
+  [ "$DRIFT_MODE" = on ] || return 0
+  while IFS=$'\t' read -r tag key choice p c; do
+    [ "$tag" = SUGGEST ] || continue
+    line=$(printf '%s' "$DRIFT_LINES" | awk -F'\t' -v k="$key" '$1 == k { print $2; exit }')
+    [ -n "$line" ] || continue
+    case "$choice" in
+      public) offer_line public "$line" "$DOTFILES_DIR/Brewfile" Brewfile ;;
+      private) offer_line private "$line" "$DOTFILES_DIR/Brewfile.local" Brewfile.local ;;
+      ignore)
+        drift_header
+        DRIFT_SUGGESTED=$((DRIFT_SUGGESTED + 1))
+        say "  Jev suggests ignore: $line      (an experiment, a dependency or transient; nothing to write)"
+        ;;
+      remove)
+        drift_header
+        DRIFT_SUGGESTED=$((DRIFT_SUGGESTED + 1))
+        name=${key#*:}
+        case "$key" in
+          brew:*) say "  Jev suggests remove (two calls agreed): $line      (run yourself: brew uninstall $name)" ;;
+          cask:*) say "  Jev suggests remove (two calls agreed): $line      (run yourself: brew uninstall --cask $name)" ;;
+          *) say "  Jev suggests remove (two calls agreed): $line      (remove it by hand)" ;;
+        esac
+        ;;
+    esac
+  done <<EOF
+$out
+EOF
+}
+
+# defaults_line <domain> <key> <new value>: the `defaults write` line, typed by
+# `defaults read-type`, or nothing when it cannot be written safely.
+defaults_line() {
+  local dom="$1" key="$2" val="$3" type k
+  type=$(defaults read-type "$dom" "$key" 2>/dev/null | sed -n 's/^Type is //p')
+  k="$key"
+  case "$key" in *[!A-Za-z0-9._-]*) k="\"$key\"" ;; esac
+  case "$key$dom" in *'"'* | *'$'* | *'`'* | *\\* | *"'"*) return 1 ;; esac
+  case "$type" in
+    boolean)
+      case "$val" in 1 | true | YES) printf 'defaults write %s %s -bool true' "$dom" "$k" ;; 0 | false | NO) printf 'defaults write %s %s -bool false' "$dom" "$k" ;; *) return 1 ;; esac
+      ;;
+    integer) case "$val" in '' | *[!0-9-]*) return 1 ;; esac; printf 'defaults write %s %s -int %s' "$dom" "$k" "$val" ;;
+    float) case "$val" in '' | *[!0-9.-]*) return 1 ;; esac; printf 'defaults write %s %s -float %s' "$dom" "$k" "$val" ;;
+    string)
+      case "$val" in '' | *[!A-Za-z0-9\ ._/:+,@=-]*) return 1 ;; esac
+      printf 'defaults write %s %s -string "%s"' "$dom" "$k" "$val"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+drift_defaults() {
+  local changed facts="" dom key old new k out tag choice p c line vals=""
+  changed=$("$BASELINE_BIN" changed 2>/dev/null) || true
+  [ -n "$changed" ] || return 0
+  while IFS=$'\t' read -r dom key old new; do
+    [ -n "$dom" ] && [ -n "$key" ] || continue
+    k="$dom $key"
+    facts="${facts}${k}"$'\t'"setting=$k; was $(one_line "$old"); now $(one_line "$new"); first seen $(first_seen "defaults:$k")"$'\n'
+    vals="${vals}${k}"$'\t'"$dom"$'\t'"$key"$'\t'"$new"$'\n'
+  done <<EOF
+$changed
+EOF
+  [ -n "$facts" ] || return 0
+  out=$(ask_jev defaults "$facts")
+  [ "$DRIFT_MODE" = on ] || return 0
+  while IFS=$'\t' read -r tag k choice p c; do
+    [ "$tag" = SUGGEST ] || continue
+    IFS=$'\t' read -r _ dom key new <<EOF
+$(printf '%s' "$vals" | awk -F'\t' -v k="$k" '$1 == k { print; exit }')
+EOF
+    [ -n "$dom" ] || continue
+    case "$choice" in
+      public | local-only)
+        if line=$(defaults_line "$dom" "$key" "$new"); then
+          if [ "$choice" = public ]; then
+            offer_line public "$line" "$DOTFILES_DIR/macos/defaults.sh" macos/defaults.sh
+          else
+            offer_line local-only "$line" "$DOTFILES_DIR/macos/local.sh" macos/local.sh
+          fi
+        else
+          drift_header
+          DRIFT_SUGGESTED=$((DRIFT_SUGGESTED + 1))
+          say "  Jev suggests $choice: $k      (review by hand: a defaults write line that is safe to append could not be built)"
+        fi
+        ;;
+      transient)
+        drift_header
+        DRIFT_SUGGESTED=$((DRIFT_SUGGESTED + 1))
+        say "  Jev suggests transient: $k      (application state or a one-off change; nothing to write)"
+        ;;
+    esac
+    dom=""
+  done <<EOF
+$out
+EOF
+}
+
+drift_config() {
+  local facts="" d name n kb out tag key choice p c
+  [ -d "$XDG_CONFIG_HOME" ] || return 0
+  for d in "$XDG_CONFIG_HOME"/*; do
+    [ -d "$d" ] && [ ! -L "$d" ] || continue
+    name=${d##*/}
+    [ -e "$DOTFILES_DIR/config/$name" ] && continue
+    n=$(find "$d" -type f 2>/dev/null | wc -l | tr -d ' ')
+    kb=$(du -sk "$d" 2>/dev/null | cut -f1)
+    facts="${facts}${name}"$'\t'"directory ~/.config/$name; files=$n; size=${kb:-?} KB; first seen $(first_seen "config:$name")"$'\n'
+  done
+  [ -n "$facts" ] || return 0
+  out=$(ask_jev config "$facts")
+  [ "$DRIFT_MODE" = on ] || return 0
+  while IFS=$'\t' read -r tag key choice p c; do
+    [ "$tag" = SUGGEST ] || continue
+    printf '%s' "$facts" | awk -F'\t' -v k="$key" '$1 == k { f = 1 } END { exit !f }' || continue
+    drift_header
+    DRIFT_SUGGESTED=$((DRIFT_SUGGESTED + 1))
+    case "$choice" in
+      capture)
+        say "  Jev suggests capture: ~/.config/$key      (move it into the repo, then link: mv \"$XDG_CONFIG_HOME/$key\" \"$DOTFILES_DIR/config/$key\" && dotfiles link)"
+        ;;
+      ignore) say "  Jev suggests ignore: ~/.config/$key      (cache, state or application data; nothing to do)" ;;
+    esac
+  done <<EOF
+$out
+EOF
+}
+
+jev_drift() {
+  [ "$DRIFT_JEV" -eq 1 ] || return 0
+  drift_pkg
+  drift_defaults
+  drift_config
+  if [ "$DRIFT_SUGGESTED" -gt 0 ] && [ "$SCHEDULED" -eq 1 ]; then
+    attn "Jev suggests $DRIFT_SUGGESTED drift item(s) to classify (run dotfiles sync)"
   fi
 }
 
@@ -534,6 +794,7 @@ main() {
   collect_pending
   do_pending
   report_drift
+  jev_drift
   [ "$SCHEDULED" -eq 1 ] && scan_vault_daily
 
   if [ "$SCHEDULED" -eq 1 ]; then

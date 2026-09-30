@@ -122,6 +122,8 @@ mas \"Xcode\", id: 497799835" "config/mise/config.toml:[tools]" "claude/rules.md
   stub "$w/bin" brew 'case "$*" in
   "leaves --installed-on-request") cat "$STUB_STATE/leaves" 2>/dev/null ;;
   "list --cask -1") cat "$STUB_STATE/casks" 2>/dev/null ;;
+  "desc "*) n="${!#}"; printf "%s: Description of %s\n" "$n" "$n" ;;
+  "uses --installed "*) cat "$STUB_STATE/uses-$3" 2>/dev/null ;;
   "bundle check"*) [ -f "$STUB_STATE/unsatisfied" ] && exit 1 ;;
 esac
 exit 0'
@@ -143,7 +145,7 @@ syn() {
   env -i HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" DOTFILES_DIR="$W/pub" DOTFILES_PRIVATE_DIR="$W/priv" \
     DOTFILES_BIN="$W/bin/dotfiles-stub" XDG_CONFIG_HOME="$W/home/.config" STUB_LOG="$W/log" STUB_STATE="$W/state" \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid \
-    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid \
+    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid DOTFILES_JEV=off \
     ${SYNENV:-} bash "$ROOT_DIR/bin/dotfiles-sync" "$@" </dev/null
 }
 sy_env() { local SYNENV="$1"; shift; "$@"; }
@@ -365,6 +367,143 @@ t "S8.9" "the scan is report-only: it never edits, deletes or moves anything in 
   W=$(senv); d=$(vault_of "$W"); tok="ghp_$(rand_chars 36 A-Za-z0-9)"; printf "x=%s\n" "$tok" >"$d/s.md"
   a=$(shasum "$d/s.md"); syn --scheduled >/dev/null 2>&1; [ "$(shasum "$d/s.md")" = "$a" ] && [ "$(ls "$d" | wc -l | tr -d " ")" -eq 1 ]'
 
+
+#############################################################################
+section "D -- Task 13: drift that notices itself (Jev classifies the undeclared)"
+#############################################################################
+# dstub <W> [mode]: a private-repo-independent jev.conf (drift=<mode>, default
+# on), a dotfiles-jev that records its stdin (the facts) per kind and prints
+# $STUB_STATE/suggest-<kind>, a dotfiles-baseline that prints
+# $STUB_STATE/changed, and a defaults that only answers read-type.
+dstub() {
+  printf 'drift=%s\n' "${2:-on}" >"$1/jev.conf"
+  stub "$1/bin" dotfiles-jev-stub 'case "$1" in drift) echo "JEV_SCHEDULED=${JEV_SCHEDULED:-} JEV_TIMEOUT=${JEV_TIMEOUT:-}" >>"$STUB_LOG"; cat >"$STUB_STATE/facts-$2"; cat "$STUB_STATE/suggest-$2" 2>/dev/null ;; esac; exit ${JEVSTUB_RC:-0}'
+  stub "$1/bin" dotfiles-baseline-stub 'cat "$STUB_STATE/changed" 2>/dev/null'
+  stub "$1/bin" defaults 'case "$1" in read-type) printf "Type is %s\n" "$(cat "$STUB_STATE/deftype" 2>/dev/null || echo boolean)" ;; esac'
+}
+# dsyn <args>: syn with Jev switched on and pointed at the stubs. $DX adds VAR=val.
+dsyn() {
+  local SYNENV="DOTFILES_JEV= DOTFILES_JEV_CONFIG=$W/jev.conf DOTFILES_JEV_BIN=$W/bin/dotfiles-jev-stub DOTFILES_BASELINE_BIN=$W/bin/dotfiles-baseline-stub ${DX:-}"
+  syn "$@"
+}
+_suggest() { printf 'SUGGEST\t%s\t%s\t0.9\t0.9\n' "$2" "$3" >>"$W/state/suggest-$1"; }
+_facts() { command cat "$W/state/facts-$1" 2>/dev/null; }
+_lines() { command cat "$W/$1" 2>/dev/null; }
+_undeclared() { printf 'wget\nfzf\njq\n' >"$W/state/leaves"; }
+
+t "D1.1" "an undeclared formula goes to Jev as one fact line: name, description, dependency, first-seen date" '
+  W=$(senv); dstub "$W"; _undeclared; dsyn >/dev/null 2>&1
+  f=$(_facts pkg); today=$(date +%Y-%m-%d)
+  [ "$(printf "%s\n" "$f" | grep -c "^brew:jq	")" -eq 1 ] && [ "$(printf "%s\n" "$f" | grep -c "description=Description of jq")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$f" | grep -c "dependency=no")" -eq 1 ] && [ "$(printf "%s\n" "$f" | grep -c "first seen $today")" -eq 1 ]'
+t "D1.2" "formulae, casks and App Store apps are one batched request, not one each" '
+  W=$(senv); dstub "$W"; _undeclared; printf "iterm2\nslack\n" >"$W/state/casks"; printf "497799835  Xcode  (16.0)\n111  Amphetamine  (5.0)\n" >"$W/state/mas"
+  dsyn >/dev/null 2>&1; f=$(_facts pkg)
+  [ "$(_calls "^dotfiles-jev-stub drift pkg")" -eq 1 ] && [ "$(printf "%s\n" "$f" | grep -c .)" -eq 3 ] &&
+  [ "$(printf "%s\n" "$f" | grep -c "^cask:slack	")" -eq 1 ] && [ "$(printf "%s\n" "$f" | grep -c "^mas:111	.*Amphetamine")" -eq 1 ]'
+t "D1.3" "a formula another installed formula needs is marked as a dependency" '
+  W=$(senv); dstub "$W"; _undeclared; printf "ffmpeg\n" >"$W/state/uses-jq"; dsyn >/dev/null 2>&1
+  [ "$(_facts pkg | grep -c "dependency=yes")" -eq 1 ]'
+t "D1.4" "the first-seen date is remembered: an item seen earlier keeps its old date" '
+  W=$(senv); dstub "$W"; _undeclared; mkdir -p "$W/home/.local/state/dotfiles"
+  printf "brew:jq\t2026-01-05\n" >"$W/home/.local/state/dotfiles/drift-first-seen"
+  dsyn >/dev/null 2>&1; dsyn >/dev/null 2>&1
+  [ "$(_facts pkg | grep -c "first seen 2026-01-05")" -eq 1 ] && [ "$(grep -c "^brew:jq" "$W/home/.local/state/dotfiles/drift-first-seen")" -eq 1 ]'
+t "D1.9" "a first sighting is recorded with today's date, once, for the next run" '
+  W=$(senv); dstub "$W"; _undeclared; dsyn >/dev/null 2>&1; dsyn >/dev/null 2>&1
+  [ "$(grep -c "^brew:jq$(printf "\t")$(date +%Y-%m-%d)$" "$W/home/.local/state/dotfiles/drift-first-seen")" -eq 1 ]'
+t "D1.5" "nothing undeclared: Jev is not asked" '
+  W=$(senv); dstub "$W"; dsyn >/dev/null 2>&1; [ "$(_calls "^dotfiles-jev-stub drift pkg")" -eq 0 ]'
+t "D1.6" "with Jev switched off (the master switch or the point) nothing is asked and no fact is gathered" '
+  W=$(senv); dstub "$W"; _undeclared; DX="DOTFILES_JEV=off" dsyn >/dev/null 2>&1; a=$(_calls "^dotfiles-jev-stub drift")
+  W2=$(senv); W=$W2; dstub "$W" off; _undeclared; dsyn >/dev/null 2>&1
+  [ "$a" -eq 0 ] && [ "$(_calls "^dotfiles-jev-stub drift")" -eq 0 ] && [ "$(_calls "^brew desc")" -eq 0 ]'
+t "D1.7" "a Jev that fails changes nothing: the deterministic report is complete, and the exit status is 0" '
+  W=$(senv); dstub "$W"; _undeclared; out=$(DX="JEVSTUB_RC=3" dsyn 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -qF "brew \"jq\"" && printf "%s\n" "$out" | grep -q "declared nowhere\|^== drift"'
+t "D1.8" "interactive requests get a longer timeout than the 2 s default; scheduled ones mark JEV_SCHEDULED for the 10 s" '
+  W=$(senv); dstub "$W"; _undeclared; dsyn >/dev/null 2>&1; a=$(grep "^JEV_SCHEDULED=" "$W/log" | head -n 1)
+  : >"$W/log"; dsyn --scheduled >/dev/null 2>&1; b=$(grep "^JEV_SCHEDULED=" "$W/log" | head -n 1)
+  [ "$a" = "JEV_SCHEDULED= JEV_TIMEOUT=6" ] && [ "$b" = "JEV_SCHEDULED=1 JEV_TIMEOUT=" ]'
+
+t "D2.1" "on, confirmed: a public suggestion appends the exact line to the public Brewfile, and nothing is committed" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; h=$(_head pub)
+  DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  [ "$(_lines pub/Brewfile | tail -n 1)" = "brew \"jq\"" ] && [ "$(_lines pub/Brewfile.local | grep -c jq)" -eq 0 ] && [ "$(_head pub)" = "$h" ]'
+t "D2.2" "a private suggestion goes to Brewfile.local, a cask and an App Store app as their own lines" '
+  W=$(senv); dstub "$W"; _undeclared; printf "iterm2\nslack\n" >"$W/state/casks"; printf "497799835  Xcode  (16.0)\n111  Amphetamine  (5.0)\n" >"$W/state/mas"
+  _suggest pkg brew:jq private; _suggest pkg cask:slack public; _suggest pkg mas:111 private
+  DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  [ "$(_lines pub/Brewfile.local | grep -c "^brew \"jq\"$")" -eq 1 ] && [ "$(_lines pub/Brewfile | grep -c "^cask \"slack\"$")" -eq 1 ] &&
+  [ "$(_lines pub/Brewfile.local | grep -c "^mas \"Amphetamine\", id: 111$")" -eq 1 ]'
+t "D2.3" "interactive and not confirmed (no answer): the line is offered and nothing is written" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile"); out=$(dsyn 2>&1)
+  [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && printf "%s\n" "$out" | grep -qF "Jev suggests public: brew \"jq\"      (add to Brewfile)"'
+t "D2.4" "a private suggestion names Brewfile.local as the file" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq private
+  out=$(dsyn 2>&1); printf "%s\n" "$out" | grep -qF "Jev suggests private: brew \"jq\"      (add to Brewfile.local)"'
+t "D2.5" "an ignore suggestion is reported and writes nothing, even confirmed" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq ignore; b=$(shasum "$W/pub/Brewfile" "$W/pub/Brewfile.local")
+  out=$(DX="DOTFILES_YES=1" dsyn 2>&1); [ "$(shasum "$W/pub/Brewfile" "$W/pub/Brewfile.local")" = "$b" ] && printf "%s\n" "$out" | grep -q "ignore"'
+t "D2.6" "a remove suggestion prints the uninstall command and never runs it, even confirmed" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq remove; b=$(shasum "$W/pub/Brewfile")
+  out=$(DX="DOTFILES_YES=1" dsyn 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "brew uninstall jq")" -ge 1 ] && [ "$(_calls "^brew uninstall")" -eq 0 ] && [ "$(shasum "$W/pub/Brewfile")" = "$b" ]'
+t "D2.7" "a suggestion for something that was not in the facts is ignored: Jev never invents a line" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg "brew:evil; touch $W/pwned" public; _suggest pkg brew:wget public
+  b=$(shasum "$W/pub/Brewfile"); DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && [ ! -e "$W/pwned" ]'
+t "D2.8" "an item already declared by an earlier confirm is not appended twice" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1; [ "$(_lines pub/Brewfile | grep -c "^brew \"jq\"$")" -eq 1 ]'
+t "D2.9" "shadow mode: Jev is asked, but even a SUGGEST line from it is not acted on" '
+  W=$(senv); dstub "$W" shadow; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile")
+  out=$(DX="DOTFILES_YES=1" dsyn 2>&1); [ "$(_calls "^dotfiles-jev-stub drift pkg")" -eq 1 ] && [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && [ "$(printf "%s\n" "$out" | grep -c "Add brew")" -eq 0 ]'
+t "D2.10" "scheduled: no prompt, no write, and the single notification says Jev has suggestions" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile")
+  DX="DOTFILES_YES=1" dsyn --scheduled >/dev/null 2>&1
+  [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && [ "$(_calls "^osascript")" -eq 1 ] && grep "^osascript" "$W/log" | grep -q "Jev suggests"'
+
+t "D3.1" "changed defaults go to Jev as one batch: domain and key, old and new value, first-seen date" '
+  W=$(senv); dstub "$W"; printf "com.example.a\tAlpha\t1\t0\ncom.example.a\tBeta\t5\t6\n" >"$W/state/changed"; dsyn >/dev/null 2>&1
+  f=$(_facts defaults)
+  [ "$(_calls "^dotfiles-jev-stub drift defaults")" -eq 1 ] && [ "$(printf "%s\n" "$f" | grep -c .)" -eq 2 ] &&
+  [ "$(printf "%s\n" "$f" | grep -c "^com.example.a Alpha	.*was 1.*now 0.*first seen $(date +%Y-%m-%d)")" -eq 1 ]'
+t "D3.2" "no changed defaults: Jev is not asked" '
+  W=$(senv); dstub "$W"; dsyn >/dev/null 2>&1; [ "$(_calls "^dotfiles-jev-stub drift defaults")" -eq 0 ]'
+t "D3.3" "public: the defaults write line, typed by defaults read-type, is appended to macos/defaults.sh on confirm" '
+  W=$(senv); dstub "$W"; mkdir -p "$W/pub/macos"; : >"$W/pub/macos/defaults.sh"; printf "com.example.a\tAlpha\t1\t0\n" >"$W/state/changed"
+  _suggest defaults "com.example.a Alpha" public; DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  [ "$(_lines pub/macos/defaults.sh | tail -n 1)" = "defaults write com.example.a Alpha -bool false" ]'
+t "D3.4" "local-only: the same line goes to macos/local.sh" '
+  W=$(senv); dstub "$W"; mkdir -p "$W/pub/macos"; printf "com.example.a\tBeta\t5\t6\n" >"$W/state/changed"; printf "integer" >"$W/state/deftype"
+  _suggest defaults "com.example.a Beta" local-only; DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  [ "$(_lines pub/macos/local.sh | tail -n 1)" = "defaults write com.example.a Beta -int 6" ]'
+t "D3.5" "a value that cannot be written safely (a string with a quote or a dollar) is shown, never appended" '
+  W=$(senv); dstub "$W"; mkdir -p "$W/pub/macos"; : >"$W/pub/macos/defaults.sh"; printf "com.example.a\tPath\told\t\$HOME/x\n" >"$W/state/changed"; printf "string" >"$W/state/deftype"
+  _suggest defaults "com.example.a Path" public; out=$(DX="DOTFILES_YES=1" dsyn 2>&1)
+  [ ! -s "$W/pub/macos/defaults.sh" ] && printf "%s\n" "$out" | grep -q "by hand"'
+t "D3.6" "transient is reported and writes nothing" '
+  W=$(senv); dstub "$W"; mkdir -p "$W/pub/macos"; : >"$W/pub/macos/defaults.sh"; printf "com.example.a\tAlpha\t1\t0\n" >"$W/state/changed"
+  _suggest defaults "com.example.a Alpha" transient; out=$(DX="DOTFILES_YES=1" dsyn 2>&1)
+  [ ! -s "$W/pub/macos/defaults.sh" ] && printf "%s\n" "$out" | grep -q "transient"'
+
+t "D4.1" "unmanaged ~/.config directories go to Jev: real dirs the repo has no config/<name> for, not links, not managed ones" '
+  W=$(senv); dstub "$W"; mkdir -p "$W/home/.config/newtool/sub" "$W/home/.config/managed" "$W/pub/config/managed" "$W/elsewhere"
+  printf "a\n" >"$W/home/.config/newtool/a.conf"; printf "b\n" >"$W/home/.config/newtool/sub/b"; ln -s "$W/elsewhere" "$W/home/.config/linked"; printf "x\n" >"$W/home/.config/loose-file"
+  dsyn >/dev/null 2>&1; f=$(_facts config)
+  [ "$(_calls "^dotfiles-jev-stub drift config")" -eq 1 ] && [ "$(printf "%s\n" "$f" | grep -c .)" -eq 1 ] &&
+  [ "$(printf "%s\n" "$f" | grep -c "^newtool	.*files=2.*first seen $(date +%Y-%m-%d)")" -eq 1 ]'
+t "D4.2" "capture: the exact move-and-link command is printed and nothing is moved, even confirmed" '
+  W=$(senv); dstub "$W"; mkdir -p "$W/home/.config/newtool"; printf "a\n" >"$W/home/.config/newtool/a.conf"; _suggest config newtool capture
+  out=$(DX="DOTFILES_YES=1" dsyn 2>&1)
+  [ -f "$W/home/.config/newtool/a.conf" ] && [ ! -e "$W/pub/config/newtool" ] && printf "%s\n" "$out" | grep -qF "mv \"$W/home/.config/newtool\" \"$W/pub/config/newtool\"" && printf "%s\n" "$out" | grep -q "dotfiles link"'
+t "D4.3" "no unmanaged directory: Jev is not asked" '
+  W=$(senv); dstub "$W"; mkdir -p "$W/home/.config"; dsyn >/dev/null 2>&1; [ "$(_calls "^dotfiles-jev-stub drift config")" -eq 0 ]'
+
+t "D5.1" "sync never writes to a Brewfile or a defaults file without going through confirm" '
+  c=$(code_of bin/dotfiles-sync)
+  [ "$(printf "%s\n" "$c" | grep -c "confirm \"Add ")" -ge 1 ] && [ "$(printf "%s\n" "$c" | grep -c "^[[:space:]]*brew uninstall")" -eq 0 ]'
 
 #############################################################################
 section "V -- dotfiles vault migrate (bin/dotfiles-vault)"
