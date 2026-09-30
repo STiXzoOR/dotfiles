@@ -1,11 +1,48 @@
 # app|process name (pgrep -x). dotfiles-apps restore refuses while any of
-# these run. Every allowlisted app needs at least one line (check enforces it).
+# these run. `app|-` marks a CLI-only app with no process to wait for. Every allowlisted app needs at least one line (check enforces it).
+adobe-camera-raw|Adobe Photoshop 2025
+apple-music|Music
+bambu-studio|BambuStudio
 bartender|Bartender 6 Setapp
+blender|Blender
+brave|Brave Browser
+claude-usage|Claude Usage
+cleanmymac-setapp|CleanMyMac_5_Setapp
 cleanshot|CleanShot X Setapp
+codexbar|CodexBar
+daisydisk|DaisyDisk
 flux|Flux
+gitkraken-settings|GitKraken
+iina|IINA
+illustrator|Adobe Illustrator
 istat-menus-setapp|iStat Menus
+keka|Keka
 magnet|Magnet
+mail|Mail
+microsoft-remote-desktop|Windows App
 openemu-settings|OpenEmu
+opera|Opera
+paste-setapp|Paste
+photoshop|Adobe Photoshop 2025
 pixelsnap2-setapp|PixelSnap 2 Setapp
+playcover|PlayCover
 proxyman-setapp|Proxyman
+shottr|Shottr
 spark-setapp|Spark Mail
+supercharge-setapp|Supercharge
+telegram_macos|Telegram
+terminal|Terminal
+transmission|Transmission
+tunnelblick|Tunnelblick
+vectormagic|Vector Magic
+vlc|VLC
+warp|stable
+xcode-settings|Xcode
+zoom|zoom.us
+aws|-
+fish|-
+mkcert|-
+ngrok|-
+opencode|-
+quicklook|-
+zoxide|-

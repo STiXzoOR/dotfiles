@@ -24,46 +24,89 @@ dotfiles apps undo                        put back the latest rescue copy
   `config/mackup/mackup.cfg`.
 - `dotfiles apps check` enforces the rule instead of documenting it. It resolves
   every path each allowlisted app covers (`mackup show <app>`) and fails, naming
-  the app and the path, if a path is or contains (or sits inside) a stow target,
-  an `apps/`, `claude/` or `codex/` target, or the preferences plist (or
-  container) of a domain the defaults scripts write. Domains come from the same
-  key extraction `dotfiles-baseline` uses. `backup` and `restore` run it first
+  the app and the path, if a path is or contains (or sits inside) a stow target
+  or a `claude/`, `codex/` or `vscode` target. `backup` and `restore` run it first
   and refuse on overlap.
+- **Defaults overlap is allowed.** A path that is the preferences plist (or
+  container) of a domain `macos/defaults*.sh` writes, or an `apps/<name>/` target
+  installed by `macos/defaults-<name>.sh`, is reported as one `info:` line per
+  app. After `apps restore`, `dotfiles configure --defaults` re-applies the
+  dotfiles' keys over the restored ones, so `restore` ends by printing that
+  instruction whenever a restored app overlaps. Domains come from the same key
+  extraction `dotfiles-baseline` uses. Stow overlap stays a hard failure.
 - `check` fails closed: it also refuses when `dotfiles-baseline` fails or finds no
   domains, or when `runcom/` or `config/` hold nothing (an empty owned set would let
   everything through). It also fails on an empty allowlist (an empty list makes mackup back up
   every supported app), on an unknown app, on an allowlisted app with no entry
-  in `config/mackup/processes.list`, and when `apps/` gains a directory that is
+  in `config/mackup/processes.list` (`app|-` maps a CLI-only app that has no process), and when `apps/` gains a directory that is
   not in the maintained target list (`app_targets` in `bin/dotfiles-apps`; the
   install scripts compute those paths in shell variables, so there is nothing
   safe to parse). Add the new directory there.
 
 ## What is in the allowlist, and why
 
-Only apps whose preference files exist outside another app's sandbox container,
-so mackup can read them without a TCC prompt. Setapp builds keep preferences in
-`<bundle-id>-setapp.plist`, which several of mackup's built-in definitions miss,
-so those get a custom definition in `config/mackup/applications/` (stowed to
-`~/.config/mackup/applications/`, which is where mackup 0.11 looks; a config in
-`$HOME` or `$XDG_CONFIG_HOME/mackup/mackup.cfg` is only a default, the wrapper
-always passes `-c`).
+Setapp builds keep preferences in `<bundle-id>-setapp.plist`, which several of
+mackup's built-in definitions miss, so those get a custom definition in
+`config/mackup/applications/` (stowed to `~/.config/mackup/applications/`, which
+is where mackup 0.11 looks; a config in `$HOME` or `$XDG_CONFIG_HOME/mackup/mackup.cfg`
+is only a default, the wrapper always passes `-c`). Container apps are allowed:
+reading a container file from an interactive shell raises no dialog. Credentials
+in these files (aws, mkcert's root key, ngrok, Tunnelblick configs) go to iCloud;
+that is the owner's decision.
 
-| Allowlist entry      | Covers                                                        |
-| -------------------- | ------------------------------------------------------------- |
-| `bartender`          | built-in: the Setapp and standard plist                       |
-| `cleanshot`          | built-in: the Setapp and standard plist                       |
-| `flux`               | built-in: `org.herf.Flux.plist`                               |
-| `magnet`             | built-in: `com.crowdcafe.windowmagnet.plist`                  |
-| `istat-menus-setapp` | custom: the three `com.bjango.istatmenus-setapp*.plist`       |
-| `openemu-settings`   | custom: OpenEmu plist, key bindings, save states (not cores or the game library) |
-| `pixelsnap2-setapp`  | custom: the `-setapp` plist                                   |
-| `proxyman-setapp`    | custom: the `-setapp` plist only (the built-in also copies certificate material) |
-| `spark-setapp`       | custom: the `-setapp` plist                                   |
+| Allowlist entry | Covers |
+| --- | --- |
+| `adobe-camera-raw` | built-in: Application Support/Adobe/CameraRaw |
+| `apple-music` | built-in: Music plists and Scripts |
+| `aws` | built-in: `~/.aws` |
+| `bartender`, `cleanshot` | built-in: the Setapp and standard plist |
+| `blender` | built-in: `~/.config/blender`, Application Support/Blender |
+| `brave` | built-in: the Default profile Preferences file |
+| `fish` | built-in: `~/.config/fish` |
+| `flux` | built-in: `org.herf.Flux.plist` |
+| `iina` | built-in: plist and input_conf |
+| `illustrator`, `photoshop` | built-in: Adobe preferences, presets, workspaces |
+| `magnet` | built-in: `com.crowdcafe.windowmagnet.plist` |
+| `mail` | built-in: `com.apple.mail.plist` (defaults overlap) |
+| `microsoft-remote-desktop` | built-in: the `com.microsoft.rdc.macos` container plist |
+| `mkcert` | built-in: Application Support/mkcert (includes the root CA key) |
+| `ngrok` | built-in: `~/.ngrok`, `~/.ngrok2` |
+| `opencode` | built-in: `~/.config/opencode`, auth.json |
+| `opera` | built-in: Opera plists and Application Support |
+| `quicklook` | built-in: `~/Library/Quicklook` |
+| `telegram_macos` | built-in: `ru.keepcoder.Telegram.plist` |
+| `terminal` | built-in: `com.apple.Terminal.plist` (defaults overlap, `apps/terminal`) |
+| `transmission` | built-in: plist and `~/.config/transmission*` (defaults overlap) |
+| `tunnelblick` | built-in: Tunnelblick Configurations |
+| `vlc` | built-in: plists, Application Support, `org.videolan.vlc` (`apps/vlc` overlap) |
+| `warp` | built-in: `~/.warp` (`apps/warp` overlap) |
+| `zoom` | built-in: the `us.zoom.*` plists |
+| `zoxide` | built-in: Application Support/zoxide |
+| `bambu-studio` | custom: plist, `BambuStudio.conf`, `BambuNetworkEngine.conf`, `printers`, `user` (not plugins, system, ota, cache or logs) |
+| `claude-usage` | custom: `HamedElfayome.Claude-Usage.plist` |
+| `cleanmymac-setapp` | custom: the `-setapp` plist |
+| `codexbar` | custom: `com.steipete.codexbar.plist` |
+| `daisydisk` | custom: the container preferences plist |
+| `gitkraken-settings` | custom: `com.axosoft.gitkraken.plist` only (the built-in copies `~/.gitkraken`, where the dotfiles symlink the profile and theme, and a backup refuses symlinks) |
+| `istat-menus-setapp` | custom: the three `com.bjango.istatmenus-setapp*.plist` |
+| `keka` | custom: the container preferences plist |
+| `openemu-settings` | custom: OpenEmu plist, key bindings, save states (not cores or the game library) |
+| `paste-setapp` | custom: the `-setapp` plist |
+| `pixelsnap2-setapp` | custom: the `-setapp` plist |
+| `playcover` | custom: `io.playcover.PlayCover.plist` |
+| `proxyman-setapp` | custom: the `-setapp` plist only (the built-in also copies certificate material) |
+| `shottr` | custom: the container plist, and the Preferences plist for a non-sandboxed build |
+| `spark-setapp` | custom: the `-setapp` plist |
+| `supercharge-setapp` | custom: the `-setapp` plist |
+| `vectormagic` | custom: both `com.vectormagic.*` plists |
+| `xcode-settings` | custom: the built-in's paths minus FontAndColorThemes (the dotfiles symlink the Nord theme there) |
 
-Defined but **not** allowlisted: `shottr` (sandboxed; add it only after checking
-that `~/Library/Preferences/cc.ffitch.shottr.plist` exists on that Mac). Left out
-on purpose: DaisyDisk and Keka (their data lives in `~/Library/Containers`, a
-TCC prompt).
+### Deliberately not added
+
+- `bash`, `zsh`, `prezto`, `ruby`, `git`, `github-cli`, `mise`, `neovim`, `karabiner-elements`, `vscode`, `mackup`, `claude-code`, `codex`, `ssh`: stowed or installer-managed, a copy would replace the dotfiles' symlink.
+- `macosx`: the whole `.GlobalPreferences` is risky across macOS versions; `configure` sets the wanted keys.
+- `openemu`, `proxyman`: superseded by `openemu-settings` and `proxyman-setapp`.
+- `gitkraken`, `xcode`: replaced by `gitkraken-settings` and `xcode-settings` (symlinks, above).
 
 To add an app: put its name under `[applications_to_sync]`, add a
 `processes.list` line (`app|process name`, matched with `pgrep -x`), add a
@@ -171,9 +214,9 @@ it. Once iCloud Drive has synced and the apps are installed (and quit):
 ## TCC notes
 
 mackup reads `~/Library/Preferences` and the odd `~/Library/Application Support`
-folder. Those are readable without a prompt; files inside
-`~/Library/Containers/<bundle-id>` are not (macOS asks the first time, and a
-launchd job cannot answer). A denial shows up in mackup's output as
+folder without a prompt. Files inside `~/Library/Containers/<bundle-id>` read
+without one from an interactive shell on this setup, but a launchd job cannot
+answer a prompt if macOS ever asks. A denial shows up in mackup's output as
 `Operation not permitted` or `permission issue`; the wrapper reports it by app
 and publishes nothing. Grant the terminal (or `/bin/bash` for the agent) Full Disk
 Access, or take the app off the allowlist.

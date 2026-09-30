@@ -152,22 +152,36 @@ t "G2.5" "an app covering a claude/ target fails" \
 t "G2.6" "an app covering a codex/ target fails" \
   'W=$(newenv); add_app "$W" codexapp ".codex/config.toml"; set_allow "$W" alpha codexapp
    refused OVERLAP check'
-t "G2.7" "an app covering an apps/ target (warp, vlc, vscode, gitkraken, xcode) fails" \
+t "G2.7" "an app covering a vscode, claude/ or codex/ target fails (no defaults script re-applies them)" \
   'W=$(newenv); rc=0
-   for p in ".warp/settings.toml" "Library/Preferences/org.videolan.vlc/vlcrc" "Library/Application Support/Code/User/settings.json" ".gitkraken/profiles" "Library/Developer/Xcode/UserData/FontAndColorThemes/Nord.xccolortheme"; do
+   for p in "Library/Application Support/Code/User/settings.json" ".claude/settings.json" ".codex/config.toml"; do
      add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
      refused OVERLAP check || rc=1
    done; [ "$rc" -eq 0 ]'
-t "G2.8" "an app whose plist is a domain macos/defaults*.sh writes fails" \
-  'W=$(newenv); add_app "$W" domapp "Library/Preferences/com.apple.dock.plist"; set_allow "$W" alpha domapp
+t "G2.7b" "an app covering an apps/ target that macos/defaults-<app>.sh installs (warp, vlc, gitkraken, xcode, terminal) passes with an info line" \
+  'W=$(newenv); rc=0
+   for p in ".warp/settings.toml" "Library/Preferences/org.videolan.vlc/vlcrc" ".gitkraken/profiles" "Library/Developer/Xcode/UserData/FontAndColorThemes/Nord.xccolortheme" "Library/Preferences/com.apple.Terminal.plist"; do
+     add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
+     out=$(run_apps check 2>&1) && ! printf "%s\n" "$out" | grep -q OVERLAP && printf "%s\n" "$out" | grep -q "^info: appsapp" || rc=1
+   done; [ "$rc" -eq 0 ]'
+t "G2.8" "an app whose plist is a domain macos/defaults*.sh writes passes, with one info line naming app and domain" \
+  'W=$(newenv); add_app "$W" domapp "Library/Preferences/com.apple.dock.plist" "Library/Preferences/com.apple.dock.extra.plist"; set_allow "$W" alpha domapp
    out=$(run_apps check 2>&1); rc=$?
-   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "domapp" && printf "%s\n" "$out" | grep -q "com.apple.dock"'
-t "G2.9" "domain matching is case-insensitive (COM.APPLE.TERMINAL.plist vs com.apple.terminal)" \
-  'W=$(newenv); add_app "$W" termapp "Library/Preferences/COM.APPLE.TERMINAL.plist"; set_allow "$W" alpha termapp
-   refused OVERLAP check'
-t "G2.10" "the global domain plist is protected" \
+   [ "$rc" -eq 0 ] && ! printf "%s\n" "$out" | grep -q OVERLAP &&
+   [ "$(printf "%s\n" "$out" | grep -c "domapp")" -eq 1 ] && printf "%s\n" "$out" | grep "domapp" | grep -q "com.apple.dock"'
+t "G2.9" "domain matching is case-insensitive (COM.APPLE.DOCK.plist vs com.apple.dock)" \
+  'W=$(newenv); add_app "$W" termapp "Library/Preferences/COM.APPLE.DOCK.plist"; set_allow "$W" alpha termapp
+   out=$(run_apps check 2>&1); rc=$?
+       [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -q "termapp"'
+t "G2.10" "the global domain plist overlap is allowed and reported" \
   'W=$(newenv); add_app "$W" globapp "Library/Preferences/.GlobalPreferences.plist"; set_allow "$W" alpha globapp
+   out=$(run_apps check 2>&1); rc=$?
+   [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -q "globapp"'
+t "G2.8b" "a stowed-path overlap still fails when the same app also overlaps a domain" \
+  'W=$(newenv); add_app "$W" mixapp "Library/Preferences/com.apple.dock.plist" ".zshrc"; set_allow "$W" alpha mixapp
    refused OVERLAP check'
+t "G2.8c" "an app with no domain overlap prints no info line" \
+  'W=$(newenv); out=$(run_apps check 2>&1); ! printf "%s\n" "$out" | grep -q "configure --defaults"'
 t "G2.11" "an apps/ directory with no entry in the maintained target list fails" \
   'W=$(newenv); mkdir -p "$W/df/apps/newthing"
    for d in runcom config macos claude codex bin; do ln -s "$ROOT_DIR/$d" "$W/df/$d"; done
@@ -184,6 +198,10 @@ t "G2.15" "an allowlisted app without a process mapping is refused" \
   'W=$(newenv); grep -v "^beta|" "$W/cfg/processes.list" >"$W/cfg/p2" && mv "$W/cfg/p2" "$W/cfg/processes.list"
    out=$(run_apps check 2>&1); rc=$?
    [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q beta'
+t "G2.15b" "a CLI-only app marked app|- passes check and restore never asks pgrep about it" \
+  'W=$(newenv); add_app "$W" cliapp "Library/Application Support/cliapp"; set_allow "$W" alpha cliapp
+   printf "cliapp|-\n" >|"$W/cfg/processes.list"; printf "alpha|alphaProc\n" >>"$W/cfg/processes.list"
+   run_apps check && run_apps backup && run_apps restore && ! grep -q "pgrep -x -" "$W/log"'
 t "G2.16" "the shipped allowlist passes against real mackup (skipped, visibly, when not installed)" \
   '[ "$HAVE_MACKUP" -eq 0 ] || {
    W=$(sandbox); mkdir -p "$W/home/.config/mackup" "$W/stubs"
@@ -379,6 +397,14 @@ t "R16" "a restored path that ends up a symlink is reported, pointing at undo" \
 t "R17" "restore refuses on an overlap" \
   'W=$(newenv); run_apps backup && add_app "$W" zshapp ".zshrc" && set_allow "$W" alpha zshapp &&
    refused OVERLAP restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R17b" "restore of an app that overlaps a defaults domain ends by printing the configure --defaults instruction" \
+  'W=$(newenv); add_app "$W" domapp "Library/Preferences/com.apple.dock.plist"; set_allow "$W" alpha domapp
+   mkdir -p "$W/home/Library/Preferences"; printf "%s" "$PLIST_OK" >"$W/home/Library/Preferences/com.apple.dock.plist"
+   run_apps backup && out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | tail -n 1 | grep -c "dotfiles configure --defaults")" -eq 1 ]'
+t "R17c" "restore with no defaults-domain overlap does not print the instruction" \
+  'W=$(newenv); run_apps backup && out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -eq 0 ] && ! printf "%s\n" "$out" | grep -q "configure --defaults"'
 t "R18" "restore refuses when a covered path is a symlink into the storage folder" \
   'W=$(newenv); run_apps backup && ln -sf "$W/icloud/Mackup/x" "$W/home/Library/Preferences/com.example.alpha.plist.new" &&
    mv "$W/home/Library/Preferences/com.example.alpha.plist.new" "$(alpha_plist)" && refused symlink restore && [ "$(mackup_calls restore)" -eq 0 ]'

@@ -103,10 +103,17 @@ app_paths() {
   printf '%s\n' "$out" | sed -n 's/^ - //p'
 }
 
-# Process names for an app, from processes.list (`app|process`).
+# Process names for an app, from processes.list (`app|process`). `app|-` marks
+# a CLI-only app: it is mapped, and has no process to wait for.
 app_procs() {
   [ -f "$PROCS_FILE" ] || return 0
-  awk -F'|' -v a="$1" '$1 == a && NF >= 2 { print $2 }' "$PROCS_FILE"
+  awk -F'|' -v a="$1" '$1 == a && NF >= 2 && $2 != "-" { print $2 }' "$PROCS_FILE"
+}
+
+# Whether processes.list has any line for the app, `app|-` included.
+app_mapped() {
+  [ -f "$PROCS_FILE" ] || return 1
+  awk -F'|' -v a="$1" '$1 == a && NF >= 2 { f = 1 } END { exit !f }' "$PROCS_FILE"
 }
 
 #############################################################################
@@ -176,8 +183,16 @@ owned_targets() {
     e=$(basename "$e")
     printf 'stowed from config/%s\t%s/%s\n' "$e" "$rel" "$e"
   done
+  # An apps/ directory with a macos/defaults-<name>.sh is installed by that
+  # script, which `dotfiles configure --defaults` re-runs after a restore.
   app_targets | while IFS=$'\t' read -r name target; do
-    printf 'installed from %s/\t%s\n' "$name" "$target"
+    # VS Code is the exception: its script links the files, and a copy restore
+    # would replace the links.
+    if [ "$name" != vscode ] && [ -f "$DOTFILES_DIR/macos/defaults-$name.sh" ]; then
+      printf 'a domain macos/defaults*.sh writes (apps/%s)\t%s\n' "$name" "$target"
+    else
+      printf 'installed from %s/\t%s\n' "$name" "$target"
+    fi
   done
   # Preferences domains macos/defaults*.sh write, via the same key extraction
   # dotfiles-baseline uses. Domains under /Library are system-wide, not $HOME.
@@ -216,8 +231,12 @@ unmapped_apps() {
   done
 }
 
+# Apps whose files overlap a defaults domain (set by cmd_check, read by restore).
+DOMAIN_OVERLAP_APPS=""
+
 cmd_check() {
-  local rc=0 apps app paths p pl why t tl targets u
+  local rc=0 apps app paths p pl why t tl targets u doms dom
+  DOMAIN_OVERLAP_APPS=""
   apps=$(allowlist)
   if [ -z "$apps" ]; then
     err "the allowlist is empty; mackup would back up every supported app"
@@ -236,7 +255,7 @@ cmd_check() {
   # take seconds.
   targets=$(owned_targets | awk -F'\t' 'NF >= 2 { printf "%s\t%s\t%s\n", $1, $2, tolower($2) }')
   for app in $apps; do
-    if [ -z "$(app_procs "$app")" ]; then
+    if ! app_mapped "$app"; then
       err "$app has no process mapping in $PROCS_FILE; restore could not tell whether it is running"
       rc=1
     fi
@@ -245,13 +264,24 @@ cmd_check() {
       rc=1
       continue
     fi
+    doms=""
     while IFS=$'\t' read -r p pl; do
       [ -n "$p" ] || continue
       while IFS=$'\t' read -r why t tl; do
         [ -n "$t" ] || continue
         if overlaps "$pl" "$tl"; then
-          err "OVERLAP: $app covers '$p', which the dotfiles own ($why: $t)"
-          rc=1
+          case "$why" in
+            "a domain macos/defaults*.sh writes ("*)
+              # Allowed: `dotfiles configure --defaults` re-applies these keys
+              # after a restore. Reported once per app, below.
+              dom="${why#*\(}"; dom="${dom%\)}"
+              case " $doms " in *" $dom "*) ;; *) doms="$doms $dom" ;; esac
+              ;;
+            *)
+              err "OVERLAP: $app covers '$p', which the dotfiles own ($why: $t)"
+              rc=1
+              ;;
+          esac
         fi
       done <<EOF
 $targets
@@ -259,6 +289,10 @@ EOF
     done <<EOF
 $(printf '%s\n' "$paths" | awk '{ l = tolower($0); sub(/\/$/, "", l); printf "%s\t%s\n", $0, l }')
 EOF
+    if [ -n "$doms" ]; then
+      say "info: $app overlaps defaults domain(s):$doms (macos/defaults*.sh re-applies its keys via 'dotfiles configure --defaults')"
+      DOMAIN_OVERLAP_APPS="$DOMAIN_OVERLAP_APPS $app"
+    fi
   done
   return "$rc"
 }
@@ -923,6 +957,9 @@ cmd_restore() {
   [ -d "$dir" ] || { err "no such snapshot: $machine/$snap (see: dotfiles apps list)"; return 1; }
   apply_snapshot "$dir" || return 1
   say "restored $machine/$snap"
+  if [ -n "$DOMAIN_OVERLAP_APPS" ]; then
+    say "run 'dotfiles configure --defaults' to re-apply the dotfiles' keys over the restored settings of:$DOMAIN_OVERLAP_APPS"
+  fi
 }
 
 cmd_undo() {
