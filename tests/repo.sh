@@ -46,6 +46,45 @@ t "H.8" "run.sh defaults the per-suite limit to 900 s and honours TEST_SUITE_TIM
   '[ "$(code_of tests/run.sh | grep -c "TEST_SUITE_TIMEOUT:-900")" -ge 1 ] && [ "$(code_of tests/run.sh | grep -c "TEST_SUITE_TIMEOUT:-600")" -eq 0 ]'
 t "H.12" "run.sh prints each suite wall time on a result line" \
   'out=$(_run_fixture 3); [ "$(printf "%s\n" "$out" | grep -cE "^--- tests/a_good.sh: [0-9]+ s$")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -cE "^--- tests/c_last.sh: [0-9]+ s$")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -cE -- "--- tests/b_hang.sh: [0-9]+ s$")" -eq 1 ]'
+# _pfix <name> [<name>...] -- sandbox tests/ dir with run.sh, lib.sh and the
+# named fixture suites (bodies from the FIX_<name> variables); prints its path.
+_pfix() {
+  local W n; W=$(sandbox); mkdir -p "$W/tests"; cp tests/lib.sh tests/run.sh "$W/tests/"
+  for n in "$@"; do eval "printf '#!/usr/bin/env bash\n%s\n' \"\$FIX_$n\"" >"$W/tests/$n.sh"; done
+  printf "%s" "$W"
+}
+FIX_s1='sleep 2; echo S1'; FIX_s2='sleep 2; echo S2'; FIX_s3='sleep 2; echo S3'; FIX_s4='sleep 2; echo S4'
+FIX_pa='for i in 1 2 3 4; do echo "PA$i"; sleep 1; done'
+FIX_pb='for i in 1 2 3 4; do echo "PB$i"; sleep 1; done'
+FIX_fail='echo FAILING; exit 1'
+FIX_hang='sleep 30'
+FIX_ok='echo OKAY'
+t "H.P1" "run.sh runs suites concurrently: 4 two-second suites at TEST_JOBS=4 finish in under 5 s" '
+  W=$(_pfix s1 s2 s3 s4); a=$(date +%s)
+  out=$(TEST_JOBS=4 /bin/bash "$W/tests/run.sh" 2>&1); rc=$?; el=$(($(date +%s) - a))
+  [ "$rc" -eq 0 ] && [ "$el" -lt 5 ] && printf "%s\n" "$out" | grep -q "suites=4 failed_suites=0"'
+t "H.P2" "run.sh keeps each concurrent suite output as one contiguous block, in alphabetical order" '
+  W=$(_pfix pa pb)
+  out=$(TEST_JOBS=2 /bin/bash "$W/tests/run.sh" 2>&1)
+  ( for p in PA PB; do
+    n=$(printf "%s\n" "$out" | grep -n "^$p[0-9]$" | cut -d: -f1 | tr "\n" " ")
+    set -- $n
+    [ "$#" -eq 4 ] && [ "$((${4} - ${1}))" -eq 3 ] || exit 1
+  done ) &&
+  a=$(printf "%s\n" "$out" | grep -n "^PA1$" | cut -d: -f1); b=$(printf "%s\n" "$out" | grep -n "^PB1$" | cut -d: -f1)
+  [ "$a" -lt "$b" ] && [ "$(printf "%s\n" "$out" | grep -cE "^--- tests/p[ab].sh: [0-9]+ s$")" -eq 2 ]'
+t "H.P3" "run.sh in parallel reports a failing and a timed-out suite by name, keeps the summary and exits 1" '
+  W=$(_pfix fail hang ok)
+  out=$(TEST_JOBS=3 TEST_SUITE_TIMEOUT=2 /bin/bash "$W/tests/run.sh" 2>&1); rc=$?
+  [ "$rc" -eq 1 ] && printf "%s\n" "$out" | grep -q "^OKAY$" &&
+  printf "%s\n" "$out" | grep -q "^suites=3 failed_suites=2$" &&
+  printf "%s\n" "$out" | grep -qE "^  tests/fail.sh$" && printf "%s\n" "$out" | grep -qE "^  tests/hang.sh \(timeout\)$"'
+t "H.P4" "run.sh at TEST_JOBS=1 is serial: two two-second suites take at least 4 s" '
+  W=$(_pfix s1 s2); a=$(date +%s)
+  out=$(TEST_JOBS=1 /bin/bash "$W/tests/run.sh" 2>&1); rc=$?; el=$(($(date +%s) - a))
+  [ "$rc" -eq 0 ] && [ "$el" -ge 4 ] && printf "%s\n" "$out" | grep -q "suites=2 failed_suites=0"'
+t "H.P5" "run.sh starts slow suites first and defaults TEST_JOBS from hw.ncpu" \
+  '[ "$(code_of tests/run.sh | grep -c "hw.ncpu")" -ge 1 ] && [ "$(code_of tests/run.sh | grep -c "TEST_JOBS")" -ge 1 ]'
 t "H.9" "run.sh ignores SIGPIPE before the suite loop" \
   '[ "$(_first_line "trap \"\" PIPE" tests/run.sh)" -gt 0 ] && [ "$(_first_line "trap \"\" PIPE" tests/run.sh)" -lt "$(_first_line "for f in" tests/run.sh)" ]'
 

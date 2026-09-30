@@ -55,6 +55,16 @@ direct children (a hung grandchild may be orphaned); CI uses `gtimeout`, which
 signals the whole process group. `tests/repo.sh` (H.11) fails on any tracked script that reads
 `/dev/urandom` or `/dev/zero`, or runs `yes`, without a bound.
 
+`tests/run.sh` runs suites concurrently, `TEST_JOBS` at a time (default
+`sysctl -n hw.ncpu`, at least 2; `TEST_JOBS=1` is serial, in alphabetical
+order). The slowest suites start first (shell, cli, sync, jev, macos, apps,
+claude, then the rest alphabetically). Each suite writes to its own temp file
+and is printed as one block, in alphabetical order, as soon as every earlier
+suite is done, so output never interleaves. Suites must not share state: use
+`sandbox`/`mktemp`, never a fixed path under `/tmp`, `$HOME` or the repo root,
+and no fixed ports. Ctrl-C or TERM kills the suites the runner started (their
+process trees, by recorded PID) and exits 130.
+
 Never end a test pipeline in `grep -q` when the left side can write more than a
 pipe buffer (`code_of <file>`, a `bin/` script, `git`, `find`, `cat`). `grep -q`
 exits on the first match and the writer then fails with `EPIPE` (BSD `sed` prints
