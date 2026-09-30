@@ -1581,6 +1581,12 @@ t "W2.2" "DOTFILES_TEST_ONLY refuses a name that is not a test function" '
   W=$(sandbox); mkdir -p "$W/h"
   ! env HOME="$W/h" DOTFILES_TEST_ONLY=rm "$PWD/bin/dotfiles-test" >/dev/null 2>&1 &&
   ! env HOME="$W/h" DOTFILES_TEST_ONLY=test_nonesuch "$PWD/bin/dotfiles-test" >/dev/null 2>&1'
+t "W2.3" "a tests/run.sh failure names the failed suites without --verbose" '
+  W=$(sandbox); mkdir -p "$W/h" "$W/repo/tests"
+  printf "%s\n" "#!/bin/bash" "echo \"--- tests/a.sh: 1 s\"" "printf \"suites=2 failed_suites=2\n  tests/a.sh\n  tests/macos.sh (timeout)\n\"" "exit 1" >"$W/repo/tests/run.sh"
+  out=$(env HOME="$W/h" DOTFILES_DIR="$W/repo" DOTFILES_TEST_ONLY=test_bash_suites "$PWD/bin/dotfiles-test" 2>&1)
+  line=$(printf "%s\n" "$out" | grep "tests/run.sh reported failures")
+  case "$line" in *"tests/a.sh"*"tests/macos.sh (timeout)"*) true ;; *) false ;; esac'
 
 #############################################################################
 section "W3 — hooks, unattended Homebrew, ignored files kept across link"

@@ -613,11 +613,14 @@ test_bash_suites() {
     return
   fi
 
-  local output
+  local output failed
   if output=$(cd "$DOTFILES_DIR" && bash tests/run.sh 2>&1); then
     pass "tests/run.sh: $(echo "$output" | grep -E '^suites=' | tail -1)"
   else
-    fail "tests/run.sh reported failures" "$(echo "$output" | tail -20)"
+    # run.sh ends with the failed suites, two-space indented, after the
+    # suites= line; name them here so a run without --verbose says which.
+    failed=$(echo "$output" | awk '/^suites=/ { f = 1; next } f && /^  / { sub(/^  /, ""); printf "%s%s", (n++ ? ", " : ""), $0 }')
+    fail "tests/run.sh reported failures${failed:+: $failed}" "$(echo "$output" | tail -20)"
   fi
 }
 
