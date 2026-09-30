@@ -883,4 +883,96 @@ t "J12" "replay reads the owners secrets once for all cases, not once per questi
   JENV="TYPESAFE_API_KEY=k1 DOTFILES_JEV_REPLAY_DIR=$W/replay" jtool replay privacy >/dev/null 2>&1
   [ "$(calls)" -eq 4 ] && [ "$(grep -c "dotfiles.openai_api_key" "$W/sec/calls.log")" -eq 1 ]'
 
+#############################################################################
+section "K -- Task 13: drift that notices itself (dotfiles jev drift)"
+#############################################################################
+
+# Three undeclared packages as the sync facts feed them: key<TAB>facts.
+DRIFT3=$(printf 'brew:jq\tkind=brew formula; desc=Lightweight JSON processor; dependency=no; first seen 2026-09-01\ncask:slack\tkind=cask; desc=Team chat; dependency=no; first seen 2026-09-20\nbrew:libfoo\tkind=brew formula; desc=A library; dependency=yes; first seen 2026-08-30\n')
+# drift <kind> <facts>: dotfiles jev drift with the facts on stdin
+drift() { local k="$1"; shift; printf '%s\n' "$1" | jtool drift "$k"; }
+
+t "K1" "shadow mode (the default) asks once, logs a would-have decision, prints nothing and changes nothing" '
+  W=$(sandbox); mkenv "$W"
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$DRIFT3" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ -z "$out" ] && [ "$(calls)" -eq 1 ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .point)" = drift ] && [ "$(tail -n 1 "$(LOGF)" | jq -r .mode)" = shadow ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .action | grep -c "^shadow: would have suggested")" -eq 1 ]'
+t "K2" "on mode: one batched request with one choice question per item, suggestions above the thresholds as SUGGEST lines" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$DRIFT3" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(calls)" -eq 1 ] &&
+  [ "$(jq -r ".questions | keys | join(\",\")" "$W/rec/body.log")" = "i1,i2,i3" ] &&
+  [ "$(jq -r ".questions.i2.type" "$W/rec/body.log")" = choice ] &&
+  [ "$(jq -r ".questions.i1.criteria | keys | join(\",\")" "$W/rec/body.log")" = "ignore,private,public,remove" ] &&
+  [ "$(printf "%s\n" "$out" | sed -n 1p)" = "$(printf "SUGGEST\tbrew:jq\tpublic\t0.9\t0.9")" ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST")" -eq 3 ]'
+t "K3" "the state carries every item with its facts, numbered to match the questions" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$DRIFT3" >/dev/null 2>&1
+  st=$(jq -r .state "$W/rec/body.log")
+  [ "$(printf "%s\n" "$st" | grep -c "^i1: brew:jq .*Lightweight JSON processor")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$st" | grep -c "^i3: brew:libfoo .*dependency=yes")" -eq 1 ]'
+t "K4" "a probability below the warn threshold is not offered" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-low.json" drift pkg "$DRIFT3" 2>&1)
+  [ -z "$out" ] && [ "$(calls)" -eq 1 ]'
+t "K5" "a remove suggestion needs two agreeing calls: the second, on the removes only, agrees, so it is offered" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  printf "Second opinion\tanswer-drift-second-yes.json\n" >"$W/rec/rules"
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-remove.json" drift pkg "$DRIFT3" 2>&1)
+  [ "$(calls)" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST.brew:libfoo.remove")" -eq 1 ] &&
+  [ "$(jq -r ".questions | keys | join(\",\")" "$W/rec/body.log" | sed -n 2p)" = i1 ] &&
+  [ "$(jq -r .state "$W/rec/body.log" | sed -n "/Second opinion/,\$p" | grep -c "brew:libfoo")" -ge 1 ] &&
+  [ "$(jq -r .state "$W/rec/body.log" | sed -n "/Second opinion/,\$p" | grep -c "brew:jq")" -eq 0 ]'
+t "K6" "a second call that disagrees drops the remove suggestion; the other suggestions stand" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  printf "Second opinion\tanswer-drift-second-no.json\n" >"$W/rec/rules"
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-remove.json" drift pkg "$DRIFT3" 2>&1)
+  [ "$(calls)" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "remove")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST")" -eq 2 ]'
+t "K7" "a failing second call (5xx) is no agreement: no remove suggestion" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 JEV_TRIES=1 FAKE_CURL_SEQ=200,503 FAKE_CURL_ANSWER=answer-drift-remove.json" drift pkg "$DRIFT3" 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "remove")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST")" -eq 2 ]'
+t "K8" "the options differ per kind: defaults are public/local-only/transient, config dirs capture/ignore" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift defaults "com.example.app|Key	old=1; new=2" >/dev/null 2>&1
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift config "tool	files=3; size=4 KB" >/dev/null 2>&1
+  [ "$(jq -r ".questions.i1.criteria | keys | join(\",\")" "$W/rec/body.log" | sed -n 1p)" = "local-only,public,transient" ] &&
+  [ "$(jq -r ".questions.i1.criteria | keys | join(\",\")" "$W/rec/body.log" | sed -n 2p)" = "capture,ignore" ]'
+t "K9" "an unknown kind is a usage error and asks nothing" '
+  W=$(sandbox); mkenv "$W"
+  out=$(JENV="TYPESAFE_API_KEY=k1" drift bogus "$DRIFT3" 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && [ "$(calls)" -eq 0 ]'
+t "K10" "off, and no key: no request, no output, exit 0 (fail open)" '
+  W=$(sandbox); mkenv "$W"; setmode drift=off
+  o1=$(JENV="TYPESAFE_API_KEY=k1" drift pkg "$DRIFT3" 2>&1); r1=$?
+  setmode drift=on
+  o2=$(drift pkg "$DRIFT3" 2>&1); r2=$?
+  [ "$r1" -eq 0 ] && [ -z "$o1" ] && [ "$r2" -eq 0 ] && [ -z "$o2" ] && [ "$(calls)" -eq 0 ]'
+t "K11" "a failed request (timeout) is not an error: no output, exit 0" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_TIMEOUT=1" drift pkg "$DRIFT3" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ -z "$out" ]'
+t "K12" "nothing leaves the Mac that is on the never-send list: a private host name in the facts is a placeholder" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on; printf "Zorblax-Depot\n" >"$W/priv/jev/never-send.list"
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$(printf "brew:jq\tdesc=tap of Zorblax-Depot\n")" >/dev/null 2>&1
+  [ "$(calls)" -eq 1 ] && [ "$(recorded | grep -c "Zorblax-Depot")" -eq 0 ] && [ "$(jq -r .state "$W/rec/body.log" | grep -c "NEVER-SEND")" -eq 1 ]'
+t "K13" "the batch is capped (JEV_DRIFT_MAX_ITEMS): more items than that are not sent" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  many=$(i=0; while [ "$i" -lt 12 ]; do i=$((i + 1)); printf "brew:p%s\tdesc=x\n" "$i"; done)
+  JENV="TYPESAFE_API_KEY=k1 JEV_DRIFT_MAX_ITEMS=5 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$many" >/dev/null 2>&1
+  [ "$(calls)" -eq 1 ] && [ "$(jq -r ".questions | length" "$W/rec/body.log")" -eq 5 ]'
+t "K14" "the log holds counts and ids only: no item name or fact" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$DRIFT3" >/dev/null 2>&1
+  [ "$(grep -c "jq\|slack\|libfoo\|Lightweight" "$(LOGF)")" -eq 0 ] && [ "$(tail -n 1 "$(LOGF)" | jq -r .answers.i1.choice)" = public ]'
+t "K15" "status lists the drift point, shadow by default" '
+  W=$(sandbox); mkenv "$W"
+  out=$(jtool status 2>&1); [ "$(printf "%s\n" "$out" | grep -c "drift  *shadow")" -eq 1 ]'
+t "K16" "an empty facts feed asks nothing" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1" jtool drift pkg </dev/null 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ -z "$out" ] && [ "$(calls)" -eq 0 ]'
+
 finish
