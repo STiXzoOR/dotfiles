@@ -186,10 +186,14 @@ jev_key() {
 # The credential formats the pre-commit hook already blocks, printed by the
 # hook itself so there is one list.
 _JEV_PATTERNS=""
+# Fails (and prints nothing) when the list is empty or the hook cannot print it,
+# so a caller that gates on it can refuse instead of scanning with no patterns.
+# JEV_HOOK points at another hook (tests).
 jev_secret_patterns() {
   if [ -z "$_JEV_PATTERNS" ]; then
-    _JEV_PATTERNS=$(bash "$JEV_LIB_DIR/../../.githooks/pre-commit" --print-secret-patterns)
+    _JEV_PATTERNS=$(bash "${JEV_HOOK:-$JEV_LIB_DIR/../../.githooks/pre-commit}" --print-secret-patterns) || _JEV_PATTERNS=""
   fi
+  [ -n "$_JEV_PATTERNS" ] || return 1
   printf '%s\n' "$_JEV_PATTERNS"
 }
 

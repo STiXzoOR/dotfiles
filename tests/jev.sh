@@ -1175,4 +1175,99 @@ t "L20" "docs/agents/jev.md has a section each for the drift, app-choice and ski
   [ "$(sed -n "/^## Skip gate/,\$p" "$d" | grep -c "0.2")" -ge 1 ] && [ "$(sed -n "/^## Skip gate/,\$p" "$d" | grep -c "3 ")" -ge 1 ] &&
   [ "$(grep -c "replay skip\|replay drift\|replay apps" "$d")" -ge 1 ]'
 
+#############################################################################
+section "N -- final fixes: scan-tree fails closed, skip on a TTY, replay measures production"
+#############################################################################
+
+# gitleaks_stub <W> <exit code> [report json]: a gitleaks that writes the given
+# report to the -r path and exits with the given code.
+gitleaks_stub() {
+  printf '%s' "${3:-}" >"$1/gl-report.json"
+  printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = -r ] && rep="$2"; shift; done\ncat "%s/gl-report.json" >"$rep"\nexit %s\n' "$1" "$2" >"$1/stubs/gitleaks"
+  chmod +x "$1/stubs/gitleaks"
+}
+
+t "N1" "scan-tree refuses (exit 2) when a file could not be read, and says so" '
+  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "x\n" >"$W/tree/locked.txt"; printf "y\n" >"$W/tree/ok.txt"; chmod 000 "$W/tree/locked.txt"
+  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?; chmod 600 "$W/tree/locked.txt"
+  [ "$rc" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "not scanned")" -ge 1 ]'
+t "N2" "scan-tree refuses (exit 2) when gitleaks crashes, even with an empty report" '
+  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "clean\n" >"$W/tree/ok.txt"; gitleaks_stub "$W" 2
+  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "gitleaks")" -ge 1 ]'
+t "N3" "scan-tree with a gitleaks that exits 0 (clean) or 1 (findings) still works" '
+  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "clean\n" >"$W/tree/ok.txt"; gitleaks_stub "$W" 0 "[]"
+  jtool scan-tree "$W/tree" >/dev/null 2>&1; r0=$?
+  gitleaks_stub "$W" 1 "[{\"File\":\"$W/tree/ok.txt\",\"StartLine\":1}]"
+  out=$(jtool scan-tree "$W/tree" 2>&1); r1=$?
+  [ "$r0" -eq 0 ] && [ "$r1" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK ok.txt:1: flagged by gitleaks")" -eq 1 ]'
+t "N4" "scan-tree refuses (exit 2) when the secret-pattern list is empty or fails to load" '
+  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "clean\n" >"$W/tree/ok.txt"
+  printf "#!/bin/sh\nexit 0\n" >"$W/empty-hook"; printf "#!/bin/sh\nexit 3\n" >"$W/bad-hook"
+  JENV="JEV_HOOK=$W/empty-hook" jtool scan-tree "$W/tree" >/dev/null 2>&1; r1=$?
+  out=$(JENV="JEV_HOOK=$W/bad-hook" jtool scan-tree "$W/tree" 2>&1); r2=$?
+  [ "$r1" -eq 2 ] && [ "$r2" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "pattern")" -ge 1 ] && [ "$(calls)" -eq 0 ]'
+t "N5" "scan-vault: a directory that cannot be listed is exit 2 with a message, not no credentials found" '
+  W=$(sandbox); mkenv "$W"; mkdir -p "$W/vault/Claude-Sessions/locked"; printf "fine\n" >"$W/vault/Claude-Sessions/s.md"; chmod 000 "$W/vault/Claude-Sessions/locked"
+  out=$(JENV="DOTFILES_VAULT_DIR=$W/vault" jtool scan-vault 2>&1); rc=$?; chmod 700 "$W/vault/Claude-Sessions/locked"
+  [ "$rc" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "no credentials found")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "could not list")" -eq 1 ]'
+# ttyrun <cmd...>: run a command with a pseudo-terminal as stdin and stdout
+# (script(1) needs a real terminal of its own; this does not).
+ttyrun() {
+  python3 -c '
+import os, sys
+pid, fd = os.forkpty()
+if pid == 0:
+    os.execvp(sys.argv[1], sys.argv[1:])
+out = b""
+while True:
+    try:
+        b = os.read(fd, 4096)
+    except OSError:
+        break
+    if not b:
+        break
+    out += b
+sys.stdout.write(out.decode("utf-8", "replace"))
+sys.exit(os.waitpid(pid, 0)[1] >> 8)' "$@"
+}
+# Bash 3.2 (the system one) leaves a bare `local x` set to empty, so this bug
+# only shows under a newer bash; the test uses one when installed.
+t "N6" "skip with stdin on a terminal does not abort on an unset variable" '
+  W=$(sandbox); mkenv "$W"; export W ROOT_DIR FIXD; export -f jtool
+  [ -x /opt/homebrew/bin/bash ] && export JENV="PATH=$W/stubs:/opt/homebrew/bin:/usr/bin:/bin"
+  out=$(ttyrun bash -c "jtool skip sync" 2>&1); rc=$?; unset JENV
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "unbound variable")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "RUN")" -ge 1 ]'
+
+# replay_body <W> <point> <fixture line>: the request body `replay <point>`
+# sends for a one-case fixture (the fake curl's recording, truncated first).
+replay_body() {
+  local w="$1"
+  : >"$w/rec/body.log"; mkdir -p "$w/replay"
+  printf '%s\n' "$3" >"$w/replay/$2.jsonl"
+  JENV="TYPESAFE_API_KEY=k1 DOTFILES_JEV_REPLAY_DIR=$w/replay FAKE_CURL_ANSWER=answer-$2.json" jtool replay "$2" >/dev/null 2>&1
+  cat "$w/rec/body.log"
+}
+t "N7" "replay drift builds the request production builds for the same single item" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  printf "brew:jq\tkind=brew formula; desc=Lightweight JSON processor; dependency=no\n" | JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" jtool drift pkg >/dev/null 2>&1
+  prod=$(cat "$W/rec/body.log")
+  rep=$(replay_body "$W" drift "{\"id\":\"c1\",\"kind\":\"pkg\",\"label\":\"public\",\"state\":\"brew:jq kind=brew formula; desc=Lightweight JSON processor; dependency=no\"}")
+  [ -n "$prod" ] && [ "$prod" = "$rep" ]'
+t "N8" "replay apps builds the request production builds for the same single item" '
+  W=$(sandbox); mkenv "$W"; setmode apps=on
+  printf "gamma\tpaths=2 (Library/Application Support/Gamma); build=direct; sandbox container=no\n" | JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-apps.json" jtool apps >/dev/null 2>&1
+  prod=$(cat "$W/rec/body.log")
+  rep=$(replay_body "$W" apps "{\"id\":\"c1\",\"label\":\"backup\",\"state\":\"gamma paths=2 (Library/Application Support/Gamma); build=direct; sandbox container=no\"}")
+  [ -n "$prod" ] && [ "$prod" = "$rep" ]'
+t "N9" "replay skip builds the request production builds for the same facts and hours" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on
+  printf "upstream commits since last run: 3\n" | JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-skip-low.json" jtool skip sync >/dev/null 2>&1
+  prod=$(cat "$W/rec/body.log")
+  rep=$(replay_body "$W" skip "{\"id\":\"c1\",\"label\":true,\"job\":\"sync\",\"hours\":\"never run\",\"state\":\"upstream commits since last run: 3\"}")
+  [ -n "$prod" ] && [ "$prod" = "$rep" ]'
+t "N10" "the shipped skip cases carry hours and job as fields, not inside the state" '
+  f=tests/fixtures/jev/replay/skip.jsonl
+  [ "$(jq -r "select((.hours | tostring | length) > 0 and (.job == \"sync\" or .job == \"apps\") and (.state | test(\"hours since\") | not)) | .id" "$f" | grep -c .)" -eq "$(grep -c . "$f")" ]'
+
 finish

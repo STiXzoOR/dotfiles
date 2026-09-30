@@ -30,14 +30,19 @@ hook does exactly what it did before plus its deterministic checks.
 | ----- | ------------- | ---------------------------------- |
 | `privacy` | `.githooks/pre-commit`, per added hunk that no deterministic check caught | Does this added text reveal a person's name, a computer or host name, a client or private project name, a private network address or a home directory path? |
 | `secrets` | pre-commit, `dotfiles apps backup` (staging tree), `dotfiles jev scan-vault` | Is this masked value a live credential rather than a placeholder, example, hash or identifier? Asked only for an *ambiguous* hit. |
-| `drift` | `dotfiles sync`, after the deterministic drift report | One `choice` per undeclared item, one batched request per kind: see "Drift" below. |
+| `drift` | `dotfiles sync`, after the deterministic drift report | One `choice` per undeclared item (name and a few facts: package descriptions, `defaults` domain, key and old and new values, `~/.config` directory names and sizes), one batched request per kind, all after redaction: see "Drift" below. |
+| `skip` | the scheduled `dotfiles sync` and `dotfiles apps backup`, before any work | One `noul`: would running the job now do useful work? It sends a few shell-computed facts (commit and path counts, whether lockfiles changed, how many allowlisted apps changed prefs, hours since the last run), never file contents: see "Skip gate" below. |
 | `apps` | `dotfiles sync`, after drift | One `choice` (`backup` / `own-sync` / `not-worth-it`) per installed app mackup supports and nobody has decided on, one batched request per run: see "App-choice" below. This is app choice, not the `skip` gate on the daily `apps backup` job. |
+
+Every point starts in `shadow`. Ambiguous secrets never block in `shadow` or when
+Jev fails (no key, timeout, HTTP error): only a definite hit blocks. Defaults
+values and `~/.config` directory names are sent, after the same redaction as any
+other request. With `DOTFILES_JEV=off` the local vault scan still runs; it only
+makes no requests.
 
 The `secrets` point also runs in the private repo's pre-commit hook
 (`dotfiles jev guard-private`, installed by `dotfiles private`) and in the daily
-scheduled sync (the vault scan): see "Secrets leakage" below. Drift
-classification, app-backup suggestions and the skip gate for the daily jobs come
-in later tasks.
+scheduled sync (the vault scan): see "Secrets leakage" below.
 
 Each point is `off`, `shadow` (the default for every point) or `on`.
 
@@ -214,8 +219,8 @@ Item names such as brew formula names are sent; anything private goes through
 the same redaction as every other request. `dotfiles jev drift <kind>` is the
 command sync calls (facts on stdin as `key<TAB>facts`; it prints
 `SUGGEST<TAB>key<TAB>choice<TAB>p<TAB>confidence` in `on` mode only; a choice
-that is not one of the offered options is dropped). Replay
-cases for this point come with the other Task 9 points.
+that is not one of the offered options is dropped). `dotfiles jev replay drift`
+scores labelled cases from `tests/fixtures/jev/replay/drift.jsonl`.
 
 ## Limits
 
@@ -257,8 +262,12 @@ hits.
   warn, and in `on` mode Jev can block them.
 - **`dotfiles apps backup`**: the mackup staging tree is scanned before it is
   published to iCloud (`dotfiles jev scan-tree`). A hit keeps the snapshot local
-  in the staging tree and reports it; nothing reaches iCloud. If the scan cannot
-  run, the backup refuses.
+  in the staging tree and reports it; nothing reaches iCloud. The scan fails
+  closed (exit 2, the backup refuses) when a file could not be read, a directory
+  could not be listed, gitleaks exits with anything but 0 or 1, or the secret
+  pattern list is empty or fails to load. A Keychain failure in the own-secret
+  layer stays a warning, so a locked keychain under launchd does not stop every
+  nightly backup.
 - **Private repo (pre-commit)**: `dotfiles private` installs the hook, which runs
   `dotfiles jev guard-private`. It is the same secrets guard as the public
   repo's, with gitleaks included (the private repo has no other gitleaks hook):
@@ -268,11 +277,13 @@ hits.
   commit.
 - **`dotfiles jev scan-vault [dir]`**: scans `Claude-Sessions/` in the vault
   (`DOTFILES_VAULT_DIR`, default `~/Vault`), which syncs through iCloud. It
-  reports `file:line`, never edits or deletes, and exits 1 on a hit. The daily
+  reports `file:line`, never edits or deletes, and exits 1 on a hit and 2 when
+  the tree could not be fully scanned (a listing or read failure, so a
+  TCC-denied vault never reads as "no credentials found"). The daily
   `dotfiles sync --scheduled` runs it once a day and notifies on hits (file and
   line only, never the value; report-only). Binary
   plists are converted with `plutil`, other binary files are read as their
-  printable runs; only an unreadable file is reported as not scanned.
+  printable runs; an unreadable file makes the scan exit 2.
 
 ## App-choice: app-backup suggestions (`apps`)
 
@@ -363,8 +374,9 @@ something *not* happen, so it is deliberately asymmetric.
   work: upstream commits touching `Brewfile*`, `config/mise/`, lockfiles,
   `packages/`, `claude/`, `codex/` or `secrets.age`; changed lockfile hashes or a
   first run; unpushed commits; pending actions from an earlier run; app
-  preferences newer than the last snapshot; no snapshot yet. Those run with no
-  request at all.
+  preferences newer than the last snapshot; no snapshot yet; the apps gate
+  being unable to read the prefs (mackup failing, a denied `find`). Those run
+  with no request at all.
 - **Fail open:** no key, a timeout, a 5xx, a 401, a malformed answer or the
   request cap all mean the job runs. Only the literal word `SKIP` from
   `dotfiles jev skip <sync|apps>` skips anything.
@@ -386,4 +398,7 @@ something *not* happen, so it is deliberately asymmetric.
 `dotfiles jev replay drift`, `replay apps` and `replay skip` call the real API
 on them, only when you run it by hand with a key, and print accuracy by
 probability (skip: the cost of skipping below each threshold). Add your own
-scrubbed cases before trusting the numbers; calibration is contested.
+scrubbed cases before trusting the numbers; calibration is contested. Replay
+sends each labelled case as a one-item batch through the same request builders
+production uses, so it measures single-item batches, not the batched prompt a
+sync run sends. Skip cases carry `hours` and `job` as fields next to the facts.
