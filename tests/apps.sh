@@ -646,6 +646,9 @@ mkapps() {
   add_app "$w" epsilon "Library/Preferences/com.example.epsilon.plist"
   printf '#!/bin/sh\ncase "$4" in *Gamma.app) printf "com.example.gamma";; *Delta.app) printf "com.example.delta";; *) printf "(null)";; esac\n' >"$w/stubs/mdls"
   chmod +x "$w/stubs/mdls"
+  # CFBundleExecutable per bundle; Epsilon reports one with a shell metacharacter.
+  printf '#!/bin/sh\ncase "$2" in *Gamma.app/*) printf "GammaExec";; *Delta.app/*) printf "Delta Exec";; *Epsilon.app/*) printf "Bad;Exec";; *) exit 1;; esac\n' >"$w/stubs/defaults"
+  chmod +x "$w/stubs/defaults"
 }
 cands() { APPS_ENV="DOTFILES_APPS_APPDIR=$W/Applications DOTFILES_APPS_DECLINED=$W/declined.list ${CANDENV:-}" run_apps candidates; }
 
@@ -674,5 +677,16 @@ t "L12" "candidates writes nothing: no allowlist edit, no declined list" \
 t "L13" "without mackup on PATH candidates prints nothing and succeeds" \
   'W=$(newenv); mkapps "$W"; command rm -f "$W/stubs/mackup"; out=$(APPS_ENV="DOTFILES_APPS_NO_BREW_PATH=1" cands 2>&1); rc=$?
    [ "$rc" -eq 0 ] && [ -z "$out" ]'
+
+t "L14" "the facts carry the process name from CFBundleExecutable (code, not Jev), last on the line" \
+  'W=$(newenv); mkapps "$W"; out=$(cands 2>&1)
+   [ "$(printf "%s\n" "$out" | grep "^gamma	" | sed "s/.*; process=//")" = GammaExec ] &&
+   [ "$(printf "%s\n" "$out" | grep "^delta	" | sed "s/.*; process=//")" = "Delta Exec" ]'
+t "L15" "a process name outside the safe charset is left out of the facts" \
+  'W=$(newenv); mkapps "$W"; out=$(cands 2>&1)
+   [ "$(printf "%s\n" "$out" | grep "^epsilon	" | grep -c "process=")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "Bad")" -eq 0 ]'
+t "L16" "mackup's paths are separated by semicolons" \
+  'W=$(newenv); mkapps "$W"; out=$(cands 2>&1)
+   [ "$(printf "%s\n" "$out" | grep "^gamma	" | grep -c "paths=2 (Library/Containers/com.example.gamma/Data/Library/Preferences/com.example.gamma.plist; Library/Application Support/Gamma)")" -eq 1 ]'
 
 finish

@@ -288,20 +288,25 @@ At most `JEV_APPS_MAX_ITEMS` (25) apps go in **one** request through
 
 - `shadow` (the default): asked and logged, nothing shown, nothing written.
   Interactive timeout 2 s.
-- `on`: each suggestion at or above the warn line is shown, with a line built
-  in shell from the shell's own facts (a name that is not in the facts or not
-  `[a-z0-9.+-]` is dropped). A `backup` suggestion says to add the name under
-  `[applications_to_sync]` in `config/mackup/mackup.cfg` **and** its process name
-  to `config/mackup/processes.list` by hand: `dotfiles apps check` needs both, so
-  nothing writes the allowlist. Interactive timeout 6 s.
-- The owner's "no" is remembered in the private repo, in
-  `jev/apps-declined.list` (one mackup app name per line, never committed for
-  you), so the app is not asked about again. The write goes through
-  `strict_confirm` only (a terminal and a typed yes; `DOTFILES_YES` does not
-  answer it), and only when someone was actually asked: no terminal is not a
-  "no". For `backup` a no to "will you add it?" is remembered; for `own-sync`
-  and `not-worth-it` a yes to "agree, stop suggesting it?" is. With no private
-  repo nothing is created and the message says so.
+- `on`: each suggestion at or above the warn line is shown, built in shell from
+  the shell's own facts (a name that is not in the facts or not `[a-z0-9.+-]` is
+  dropped). A `backup` suggestion prints the exact lines: the name to put under
+  `[applications_to_sync]` in `config/mackup/mackup.cfg`, and `<name>|<process>`
+  for `config/mackup/processes.list` (`dotfiles apps check` needs both). The
+  process is the bundle's `CFBundleExecutable`, read by `dotfiles-apps
+  candidates` and shown only if it fits a strict charset; otherwise the message
+  says to add it by hand. Nothing writes the allowlist. Interactive timeout 6 s.
+- The owner's "no" goes into `jev/apps-declined.list` in the private repo (one
+  mackup app name per line), so the app is not asked about again. The file is
+  written and **left uncommitted for you to commit**; `dotfiles sync` ignores
+  that one file when it decides whether the private repo is dirty (no
+  notification, and it does not stop a fast-forward). The write goes through
+  `strict_answer` (a terminal and a typed answer; `DOTFILES_YES` does not answer
+  it) and only an explicit answer counts: for `backup` an explicit `n`/`no` to
+  "will you add it?" is recorded, for `own-sync` and `not-worth-it` an explicit
+  yes to "agree, stop suggesting it?". End of input, an empty line, anything else
+  or no terminal is "not decided, will ask again". With no private repo nothing
+  is created and the message says so.
 - `--scheduled` never prompts and only adds to the daily notification.
 - A failed drift request stops this too; a failed apps request acts on nothing.
 

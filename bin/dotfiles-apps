@@ -672,6 +672,16 @@ app_build() {
   if [ -e "$1/Contents/_MASReceipt/receipt" ]; then printf 'App Store'; else printf 'direct'; fi
 }
 
+# app_process <bundle>: the executable name (CFBundleExecutable), which is what
+# the restore guard looks for; empty unless it fits a strict charset, so it can
+# be shown as a processes.list line. `|` and `;` never pass.
+app_process() {
+  local p
+  p=$(defaults read "$1/Contents/Info" CFBundleExecutable 2>/dev/null) || return 0
+  [[ $p =~ ^[A-Za-z0-9][A-Za-z0-9\ ._+()-]*$ ]] && printf '%s' "$p"
+  return 0
+}
+
 # has_container <bundle>: the app's preferences live in a sandbox container.
 has_container() {
   local id
@@ -686,7 +696,7 @@ has_container() {
 # (default 25). It only reads: no allowlist edit, no declined list, no request.
 cmd_candidates() {
   local dir="${DOTFILES_APPS_APPDIR:-/Applications}" max="${JEV_APPS_MAX_ITEMS:-25}" n=0
-  local supported skip bundle name paths np first build cont
+  local supported skip bundle name paths np first build cont proc
   command -v mackup >/dev/null 2>&1 || return 0
   write_run_cfg || return 1
   supported=$(run_mackup list 2>/dev/null | sed -n 's/^ - //p')
@@ -701,12 +711,13 @@ cmd_candidates() {
     printf '%s\n' "$skip" | grep -qxF -- "$name" && continue
     paths=$(app_paths "$name") || continue
     np=$(printf '%s\n' "$paths" | grep -c .)
-    first=$(printf '%s\n' "$paths" | head -n 3 | tr '\t\n' '  ' | sed 's/  *$//' | cut -c 1-200)
+    first=$(printf '%s\n' "$paths" | awk 'NR <= 3 { gsub(/\t/, " "); printf "%s%s", (NR > 1 ? "; " : ""), $0 }' | cut -c 1-200)
+    proc=$(app_process "$bundle")
     build=$(app_build "$bundle")
     cont=no
     has_container "$bundle" && cont=yes
     n=$((n + 1))
-    printf '%s\tmackup covers a macOS app; paths=%s (%s); build=%s; sandbox container=%s\n' "$name" "$np" "$first" "$build" "$cont"
+    printf '%s\tmackup covers a macOS app; paths=%s (%s); build=%s; sandbox container=%s%s\n' "$name" "$np" "$first" "$build" "$cont" "${proc:+; process=$proc}"
   done
 }
 

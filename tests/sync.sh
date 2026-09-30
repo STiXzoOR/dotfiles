@@ -678,7 +678,7 @@ estub() {
   drift) cat >/dev/null; exit ${JEVSTUB_RC:-0} ;;
 esac'
   stub "$1/bin" dotfiles-apps-stub 'case "$1" in candidates) echo "DECLINED=${DOTFILES_APPS_DECLINED:-}" >>"$STUB_LOG"; cat "$STUB_STATE/apps-candidates" 2>/dev/null ;; esac'
-  printf 'gamma\tpaths=2 (Library/Application Support/Gamma); build=direct; sandbox container=no\ndelta\tpaths=1 (Library/Preferences/com.example.delta.plist); build=Setapp; sandbox container=no\n' >"$1/state/apps-candidates"
+  printf 'gamma\tpaths=2 (Library/Application Support/Gamma); build=direct; sandbox container=no; process=GammaExec\ndelta\tpaths=1 (Library/Preferences/com.example.delta.plist); build=Setapp; sandbox container=no\n' >"$1/state/apps-candidates"
 }
 # esyn <args>: syn with Jev and the app stubs. EA="y n" answers the strict prompts in order.
 esyn() {
@@ -739,7 +739,32 @@ t "E13" "the apps suggestion goes only through strict_confirm, and no fact list 
   c=$(code_of bin/dotfiles-sync)
   W=$(senv); estub "$W"; i=1; while [ "$i" -le 9 ]; do printf "app%s\tpaths=1\n" "$i" >>"$W/state/apps-candidates"; i=$((i + 1)); done
   DX="JEV_APPS_MAX_ITEMS=4" esyn >/dev/null 2>&1
-  [ "$(printf "%s\n" "$c" | grep -c "strict_confirm \"")" -ge 3 ] && [ "$(printf "%s\n" "$c" | grep -c "[^_]confirm \"\(Will you\|Agree\)")" -eq 0 ] &&
+  [ "$(printf "%s\n" "$c" | grep -c "strict_\(confirm\|answer\) \"")" -ge 3 ] && [ "$(printf "%s\n" "$c" | grep -c "[^_]confirm \"\(Will you\|Agree\)")" -eq 0 ] &&
   [ "$(_facts apps | grep -c .)" -eq 4 ]'
+
+t "E14" "EOF or an empty answers file is not a decision: nothing is declined, and it says it will ask again" '
+  W=$(senv); estub "$W"; _asuggest gamma backup; _asuggest delta own-sync; : >"$W/empty"
+  out=$(DX="DOTFILES_STRICT_ANSWERS=$W/empty" esyn 2>&1)
+  [ ! -e "$(DECL)" ] && [ "$(printf "%s\n" "$out" | grep -c "not decided, will ask again")" -eq 2 ]'
+t "E15" "an empty answer (just Enter) is not a decision either; an explicit n still is" '
+  W=$(senv); estub "$W"; _asuggest gamma backup; printf "\n" >"$W/blank"
+  DX="DOTFILES_STRICT_ANSWERS=$W/blank" esyn >/dev/null 2>&1; a=$([ -e "$(DECL)" ] && echo declined || echo none)
+  W=$(senv); estub "$W"; _asuggest gamma backup; EA="no" esyn >/dev/null 2>&1
+  [ "$a" = none ] && [ "$(grep -cx gamma "$(DECL)")" -eq 1 ]'
+t "E16" "a backup suggestion prints the exact allowlist line and processes.list line; without a safe process name it says by hand" '
+  W=$(senv); estub "$W"; _asuggest gamma backup; _asuggest delta backup; out=$(esyn 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "^    add to config/mackup/mackup.cfg under \[applications_to_sync\]:  gamma$")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "^    add to config/mackup/processes.list:  gamma|GammaExec$")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "^    add to config/mackup/mackup.cfg under \[applications_to_sync\]:  delta$")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "delta|")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "process name.*by hand")" -eq 1 ]'
+t "E17" "the declined list alone does not make the private repo dirty: no notification, and a behind pull still fast-forwards" '
+  W=$(senv); estub "$W"; mkdir -p "$W/priv/jev"; printf "x\n" >"$W/priv/jev/apps-declined.list"
+  syn --scheduled >/dev/null 2>&1; a=$(_calls "^osascript")
+  printf "y\n" >"$W/priv/other.txt"; : >"$W/log"; syn --scheduled >/dev/null 2>&1; b=$(_calls "^osascript")
+  W=$(senv); estub "$W"
+  push_change "$W" priv jev/apps-declined.list "a"; git -C "$W/priv" pull -q --ff-only 2>/dev/null
+  printf "b\n" >>"$W/priv/jev/apps-declined.list"; push_change "$W" priv Brewfile.local2 "z"; h=$(_remote priv)
+  esyn >/dev/null 2>&1
+  [ "$a" -eq 0 ] && [ "$b" -eq 1 ] && [ "$(_head priv)" = "$h" ] && [ "$(grep -cx b "$W/priv/jev/apps-declined.list")" -eq 1 ]'
 
 finish

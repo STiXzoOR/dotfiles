@@ -120,6 +120,17 @@ EOF
   return 1
 }
 
+# repo_dirty <label> <dir> <no|all>: porcelain status lines (untracked files
+# only with "all"). In the private repo jev/apps-declined.list, which the app
+# suggestions write and the owner commits when convenient, does not count:
+# it must not stop a fast-forward or raise a notification by itself.
+repo_dirty() {
+  local u=no
+  [ "$3" = all ] && u=all
+  git -C "$2" status --porcelain --untracked-files="$u" 2>/dev/null |
+    awk -v l="$1" '!(l == "private" && $0 ~ /^.. jev\/apps-declined\.list$/)'
+}
+
 # repo_sync <label> <dir>
 repo_sync() {
   local label="$1" dir="$2" up counts ahead behind old new f
@@ -144,7 +155,7 @@ repo_sync() {
     say "    git -C \"$dir\" merge $up     (or merge)"
     attn "$label repo has diverged from $up (git -C $dir rebase $up)"
   elif [ "$behind" -gt 0 ]; then
-    if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
+    if [ -n "$(repo_dirty "$label" "$dir" no)" ]; then
       say "  behind $up by $behind commit(s) but has uncommitted changes, so it was left alone."
       say "    Commit or discard them, then: git -C \"$dir\" pull --ff-only"
       attn "$label repo is behind but has local changes (commit them, then git -C $dir pull --ff-only)"
@@ -173,7 +184,7 @@ EOF
 
   # New files in the private repo are untracked, and untracked means they stay
   # on this Mac.
-  if [ "$label" = private ] && [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+  if [ "$label" = private ] && [ -n "$(repo_dirty "$label" "$dir" all)" ]; then
     say "  uncommitted changes: they will not reach the other Mac until committed and pushed"
     attn "private repo has uncommitted changes"
   fi
@@ -570,20 +581,31 @@ drift_header() {
 # confirm. DOTFILES_STRICT_ANSWERS names a file of answers, one per line: the
 # test seam, since a test has no terminal.
 strict_confirm() {
+  strict_answer "$1" && return 0
+  return 1
+}
+
+# strict_answer <prompt>: strict_confirm's answer in three states, for a caller
+# that remembers a "no": 0 an explicit yes, 1 an explicit no (n, no), 2 nothing
+# was decided (end of input, an empty line, anything else, no terminal).
+strict_answer() {
   local a
   if [ -n "${DOTFILES_STRICT_ANSWERS:-}" ]; then
     if [ "$STRICT_FD_OPEN" -eq 0 ]; then
-      exec 4<"$DOTFILES_STRICT_ANSWERS" || return 1
+      exec 4<"$DOTFILES_STRICT_ANSWERS" || return 2
       STRICT_FD_OPEN=1
     fi
-    read -r a <&4 || return 1
+    read -r a <&4 || return 2
   elif [ -t 0 ]; then
-    read -r -p "$1 [y|N] " a || return 1
+    read -r -p "$1 [y|N] " a || return 2
   else
-    return 1
+    return 2
   fi
-  case "$a" in y|Y|yes|YES|Yes) return 0 ;; esac
-  return 1
+  case "$a" in
+    y | Y | yes | YES | Yes) return 0 ;;
+    n | N | no | NO | No) return 1 ;;
+  esac
+  return 2
 }
 
 # append_line <file> <line>: never twice, and never onto an unterminated line.
@@ -844,20 +866,36 @@ apps_decline() {
     return 0
   fi
   f=$(apps_declined_file)
-  mkdir -p "$(dirname "$f")" 2>/dev/null && append_line "$f" "$1" && say "    remembered in the private repo (jev/apps-declined.list, not committed)"
+  mkdir -p "$(dirname "$f")" 2>/dev/null && append_line "$f" "$1" && say "    recorded in jev/apps-declined.list in the private repo (left uncommitted for you to commit)"
+}
+
+# apps_process <name>: the process name from the candidate facts (computed by
+# dotfiles-apps from the bundle, never from Jev) when it fits the charset.
+apps_process() {
+  local p
+  p=$(printf '%s' "$APPS_FACTS" | awk -F'\t' -v k="$1" '$1 == k { i = index($2, "; process="); if (i) print substr($2, i + 10); exit }')
+  matches '^[A-Za-z0-9][A-Za-z0-9 ._+()-]*$' "$p" && printf '%s' "$p"
+  return 0
 }
 
 # apps_offer <name> <choice>: show the suggestion; on a terminal (or the test
-# seam) ask, and remember a decision that means "stop asking".
+# seam) ask, and remember only an explicit decision that means "stop asking".
 apps_offer() {
-  local name="$1" choice="$2"
+  local name="$1" choice="$2" proc rc
   if [ "$APPS_SUGGESTED" -eq 0 ]; then
     say "== apps: what Jev suggests (nothing is written except your no)"
   fi
   APPS_SUGGESTED=$((APPS_SUGGESTED + 1))
   case "$choice" in
     backup)
-      say "  Jev suggests backup: $name      (add it under [applications_to_sync] in config/mackup/mackup.cfg and its process name to config/mackup/processes.list by hand; dotfiles apps check needs both)"
+      proc=$(apps_process "$name")
+      say "  Jev suggests backup: $name"
+      say "    add to config/mackup/mackup.cfg under [applications_to_sync]:  $name"
+      if [ -n "$proc" ]; then
+        say "    add to config/mackup/processes.list:  $name|$proc"
+      else
+        say "    add its process name to config/mackup/processes.list by hand (app|process); dotfiles apps check needs both"
+      fi
       ;;
     own-sync) say "  Jev suggests own-sync: $name      (the app syncs its own settings; nothing to back up)" ;;
     not-worth-it) say "  Jev suggests not-worth-it: $name      (little to lose; nothing to back up)" ;;
@@ -866,13 +904,18 @@ apps_offer() {
   # No terminal and no seam means nobody answered: that is not a "no".
   [ -t 0 ] || [ -n "${DOTFILES_STRICT_ANSWERS:-}" ] || return 0
   case "$choice" in
-    backup)
-      strict_confirm "Will you add $name to the mackup allowlist? (no: stop suggesting it)" || apps_decline "$name"
-      ;;
-    *)
-      if strict_confirm "Agree? Stop suggesting $name"; then apps_decline "$name"; else say "    kept: it may be suggested again"; fi
-      ;;
+    backup) strict_answer "Will you add $name to the mackup allowlist? (no: stop suggesting it)" ;;
+    *) strict_answer "Agree? Stop suggesting $name" ;;
   esac
+  rc=$?
+  # backup: an explicit no declines. own-sync / not-worth-it: an explicit yes does.
+  if [ "$rc" -eq 2 ]; then
+    say "    not decided, will ask again"
+  elif { [ "$choice" = backup ] && [ "$rc" -eq 1 ]; } || { [ "$choice" != backup ] && [ "$rc" -eq 0 ]; }; then
+    apps_decline "$name"
+  elif [ "$choice" != backup ]; then
+    say "    kept: it may be suggested again"
+  fi
 }
 
 # apps_ask: sets DRIFT_OUT to the SUGGEST lines Jev returns; a failed request
