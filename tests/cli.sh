@@ -816,14 +816,15 @@ t "N2.19" "a TERM during the install removes the sentinel and stops the keep-ali
   n=$(grep -c "^sudo -n true" "$W/log") && sleep 0.5 && [ "$(grep -c "^sudo -n true" "$W/log")" -eq "$n" ]'
 
 t "N2.20" "a SIGKILLed parent does not leave the keep-alive holding sudo warm" '
-  W=$(sandbox); _clt_stubs "$W"; echo 3 > "$W/install.sleep"
+  W=$(sandbox); _clt_stubs "$W"; echo 8 > "$W/install.sleep"
   _clt_offer "$W" 1 "Command Line Tools for Xcode 27.0-27.0"
   DOTFILES_CLT_KEEPALIVE_INTERVAL=0.1 _clt_run "$W" "echo \$\$ > \"\$SW/pid\"; dotfiles_install_clt" >/dev/null 2>&1 &
   bgpid=$!
-  i=0; while [ ! -e "$W/sentinel" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
-  sleep 0.3; kill -KILL "$(command cat "$W/pid")"; wait "$bgpid" 2>/dev/null
-  sleep 0.4
-  n=$(grep -c "^sudo -n true" "$W/log"); sleep 0.6
+  # Wait for the keep-alive to have fired (bounded, so a loaded machine is fine).
+  i=0; while [ "$(grep -c "^sudo -n true" "$W/log" 2>/dev/null)" -lt 2 ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  kill -KILL "$(command cat "$W/pid")"; wait "$bgpid" 2>/dev/null
+  sleep 1
+  n=$(grep -c "^sudo -n true" "$W/log"); sleep 0.8
   [ "$n" -ge 1 ] && [ "$(grep -c "^sudo -n true" "$W/log")" -eq "$n" ]'
 
 
