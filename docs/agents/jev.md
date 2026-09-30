@@ -30,6 +30,7 @@ hook does exactly what it did before plus its deterministic checks.
 | ----- | ------------- | ---------------------------------- |
 | `privacy` | `.githooks/pre-commit`, per added hunk that no deterministic check caught | Does this added text reveal a person's name, a computer or host name, a client or private project name, a private network address or a home directory path? |
 | `secrets` | pre-commit, `dotfiles apps backup` (staging tree), `dotfiles jev scan-vault` | Is this masked value a live credential rather than a placeholder, example, hash or identifier? Asked only for an *ambiguous* hit. |
+| `drift` | `dotfiles sync`, after the deterministic drift report | One `choice` per undeclared item, one batched request per kind: see "Drift" below. |
 
 The `secrets` point also runs in the private repo's pre-commit hook
 (`dotfiles jev guard-private`, installed by `dotfiles private`) and in the daily
@@ -141,6 +142,65 @@ TypeSafe states that requests are not used for training. Zero data retention is
 available by arrangement only, and the default retention period is not stated
 in what we could read: treat everything in `state` as leaving the Mac, which is
 why the redaction and the deterministic checks exist.
+
+## Drift
+
+`dotfiles sync` already lists what is installed here and declared nowhere. The
+`drift` point then asks Jev what each item is, so the list turns into a
+suggestion per item. Three kinds, **one batched request per kind** (never one
+per item):
+
+| Kind | Facts computed in shell | Choices |
+| ---- | ----------------------- | ------- |
+| `pkg` | every undeclared brew formula, cask and App Store app: name, `brew desc`, whether another installed formula needs it (`brew uses --installed`), the date it was first seen undeclared | `public` (Brewfile), `private` (`Brewfile.local` or a private list), `ignore` (experiment, dependency, transient), `remove` |
+| `defaults` | declared macOS defaults whose live value now differs from the baseline snapshot (`dotfiles-baseline changed`: domain, key, old, new, first-seen date) | `public` (`macos/defaults.sh`), `local-only` (`macos/local.sh`), `transient` |
+| `config` | real (non-symlink) directories under `~/.config` that `config/<name>` in the repo does not manage: file count, size, first-seen date | `capture`, `ignore` |
+
+`dotfiles-baseline changed [label]` compares the live value of every key the
+`macos/*.sh` scripts declare with the snapshot for this macOS version. A key
+the OS no longer honours is `diff`'s (BROKE), not a change. Only declared keys
+can be compared: an undeclared change to some other key is invisible to it.
+
+First-seen dates are kept in `~/.local/state/dotfiles/drift-first-seen`
+(`key<TAB>date`), written the first time an item appears.
+
+What `on` mode does with an answer:
+
+- The **line offered is built by `dotfiles sync` from its own facts**, never
+  taken from Jev. A suggestion for an item that was not in the facts is
+  ignored.
+- Interactively, `public`/`private`/`local-only` show the exact pre-filled line
+  (`brew "jq"`, `cask "slack"`, `mas "Name", id: 111`, `defaults write <domain>
+  <key> -bool true`) behind a `confirm`; yes appends it to that file. Nothing is
+  committed. A defaults value that cannot be written safely (a string with a
+  quote, a dollar sign or a backtick; a type `defaults read-type` cannot name)
+  is shown for review by hand and never appended.
+- `ignore` and `transient` are reported and write nothing.
+- `remove` prints the `brew uninstall` command for you to run; sync never
+  uninstalls anything. It is only offered when **two agreeing calls** said
+  `remove`: the second call is asked about the removes alone, and a
+  disagreement or a failed call drops the suggestion.
+- `capture` prints the exact `mv ... && dotfiles link` command; sync never moves
+  a directory under `$HOME`.
+- Scheduled runs never prompt and never write: they add one line to the single
+  notification ("Jev suggests N drift item(s) to classify") and the interactive
+  `dotfiles sync` does the offering.
+
+Offered means "not `pass`" at the point's thresholds (defaults: probability of
+the chosen option >= 0.5 warn, >= 0.85 with confidence >= 0.8 block; both count
+as offered). In `shadow` mode Jev is asked and the batch is logged as
+`shadow: would have suggested N of M <kind> item(s)`, and sync prints and writes
+nothing. At most `JEV_DRIFT_MAX_ITEMS` (40) items go in a request. Interactive
+requests use a 6 second timeout instead of 2, because a batch is larger than
+one hunk (`JEV_TIMEOUT` overrides); scheduled ones use the 10 second default. A
+failed request is a quiet no-op: the deterministic drift report is complete
+without it.
+
+Item names such as brew formula names are sent; anything private goes through
+the same redaction as every other request. `dotfiles jev drift <kind>` is the
+command sync calls (facts on stdin as `key<TAB>facts`; it prints
+`SUGGEST<TAB>key<TAB>choice<TAB>p<TAB>confidence` in `on` mode only). Replay
+cases for this point come with the other Task 9 points.
 
 ## Limits
 

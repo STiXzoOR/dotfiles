@@ -94,7 +94,12 @@ sync only reports the change and never imports.
    reported, never applied.
 4. Drift: packages installed on this Mac (`brew leaves --installed-on-request`,
    casks, `mas list`, VS Code extensions) that neither the public nor the private
-   lists declare, each with the line to add.
+   lists declare, each with the line to add. With the Jev `drift` point not `off`,
+   the packages, the macOS defaults that read back differently from the baseline
+   snapshot and the unmanaged `~/.config` directories are also classified in one
+   batched request per kind; `on` mode offers the pre-filled line behind a
+   confirm, `shadow` only logs, and nothing is ever written or committed without
+   you (see [jev.md](jev.md)).
 
 5. **Scheduled runs only**, once a day: `dotfiles jev scan-vault` over the vault's
    `Claude-Sessions/` notes, which sync through iCloud (a token pasted into a

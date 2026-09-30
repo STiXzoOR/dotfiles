@@ -32,7 +32,9 @@ update                  # Update submodules
 
 `baseline` is not a `dotfiles` subcommand; the macOS defaults baseline is
 captured directly with `./bin/dotfiles-baseline`, which records every declared
-default and diffs a later capture against it.
+default and diffs a later capture against it. `dotfiles-baseline changed [label]`
+lists declared keys whose live value differs from the snapshot (read-only);
+`dotfiles sync` hands them to the Jev `drift` point.
 
 ## install flags
 
