@@ -201,9 +201,7 @@ else
 end
 cask "karabiner-elements"           # Keyboard customization
 cask "keka"                         # Archive utility
-cask "keycastr"                     # Keystroke visualizer
 cask "shottr"                       # Screenshot tool
-cask "topnotch"                     # Notch hider
 cask "flux-app"                     # Blue light filter
 cask "obsidian"                     # Knowledge base / vault
 cask "setapp"                       # App subscription

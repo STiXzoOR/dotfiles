@@ -631,7 +631,6 @@ The following is the software installed by default:
 - Discord
 - Flux
 - Keka (archiver)
-- KeyCastr
 - Kaleidoscope (diff tool)
 - Karabiner Elements (keyboard customizer)
 - Ngrok
@@ -649,7 +648,6 @@ The following is the software installed by default:
 - Slack
 - TeamViewer
 - Telegram
-- TopNotch
 - Transmission
 - Termius
 - Tunnelblick
