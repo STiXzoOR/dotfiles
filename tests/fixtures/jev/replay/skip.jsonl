@@ -1,0 +1,12 @@
+{"id": "s01", "label": true, "state": "hours since last run: 26\nupstream commits since last run: 3\npaths touched: Brewfile config/mise/config.toml\nlockfile hashes changed: yes"}
+{"id": "s02", "label": true, "state": "hours since last run: 50\nupstream commits since last run: 1\npaths touched: claude/rules/style.md\nlockfile hashes changed: no"}
+{"id": "s03", "label": true, "state": "hours since last run: 30\nupstream commits since last run: 0\nallowlisted app prefs changed since the last snapshot: 4 files\nnewest change: 2 hours ago"}
+{"id": "s04", "label": true, "state": "hours since last run: 170\nupstream commits since last run: 0\nallowlisted app prefs changed since the last snapshot: 0 files\nnote: no run for a week"}
+{"id": "s05", "label": true, "state": "hours since last run: 25\nupstream commits since last run: 6\npaths touched: packages/code.list secrets.age\nlockfile hashes changed: no"}
+{"id": "s06", "label": true, "state": "hours since last run: 28\nupstream commits since last run: 0\nallowlisted app prefs changed since the last snapshot: 12 files\nnewest change: 20 minutes ago"}
+{"id": "s07", "label": false, "state": "hours since last run: 3\nupstream commits since last run: 0\nallowlisted app prefs changed since the last snapshot: 0 files\nlockfile hashes changed: no"}
+{"id": "s08", "label": false, "state": "hours since last run: 1\nupstream commits since last run: 0\npaths touched: none\nlockfile hashes changed: no"}
+{"id": "s09", "label": false, "state": "hours since last run: 5\nupstream commits since last run: 0\nallowlisted app prefs changed since the last snapshot: 0 files\nnote: last run was clean"}
+{"id": "s10", "label": false, "state": "hours since last run: 2\nupstream commits since last run: 0\npaths touched: none\nallowlisted app prefs changed since the last snapshot: 0 files"}
+{"id": "s11", "label": false, "state": "hours since last run: 8\nupstream commits since last run: 1\npaths touched: README.md docs/notes.md\nlockfile hashes changed: no"}
+{"id": "s12", "label": false, "state": "hours since last run: 4\nupstream commits since last run: 0\nallowlisted app prefs changed since the last snapshot: 0 files\nlockfile hashes changed: no"}

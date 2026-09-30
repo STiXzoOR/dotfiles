@@ -293,3 +293,68 @@ per hunk: a few cents a month at most.
 - Permanently: export it in `profiles/local.zsh`, or `dotfiles jev promote
   <point> off`, or delete the key (`dotfiles secrets delete typesafe_api_key`).
 - Jev is never required for a commit to succeed.
+
+## App-choice
+
+The `apps` point is for an app in `/Applications` that mackup supports and that
+is neither allowlisted nor ignored. It asks **one batched request per run**, one
+`choice` per app: `backup` (worth keeping in the mackup allowlist), `own-sync`
+(the app already syncs its own settings) or `not-worth-it`.
+
+- **What it asks:** what to do about backing up this one app's settings.
+- **What it sends:** facts computed in shell: the app name, whether mackup
+  supports it, mackup's paths for it, whether it is a Setapp or App Store build,
+  whether its preferences live in a sandbox container. Redacted like every other
+  request (never-send list, secret shapes, size cap). No file contents.
+- **Shadow to on:** in `shadow` the answers are only logged. In `on` the
+  interactive `dotfiles sync` offers the allowlist line behind a strict prompt,
+  and a "no" is remembered in the private repo so the app is not asked again.
+  Nothing is written without you.
+- **Calibrate first:** `dotfiles jev replay apps` runs the labelled cases in
+  `tests/fixtures/jev/replay/apps.jsonl` and prints accuracy by probability.
+
+## Skip gate
+
+The `skip` point sits in front of the two daily jobs, `dotfiles sync
+--scheduled` and `dotfiles apps backup --scheduled`, and answers one question:
+would running now do useful work? It is the one point whose answer can make
+something *not* happen, so it is deliberately asymmetric.
+
+- **What it sends:** one `noul` request per run, with facts computed in shell:
+  for sync, upstream commits since the last run per repo and the paths they touch
+  (at most 30), whether the lockfiles changed, unpushed commits; for apps, how
+  many allowlisted apps have preference files newer than the last snapshot;
+  for both, the hours since the last run. The facts are capped
+  (`JEV_SKIP_MAX_FACTS`, 3000 bytes) and redacted first. The scheduled timeout
+  is 10 seconds.
+- **When it skips:** only when P(useful) is **below 0.2** (`skip.skip_p` in the
+  config overrides it), and only in `on` mode. Never more than **3 skips in a
+  row**: a counter in `~/.local/state/dotfiles/skip-<job>.streak` forces the
+  fourth run, without a request. Never when a deterministic fact says there is
+  work: upstream commits touching `Brewfile*`, `config/mise/`, lockfiles,
+  `packages/`, `claude/`, `codex/` or `secrets.age`; changed lockfile hashes or a
+  first run; unpushed commits; pending actions from an earlier run; app
+  preferences newer than the last snapshot; no snapshot yet. Those run with no
+  request at all.
+- **Fail open:** no key, a timeout, a 5xx, a 401, a malformed answer or the
+  request cap all mean the job runs. Only the literal word `SKIP` from
+  `dotfiles jev skip <sync|apps>` skips anything.
+- **Log:** every decision is a line in `jev.jsonl`: `run: sync: deterministic
+  work: ...`, `skipped: sync: P(useful)=0.05 ...`, or in shadow `shadow: would
+  have skipped: ...` (and the job runs).
+- **Shadow to on:** starts in `shadow`: the gate decides, logs what it would have
+  skipped, and the job always runs. Read `dotfiles jev log`, run `dotfiles jev
+  replay skip` (the `wrongly=` column is the only one that costs anything: a
+  skipped run that had work), then `dotfiles jev promote skip`. `DOTFILES_JEV=off`
+  or `skip=off` removes the gate and the request.
+
+## Replay cases for drift, app-choice and skip
+
+`tests/fixtures/jev/replay/` gains `drift.jsonl` (each case has a `kind` of
+`pkg`, `defaults` or `config` and the expected `choice` as its label),
+`apps.jsonl` (label `backup`, `own-sync` or `not-worth-it`) and `skip.jsonl`
+(label `true` when useful work existed). All are synthetic and public-safe.
+`dotfiles jev replay drift`, `replay apps` and `replay skip` call the real API
+on them, only when you run it by hand with a key, and print accuracy by
+probability (skip: the cost of skipping below each threshold). Add your own
+scrubbed cases before trusting the numbers; calibration is contested.

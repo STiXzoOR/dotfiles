@@ -988,4 +988,129 @@ t "K19" "a run dir shared by the caller survives: two drift calls, one request c
   JENV="TYPESAFE_API_KEY=k1 JEV_RUN_DIR=$d FAKE_CURL_SEQ=401" drift config "x	y" >/dev/null 2>&1; r2=$?
   [ -d "$d" ] && [ "$(calls)" -eq 1 ] && [ "$r1" -eq 3 ] && [ "$r2" -eq 3 ]'
 
+
+#############################################################################
+section "L -- skip gate for the daily jobs, replay cases for drift/apps/skip"
+#############################################################################
+FACTS3=$(printf 'upstream commits since last run: 0\nallowlisted app prefs changed since the last snapshot: 0 files\n')
+# skipg <job> [args]: dotfiles jev skip with the facts on stdin
+skipg() { printf '%s\n' "$FACTS3" | jtool skip "$@"; }
+streakf() { printf '%s/state/dotfiles/skip-%s.streak' "$W" "$1"; }
+
+t "L1" "shadow (the default): asks once, logs would-have-skipped, prints RUN, resets the streak" '
+  W=$(sandbox); mkenv "$W"
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-skip-low.json" skipg sync 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | sed -n 1p | cut -c1-3)" = RUN ] && [ "$(calls)" -eq 1 ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .point)" = skip ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .action | grep -c "^shadow: would have skipped")" -eq 1 ]'
+t "L2" "on: a low P(useful) skips, prints SKIP, logs it and counts the streak" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-skip-low.json" skipg sync 2>&1)
+  [ "$(printf "%s\n" "$out" | sed -n 1p | cut -c1-4)" = SKIP ] && [ "$(cat "$(streakf sync)")" = 1 ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .action | grep -c "^skipped")" -eq 1 ]'
+t "L3" "on: a P(useful) of 0.5 or more runs, and only strictly below 0.2 skips" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on
+  o1=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-skip-high.json" skipg sync 2>&1)
+  o2=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-skip-edge.json" skipg sync 2>&1)
+  [ "$(printf "%s\n" "$o1" | cut -c1-3)" = RUN ] && [ "$(printf "%s\n" "$o2" | cut -c1-3)" = RUN ]'
+t "L4" "never more than 3 skips in a row: the fourth run is forced, with no request, and resets" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on; r=""
+  for i in 1 2 3 4 5; do
+    o=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-skip-low.json" skipg sync 2>&1); r="$r$(printf "%s\n" "$o" | cut -c1-3)"
+    [ "$i" -eq 3 ] && c3=$(calls)
+  done
+  [ "$r" = "SKISKISKIRUNSKI" ] && [ "$c3" -eq 3 ] && [ "$(calls)" -eq 4 ] &&
+  [ "$(jq -r "select(.action | test(\"cap\")) | .action" "$(LOGF)" | grep -c .)" -eq 1 ]'
+t "L5" "a deterministic fact of work runs without asking, whatever the mode, and is logged" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-skip-low.json" skipg sync --work "upstream touches Brewfile" 2>&1)
+  [ "$(printf "%s\n" "$out" | cut -c1-3)" = RUN ] && [ "$(calls)" -eq 0 ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .action | grep -c "deterministic work: upstream touches Brewfile")" -eq 1 ]'
+t "L6" "a deterministic fact resets the skip streak" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on; mkdir -p "$W/state/dotfiles"; printf 2 >"$(streakf sync)"
+  skipg sync --work "prefs changed" >/dev/null 2>&1; [ "$(cat "$(streakf sync)")" = 0 ]'
+t "L7" "any Jev failure runs the job: timeout, 5xx, 401, no key" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on; ok=1
+  for e in "FAKE_CURL_TIMEOUT=1" "JEV_TRIES=1 FAKE_CURL_SEQ=503" "FAKE_CURL_SEQ=401"; do
+    o=$(JENV="TYPESAFE_API_KEY=k1 $e" skipg sync 2>&1); [ "$(printf "%s\n" "$o" | cut -c1-3)" = RUN ] || ok=0
+  done
+  o=$(skipg sync 2>&1); [ "$(printf "%s\n" "$o" | cut -c1-3)" = RUN ] || ok=0
+  [ "$ok" -eq 1 ] && [ "$(cat "$(streakf sync)")" = 0 ]'
+t "L8" "master switch off: RUN, no request" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 DOTFILES_JEV=off" skipg sync 2>&1)
+  [ "$(printf "%s\n" "$out" | cut -c1-3)" = RUN ] && [ "$(calls)" -eq 0 ]'
+t "L9" "the facts go as ONE noul request, with hours since the last run, and the scheduled timeout applies" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on
+  JENV="TYPESAFE_API_KEY=k1 JEV_SCHEDULED=1 FAKE_CURL_ANSWER=answer-skip-low.json" skipg apps >/dev/null 2>&1
+  st=$(jq -r .state "$W/rec/body.log")
+  [ "$(calls)" -eq 1 ] && [ "$(jq -r ".questions | keys | join(\",\")" "$W/rec/body.log")" = useful ] &&
+  [ "$(jq -r .questions.useful.type "$W/rec/body.log")" = noul ] &&
+  [ "$(printf "%s\n" "$st" | grep -c "hours since last run")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$st" | grep -c "allowlisted app prefs changed")" -eq 1 ] &&
+  [ "$(grep -c -- "--max-time 10" "$W/rec/argv.log")" -eq 1 ]'
+t "L10" "the facts are capped, and the never-send list applies to them" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on; printf "Zorblax-Depot\n" >"$W/priv/jev/never-send.list"
+  big=$(i=0; while [ "$i" -lt 400 ]; do i=$((i + 1)); printf "paths touched: Zorblax-Depot/some/long/path/number/%s\n" "$i"; done)
+  printf "%s\n" "$big" | JENV="TYPESAFE_API_KEY=k1 JEV_SKIP_MAX_FACTS=500 FAKE_CURL_ANSWER=answer-skip-low.json" jtool skip sync >/dev/null 2>&1
+  [ "$(calls)" -eq 1 ] && [ "$(jq -r .state "$W/rec/body.log" | wc -c | tr -d " ")" -lt 1400 ] && [ "$(recorded | grep -c "Zorblax-Depot")" -eq 0 ]'
+t "L11" "skip rejects an unknown job, and the point is listed in status" '
+  W=$(sandbox); mkenv "$W"
+  out=$(jtool skip bogus </dev/null 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && [ "$(jtool status 2>&1 | grep -c "skip  *shadow")" -eq 1 ]'
+t "L12" "the decision log holds ids and numbers, never the facts" '
+  W=$(sandbox); mkenv "$W"; setmode skip=on
+  printf "paths touched: Brewfile-secret-marker-xyz\n" | JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-skip-low.json" jtool skip sync >/dev/null 2>&1
+  [ "$(grep -c "secret-marker-xyz" "$(LOGF)")" -eq 0 ] && [ "$(tail -n 1 "$(LOGF)" | jq -r .answers.useful.noul)" = 0.05 ]'
+
+t "L13" "replay cases for skip, drift and apps are labelled, public-safe and cover every label" '
+  ok=1
+  for p in skip drift apps; do
+    f=tests/fixtures/jev/replay/$p.jsonl
+    [ -f "$f" ] || { ok=0; continue; }
+    [ "$(jq -r "select(.id and .label != null and (.state | type == \"string\")) | .id" "$f" | grep -c .)" -eq "$(grep -c . "$f")" ] || ok=0
+  done
+  [ "$(jq -r "select(.label == true) | .id" tests/fixtures/jev/replay/skip.jsonl | grep -c .)" -ge 5 ] || ok=0
+  [ "$(jq -r "select(.label == false) | .id" tests/fixtures/jev/replay/skip.jsonl | grep -c .)" -ge 5 ] || ok=0
+  [ "$(jq -r .label tests/fixtures/jev/replay/apps.jsonl | sort -u | tr "\n" " ")" = "backup not-worth-it own-sync " ] || ok=0
+  [ "$(jq -r .kind tests/fixtures/jev/replay/drift.jsonl | sort -u | tr "\n" " ")" = "config defaults pkg " ] || ok=0
+  [ "$(cat tests/fixtures/jev/replay/*.jsonl | grep -Ec -f <(bash .githooks/pre-commit --print-secret-patterns))" -eq 0 ] &&
+  [ "$(cat tests/fixtures/jev/replay/skip.jsonl tests/fixtures/jev/replay/drift.jsonl tests/fixtures/jev/replay/apps.jsonl | grep -c "/Users/")" -eq 0 ] && [ "$ok" -eq 1 ]'
+t "L14" "replay skip prints precision and recall per threshold (fake API)" '
+  W=$(sandbox); mkenv "$W"
+  out=$(JENV="TYPESAFE_API_KEY=k1 DOTFILES_DIR=$ROOT_DIR FAKE_CURL_ANSWER=answer-skip-low.json" jtool replay skip 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(calls)" -eq 12 ] && [ "$(printf "%s\n" "$out" | grep -c "precision=")" -ge 6 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "P(useful) < 0.2")" -ge 1 ]'
+t "L15" "replay drift and apps score the chosen option per case (fake API)" '
+  W=$(sandbox); mkenv "$W"
+  o1=$(JENV="TYPESAFE_API_KEY=k1 DOTFILES_DIR=$ROOT_DIR FAKE_CURL_ANSWER=answer-apps.json" jtool replay apps 2>&1); r1=$?
+  c1=$(calls)
+  o2=$(JENV="TYPESAFE_API_KEY=k1 DOTFILES_DIR=$ROOT_DIR FAKE_CURL_ANSWER=answer-drift.json" jtool replay drift 2>&1); r2=$?
+  [ "$r1" -eq 0 ] && [ "$r2" -eq 0 ] && [ "$c1" -eq 9 ] && [ "$(calls)" -eq 21 ] &&
+  [ "$(printf "%s\n" "$o1" | grep -c "accuracy=")" -ge 4 ] && [ "$(printf "%s\n" "$o2" | grep -c "accuracy=")" -ge 4 ] &&
+  true'
+t "L16" "replay for the choice points sends the point own options as the criteria" '
+  W=$(sandbox); mkenv "$W"
+  JENV="TYPESAFE_API_KEY=k1 DOTFILES_DIR=$ROOT_DIR FAKE_CURL_ANSWER=answer-apps.json" jtool replay apps >/dev/null 2>&1
+  [ "$(jq -r ".questions.i1.criteria | keys | join(\",\")" "$W/rec/body.log" | sort -u)" = "backup,not-worth-it,own-sync" ]'
+t "L17" "replay without a key still refuses for the new points" '
+  W=$(sandbox); mkenv "$W"
+  out=$(JENV="DOTFILES_DIR=$ROOT_DIR" jtool replay skip 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(calls)" -eq 0 ]'
+
+# sync and apps wiring: a stub dotfiles-jev that says what the gate said
+t "L18" "dotfiles-sync gates only the scheduled run, before any git work, and skips when told SKIP" '
+  [ "$(code_of bin/dotfiles-sync | grep -c "skip_gate")" -ge 2 ] &&
+  [ "$(_first_line "skip_gate || " bin/dotfiles-sync)" -lt "$(_first_line "repo_sync public" bin/dotfiles-sync)" ] &&
+  [ "$(code_of bin/dotfiles-sync | grep -c "JEV_BIN\" skip sync")" -ge 1 ]'
+t "L19" "dotfiles-apps gates only the scheduled backup, before staging" '
+  [ "$(code_of bin/dotfiles-apps | grep -c "skip_gate")" -ge 2 ] &&
+  [ "$(_first_line "skip_gate" bin/dotfiles-apps)" -lt "$(_first_line "take_lock || " bin/dotfiles-apps)" ] &&
+  [ "$(code_of bin/dotfiles-apps | grep -c "\" skip apps")" -ge 1 ]'
+t "L20" "docs/agents/jev.md has a section each for the drift, app-choice and skip points" '
+  d=docs/agents/jev.md
+  (for w in "## Drift" "## App-choice" "## Skip gate"; do [ "$(grep -c -- "^$w" "$d")" -eq 1 ] || exit 1; done) &&
+  [ "$(sed -n "/^## Skip gate/,\$p" "$d" | grep -c "0.2")" -ge 1 ] && [ "$(sed -n "/^## Skip gate/,\$p" "$d" | grep -c "3 ")" -ge 1 ] &&
+  [ "$(grep -c "replay skip\|replay drift\|replay apps" "$d")" -ge 1 ]'
+
 finish
