@@ -81,6 +81,24 @@ t "A3.2" "ensure_submodule initialises a missing module shallowly" '
   W=$(sandbox); git init -q "$W/up"; (cd "$W/up" && git commit -q --allow-empty -m a && git commit -q --allow-empty -m b)
   git init -q "$W/repo"; (cd "$W/repo" && git -c protocol.file.allow=always submodule add -q "$W/up" mod >/dev/null 2>&1 && git commit -q -m add && git submodule deinit -f -q mod)
   (DOTFILES_DIR="$W/repo"; source scripts/lib/fs.sh; git -C "$W/repo" config protocol.file.allow always; dotfiles_ensure_submodule mod) && [ -e "$W/repo/mod/.git" ]'
+# Prezto carries its own submodules (syntax-highlighting, autosuggestions,
+# history-substring-search); a plain `update --init` left them empty and every
+# shell printed "no such file or directory".
+_nested_repo() { # _nested_repo <W> -- W/repo has mod, which has its own submodule inner
+  local W="$1"
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always
+  git init -q "$W/leaf"; (cd "$W/leaf" && echo x > f && git add f && git commit -q -m leaf)
+  git init -q "$W/mid"; (cd "$W/mid" && git submodule add -q "$W/leaf" inner >/dev/null 2>&1 && git commit -q -m mid)
+  git init -q "$W/repo"; (cd "$W/repo" && git submodule add -q "$W/mid" mod >/dev/null 2>&1 && git submodule update -q --init --recursive && git commit -q -m add && git submodule deinit -f -q --all)
+}
+t "A3.5" "ensure_submodule initialises a missing module and its nested submodules" '
+  W=$(sandbox); (_nested_repo "$W"
+  DOTFILES_DIR="$W/repo"; source scripts/lib/fs.sh; dotfiles_ensure_submodule mod && [ -e "$W/repo/mod/inner/f" ])'
+t "A3.6" "ensure_submodule repairs an initialised module whose nested submodules are empty" '
+  W=$(sandbox); (_nested_repo "$W"
+  git -C "$W/repo" submodule update -q --init mod
+  [ ! -e "$W/repo/mod/inner/f" ] &&
+  DOTFILES_DIR="$W/repo"; source scripts/lib/fs.sh; dotfiles_ensure_submodule mod && [ -e "$W/repo/mod/inner/f" ])'
 t "A3.3" "install_prezto.zsh fails when prezto is absent" '
   W=$(sandbox); mkdir -p "$W/df/modules"; ! (DOTFILES_DIR="$W/df" HOME="$W/h" zsh scripts/install_prezto.zsh)'
 t "A3.4" "sub_install_prezto calls the helper" \

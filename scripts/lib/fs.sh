@@ -326,14 +326,25 @@ dotfiles_ensure_submodule() {
   _dfe_root="${DOTFILES_DIR:-.}"
   _dfe_path="$1"
 
+  # A module can be checked out while its own submodules are not: Prezto
+  # carries three, and a plain `update --init` leaves them empty, so every
+  # shell then errors on a missing external/*.zsh. A "-" in the recursive
+  # status marks one that is not initialised; a status that cannot be read
+  # (nothing to repair) counts as fine.
   if [ -e "$_dfe_root/$_dfe_path/.git" ]; then
-    unset _dfe_root _dfe_path
-    return 0
+    _dfe_missing=$(git -C "$_dfe_root/$_dfe_path" submodule status --recursive 2>/dev/null | grep -c '^-')
+    if [ "${_dfe_missing:-0}" -eq 0 ]; then
+      unset _dfe_root _dfe_path _dfe_missing
+      return 0
+    fi
   fi
 
-  git -C "$_dfe_root" submodule update --init --depth 1 -- "$_dfe_path"
+  # --recursive reaches the nested ones; --depth 1 keeps the clones shallow,
+  # falling back to a full fetch for a pinned commit a shallow fetch cannot reach.
+  git -C "$_dfe_root" submodule update --init --recursive --depth 1 -- "$_dfe_path" ||
+    git -C "$_dfe_root" submodule update --init --recursive -- "$_dfe_path"
   _dfe_rc=$?
-  unset _dfe_root _dfe_path
+  unset _dfe_root _dfe_path _dfe_missing
   return "$_dfe_rc"
 }
 
