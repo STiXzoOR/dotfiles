@@ -152,7 +152,7 @@ per item):
 
 | Kind | Facts computed in shell | Choices |
 | ---- | ----------------------- | ------- |
-| `pkg` | every undeclared brew formula, cask and App Store app: name, `brew desc`, whether another installed formula needs it (`brew uses --installed`), the date it was first seen undeclared | `public` (Brewfile), `private` (`Brewfile.local` or a private list), `ignore` (experiment, dependency, transient), `remove` |
+| `pkg` | every undeclared brew formula, cask, App Store app and VS Code extension (at most `JEV_DRIFT_MAX_ITEMS`, 40, are gathered): name, `brew desc`, whether another installed formula needs it (`brew uses --installed`), the date it was first seen undeclared | `public` (Brewfile, or `packages/code.list` for an extension), `private` (`Brewfile.local`, or `packages/code.local.list`), `ignore` (experiment, dependency, transient), `remove` |
 | `defaults` | declared macOS defaults whose live value now differs from the baseline snapshot (`dotfiles-baseline changed`: domain, key, old, new, first-seen date) | `public` (`macos/defaults.sh`), `local-only` (`macos/local.sh`), `transient` |
 | `config` | real (non-symlink) directories under `~/.config` that `config/<name>` in the repo does not manage: file count, size, first-seen date | `capture`, `ignore` |
 
@@ -169,12 +169,23 @@ What `on` mode does with an answer:
 - The **line offered is built by `dotfiles sync` from its own facts**, never
   taken from Jev. A suggestion for an item that was not in the facts is
   ignored.
-- Interactively, `public`/`private`/`local-only` show the exact pre-filled line
-  (`brew "jq"`, `cask "slack"`, `mas "Name", id: 111`, `defaults write <domain>
-  <key> -bool true`) behind a `confirm`; yes appends it to that file. Nothing is
-  committed. A defaults value that cannot be written safely (a string with a
-  quote, a dollar sign or a backtick; a type `defaults read-type` cannot name)
-  is shown for review by hand and never appended.
+- Interactively, `public` and `private` show the exact pre-filled line
+  (`brew "jq"`, `cask "slack"`, `mas "Name", id: 111`, an extension id, `defaults
+  write <domain> <key> -bool true`) and ask a **strict prompt**: it needs a
+  terminal and a typed `y` or `yes`, and `DOTFILES_YES=1` does not answer it, so
+  a line chosen by a model is never appended unattended. Yes appends it to that
+  file; nothing is committed. (`DOTFILES_STRICT_ANSWERS=<file>` feeds answers,
+  one per line: the test seam.)
+- A name is written only if it fits a conservative character set (brew and cask
+  `A-Za-z0-9@._+/-`; App Store names also allow spaces, `&`, `:` and `'"'"'`, never
+  `"`, `#`, `\` or `$`; extension ids `publisher.name`; a defaults domain
+  `A-Za-z0-9._-`, key `A-Za-z0-9._ -`, integers `-?[0-9]+`). Anything else is
+  shown as "add by hand" and never appended, because a `"` corrupts a Brewfile
+  and `#{...}` is evaluated by Ruby in `brew bundle`.
+- `local-only` defaults are printed, never written: `macos/local.sh` is a link
+  into the private repo shared by both Macs and is sourced as variable
+  assignments, so an append would dirty that tree and stop the next sync
+  fast-forwarding. You place the line.
 - `ignore` and `transient` are reported and write nothing.
 - `remove` prints the `brew uninstall` command for you to run; sync never
   uninstalls anything. It is only offered when **two agreeing calls** said
@@ -191,15 +202,19 @@ the chosen option >= 0.5 warn, >= 0.85 with confidence >= 0.8 block; both count
 as offered). In `shadow` mode Jev is asked and the batch is logged as
 `shadow: would have suggested N of M <kind> item(s)`, and sync prints and writes
 nothing. At most `JEV_DRIFT_MAX_ITEMS` (40) items go in a request. Interactive
-requests use a 6 second timeout instead of 2, because a batch is larger than
-one hunk (`JEV_TIMEOUT` overrides); scheduled ones use the 10 second default. A
-failed request is a quiet no-op: the deterministic drift report is complete
-without it.
+`on` requests use a 6 second timeout instead of 2, because a batch is larger
+than one hunk (`JEV_TIMEOUT` overrides); `shadow` keeps 2 seconds, and scheduled
+runs use the 10 second default. A failed request (no key, timeout, HTTP error;
+`dotfiles jev drift` exits 3) stops the other kinds for that sync run, and the
+three kinds share one run directory, so one 401 is one request, not three. In
+`shadow` the second `remove` call is skipped, since nothing acts on it. The
+deterministic drift report is complete without any of this.
 
 Item names such as brew formula names are sent; anything private goes through
 the same redaction as every other request. `dotfiles jev drift <kind>` is the
 command sync calls (facts on stdin as `key<TAB>facts`; it prints
-`SUGGEST<TAB>key<TAB>choice<TAB>p<TAB>confidence` in `on` mode only). Replay
+`SUGGEST<TAB>key<TAB>choice<TAB>p<TAB>confidence` in `on` mode only; a choice
+that is not one of the offered options is dropped). Replay
 cases for this point come with the other Task 9 points.
 
 ## Limits

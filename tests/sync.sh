@@ -383,7 +383,11 @@ dstub() {
 }
 # dsyn <args>: syn with Jev switched on and pointed at the stubs. $DX adds VAR=val.
 dsyn() {
-  local SYNENV="DOTFILES_JEV= DOTFILES_JEV_CONFIG=$W/jev.conf DOTFILES_JEV_BIN=$W/bin/dotfiles-jev-stub DOTFILES_BASELINE_BIN=$W/bin/dotfiles-baseline-stub ${DX:-}"
+  local ans=""
+  # DXY=1 answers the strict prompt "y" through the documented test seam
+  # (DOTFILES_STRICT_ANSWERS), since the strict prompt ignores DOTFILES_YES.
+  if [ -n "${DXY:-}" ]; then printf 'y\ny\ny\ny\ny\ny\ny\ny\ny\ny\n' >"$W/yes"; ans="DOTFILES_STRICT_ANSWERS=$W/yes"; fi
+  local SYNENV="$ans DOTFILES_JEV= DOTFILES_JEV_CONFIG=$W/jev.conf DOTFILES_JEV_BIN=$W/bin/dotfiles-jev-stub DOTFILES_BASELINE_BIN=$W/bin/dotfiles-baseline-stub ${DX:-}"
   syn "$@"
 }
 _suggest() { printf 'SUGGEST\t%s\t%s\t0.9\t0.9\n' "$2" "$3" >>"$W/state/suggest-$1"; }
@@ -421,19 +425,20 @@ t "D1.6" "with Jev switched off (the master switch or the point) nothing is aske
 t "D1.7" "a Jev that fails changes nothing: the deterministic report is complete, and the exit status is 0" '
   W=$(senv); dstub "$W"; _undeclared; out=$(DX="JEVSTUB_RC=3" dsyn 2>&1); rc=$?
   [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -qF "brew \"jq\"" && printf "%s\n" "$out" | grep -q "declared nowhere\|^== drift"'
-t "D1.8" "interactive requests get a longer timeout than the 2 s default; scheduled ones mark JEV_SCHEDULED for the 10 s" '
+t "D1.8" "on: interactive requests get 6 s; shadow keeps the 2 s default; scheduled ones mark JEV_SCHEDULED for the 10 s" '
   W=$(senv); dstub "$W"; _undeclared; dsyn >/dev/null 2>&1; a=$(grep "^JEV_SCHEDULED=" "$W/log" | head -n 1)
   : >"$W/log"; dsyn --scheduled >/dev/null 2>&1; b=$(grep "^JEV_SCHEDULED=" "$W/log" | head -n 1)
-  [ "$a" = "JEV_SCHEDULED= JEV_TIMEOUT=6" ] && [ "$b" = "JEV_SCHEDULED=1 JEV_TIMEOUT=" ]'
+  : >"$W/log"; dstub "$W" shadow; dsyn >/dev/null 2>&1; c=$(grep "^JEV_SCHEDULED=" "$W/log" | head -n 1)
+  [ "$a" = "JEV_SCHEDULED= JEV_TIMEOUT=6" ] && [ "$b" = "JEV_SCHEDULED=1 JEV_TIMEOUT=" ] && [ "$c" = "JEV_SCHEDULED= JEV_TIMEOUT=" ]'
 
 t "D2.1" "on, confirmed: a public suggestion appends the exact line to the public Brewfile, and nothing is committed" '
   W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; h=$(_head pub)
-  DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  DXY=1 dsyn >/dev/null 2>&1
   [ "$(_lines pub/Brewfile | tail -n 1)" = "brew \"jq\"" ] && [ "$(_lines pub/Brewfile.local | grep -c jq)" -eq 0 ] && [ "$(_head pub)" = "$h" ]'
 t "D2.2" "a private suggestion goes to Brewfile.local, a cask and an App Store app as their own lines" '
   W=$(senv); dstub "$W"; _undeclared; printf "iterm2\nslack\n" >"$W/state/casks"; printf "497799835  Xcode  (16.0)\n111  Amphetamine  (5.0)\n" >"$W/state/mas"
   _suggest pkg brew:jq private; _suggest pkg cask:slack public; _suggest pkg mas:111 private
-  DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  DXY=1 dsyn >/dev/null 2>&1
   [ "$(_lines pub/Brewfile.local | grep -c "^brew \"jq\"$")" -eq 1 ] && [ "$(_lines pub/Brewfile | grep -c "^cask \"slack\"$")" -eq 1 ] &&
   [ "$(_lines pub/Brewfile.local | grep -c "^mas \"Amphetamine\", id: 111$")" -eq 1 ]'
 t "D2.3" "interactive and not confirmed (no answer): the line is offered and nothing is written" '
@@ -444,24 +449,24 @@ t "D2.4" "a private suggestion names Brewfile.local as the file" '
   out=$(dsyn 2>&1); printf "%s\n" "$out" | grep -qF "Jev suggests private: brew \"jq\"      (add to Brewfile.local)"'
 t "D2.5" "an ignore suggestion is reported and writes nothing, even confirmed" '
   W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq ignore; b=$(shasum "$W/pub/Brewfile" "$W/pub/Brewfile.local")
-  out=$(DX="DOTFILES_YES=1" dsyn 2>&1); [ "$(shasum "$W/pub/Brewfile" "$W/pub/Brewfile.local")" = "$b" ] && printf "%s\n" "$out" | grep -q "ignore"'
+  out=$(DXY=1 dsyn 2>&1); [ "$(shasum "$W/pub/Brewfile" "$W/pub/Brewfile.local")" = "$b" ] && printf "%s\n" "$out" | grep -q "ignore"'
 t "D2.6" "a remove suggestion prints the uninstall command and never runs it, even confirmed" '
   W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq remove; b=$(shasum "$W/pub/Brewfile")
-  out=$(DX="DOTFILES_YES=1" dsyn 2>&1)
+  out=$(DXY=1 dsyn 2>&1)
   [ "$(printf "%s\n" "$out" | grep -c "brew uninstall jq")" -ge 1 ] && [ "$(_calls "^brew uninstall")" -eq 0 ] && [ "$(shasum "$W/pub/Brewfile")" = "$b" ]'
 t "D2.7" "a suggestion for something that was not in the facts is ignored: Jev never invents a line" '
   W=$(senv); dstub "$W"; _undeclared; _suggest pkg "brew:evil; touch $W/pwned" public; _suggest pkg brew:wget public
-  b=$(shasum "$W/pub/Brewfile"); DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  b=$(shasum "$W/pub/Brewfile"); DXY=1 dsyn >/dev/null 2>&1
   [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && [ ! -e "$W/pwned" ]'
 t "D2.8" "an item already declared by an earlier confirm is not appended twice" '
-  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
-  DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1; [ "$(_lines pub/Brewfile | grep -c "^brew \"jq\"$")" -eq 1 ]'
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; DXY=1 dsyn >/dev/null 2>&1
+  DXY=1 dsyn >/dev/null 2>&1; [ "$(_lines pub/Brewfile | grep -c "^brew \"jq\"$")" -eq 1 ]'
 t "D2.9" "shadow mode: Jev is asked, but even a SUGGEST line from it is not acted on" '
   W=$(senv); dstub "$W" shadow; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile")
-  out=$(DX="DOTFILES_YES=1" dsyn 2>&1); [ "$(_calls "^dotfiles-jev-stub drift pkg")" -eq 1 ] && [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && [ "$(printf "%s\n" "$out" | grep -c "Add brew")" -eq 0 ]'
+  out=$(DXY=1 dsyn 2>&1); [ "$(_calls "^dotfiles-jev-stub drift pkg")" -eq 1 ] && [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && [ "$(printf "%s\n" "$out" | grep -c "Add brew")" -eq 0 ]'
 t "D2.10" "scheduled: no prompt, no write, and the single notification says Jev has suggestions" '
   W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile")
-  DX="DOTFILES_YES=1" dsyn --scheduled >/dev/null 2>&1
+  DXY=1 dsyn --scheduled >/dev/null 2>&1
   [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && [ "$(_calls "^osascript")" -eq 1 ] && grep "^osascript" "$W/log" | grep -q "Jev suggests"'
 
 t "D3.1" "changed defaults go to Jev as one batch: domain and key, old and new value, first-seen date" '
@@ -473,19 +478,20 @@ t "D3.2" "no changed defaults: Jev is not asked" '
   W=$(senv); dstub "$W"; dsyn >/dev/null 2>&1; [ "$(_calls "^dotfiles-jev-stub drift defaults")" -eq 0 ]'
 t "D3.3" "public: the defaults write line, typed by defaults read-type, is appended to macos/defaults.sh on confirm" '
   W=$(senv); dstub "$W"; mkdir -p "$W/pub/macos"; : >"$W/pub/macos/defaults.sh"; printf "com.example.a\tAlpha\t1\t0\n" >"$W/state/changed"
-  _suggest defaults "com.example.a Alpha" public; DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
+  _suggest defaults "com.example.a Alpha" public; DXY=1 dsyn >/dev/null 2>&1
   [ "$(_lines pub/macos/defaults.sh | tail -n 1)" = "defaults write com.example.a Alpha -bool false" ]'
-t "D3.4" "local-only: the same line goes to macos/local.sh" '
+t "D3.4" "local-only is printed for you to place by hand: nothing is written to macos/local.sh or machine.local.sh, even confirmed" '
   W=$(senv); dstub "$W"; mkdir -p "$W/pub/macos"; printf "com.example.a\tBeta\t5\t6\n" >"$W/state/changed"; printf "integer" >"$W/state/deftype"
-  _suggest defaults "com.example.a Beta" local-only; DX="DOTFILES_YES=1" dsyn >/dev/null 2>&1
-  [ "$(_lines pub/macos/local.sh | tail -n 1)" = "defaults write com.example.a Beta -int 6" ]'
+  _suggest defaults "com.example.a Beta" local-only; out=$(DXY=1 dsyn 2>&1)
+  [ ! -e "$W/pub/macos/local.sh" ] && [ ! -e "$W/pub/macos/machine.local.sh" ] &&
+  printf "%s\n" "$out" | grep -qF "Jev suggests local-only: defaults write com.example.a Beta -int 6" && printf "%s\n" "$out" | grep -q "place it by hand"'
 t "D3.5" "a value that cannot be written safely (a string with a quote or a dollar) is shown, never appended" '
   W=$(senv); dstub "$W"; mkdir -p "$W/pub/macos"; : >"$W/pub/macos/defaults.sh"; printf "com.example.a\tPath\told\t\$HOME/x\n" >"$W/state/changed"; printf "string" >"$W/state/deftype"
-  _suggest defaults "com.example.a Path" public; out=$(DX="DOTFILES_YES=1" dsyn 2>&1)
+  _suggest defaults "com.example.a Path" public; out=$(DXY=1 dsyn 2>&1)
   [ ! -s "$W/pub/macos/defaults.sh" ] && printf "%s\n" "$out" | grep -q "by hand"'
 t "D3.6" "transient is reported and writes nothing" '
   W=$(senv); dstub "$W"; mkdir -p "$W/pub/macos"; : >"$W/pub/macos/defaults.sh"; printf "com.example.a\tAlpha\t1\t0\n" >"$W/state/changed"
-  _suggest defaults "com.example.a Alpha" transient; out=$(DX="DOTFILES_YES=1" dsyn 2>&1)
+  _suggest defaults "com.example.a Alpha" transient; out=$(DXY=1 dsyn 2>&1)
   [ ! -s "$W/pub/macos/defaults.sh" ] && printf "%s\n" "$out" | grep -q "transient"'
 
 t "D4.1" "unmanaged ~/.config directories go to Jev: real dirs the repo has no config/<name> for, not links, not managed ones" '
@@ -496,14 +502,54 @@ t "D4.1" "unmanaged ~/.config directories go to Jev: real dirs the repo has no c
   [ "$(printf "%s\n" "$f" | grep -c "^newtool	.*files=2.*first seen $(date +%Y-%m-%d)")" -eq 1 ]'
 t "D4.2" "capture: the exact move-and-link command is printed and nothing is moved, even confirmed" '
   W=$(senv); dstub "$W"; mkdir -p "$W/home/.config/newtool"; printf "a\n" >"$W/home/.config/newtool/a.conf"; _suggest config newtool capture
-  out=$(DX="DOTFILES_YES=1" dsyn 2>&1)
+  out=$(DXY=1 dsyn 2>&1)
   [ -f "$W/home/.config/newtool/a.conf" ] && [ ! -e "$W/pub/config/newtool" ] && printf "%s\n" "$out" | grep -qF "mv \"$W/home/.config/newtool\" \"$W/pub/config/newtool\"" && printf "%s\n" "$out" | grep -q "dotfiles link"'
 t "D4.3" "no unmanaged directory: Jev is not asked" '
   W=$(senv); dstub "$W"; mkdir -p "$W/home/.config"; dsyn >/dev/null 2>&1; [ "$(_calls "^dotfiles-jev-stub drift config")" -eq 0 ]'
 
+t "D6.1" "DOTFILES_YES=1 with no terminal and no seam appends nothing: the model never edits a file unattended" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile")
+  out=$(DX="DOTFILES_YES=1" dsyn 2>&1); [ "$(shasum "$W/pub/Brewfile")" = "$b" ] && printf "%s\n" "$out" | grep -qF "Jev suggests public: brew \"jq\""'
+t "D6.2" "an answer that is not y or yes appends nothing" '
+  W=$(senv); dstub "$W"; _undeclared; _suggest pkg brew:jq public; b=$(shasum "$W/pub/Brewfile"); printf "n\nyep\n" >"$W/yes"
+  DX="DOTFILES_STRICT_ANSWERS=$W/yes" dsyn >/dev/null 2>&1; [ "$(shasum "$W/pub/Brewfile")" = "$b" ]'
+t "D6.3" "a hostile App Store name (quote, Ruby interpolation) is never written into a Brewfile; it is shown to add by hand" '
+  W=$(senv); dstub "$W"; printf "111  Evil\"App #{system(1)}  (5.0)\n222  Fine App  (1.0)\n" >"$W/state/mas"
+  _suggest pkg mas:111 public; _suggest pkg mas:222 public; out=$(DXY=1 dsyn 2>&1)
+  [ "$(_lines pub/Brewfile | grep -c "Evil")" -eq 0 ] && [ "$(_lines pub/Brewfile | grep -c "^mas \"Fine App\", id: 222$")" -eq 1 ] && printf "%s\n" "$out" | grep -q "add by hand"'
+t "D6.4" "a hostile formula or cask name is not written either" '
+  W=$(senv); dstub "$W"; printf "wget\nfzf\nx\"y\n" >"$W/state/leaves"; printf "iterm2\nbad#{z}\n" >"$W/state/casks"
+  _suggest pkg "brew:x\"y" public; _suggest pkg "cask:bad#{z}" public; out=$(DXY=1 dsyn 2>&1)
+  [ "$(_lines pub/Brewfile | grep -c "x\"y\|bad")" -eq 0 ] && printf "%s\n" "$out" | grep -q "add by hand"'
+t "D6.5" "a failed Jev request stops the other kinds: one request, not three" '
+  W=$(senv); dstub "$W"; _undeclared; printf "com.example.a\tAlpha\t1\t0\n" >"$W/state/changed"; mkdir -p "$W/home/.config/newtool"; printf "a\n" >"$W/home/.config/newtool/a"
+  DX="JEVSTUB_RC=3" dsyn >/dev/null 2>&1; [ "$(_calls "^dotfiles-jev-stub drift")" -eq 1 ]'
+t "D6.6" "one 401 is one request across all three kinds (real dotfiles-jev, fake curl)" '
+  W=$(senv); dstub "$W"; _undeclared; printf "com.example.a\tAlpha\t1\t0\n" >"$W/state/changed"; mkdir -p "$W/home/.config/newtool" "$W/rec"; printf "a\n" >"$W/home/.config/newtool/a"
+  cp "$ROOT_DIR/tests/fixtures/jev/fake-curl" "$W/bin/curl"
+  DX="DOTFILES_JEV_BIN=$ROOT_DIR/bin/dotfiles-jev TYPESAFE_API_KEY=k1 FAKE_CURL_DIR=$W/rec FAKE_CURL_FIXDIR=$ROOT_DIR/tests/fixtures/jev FAKE_CURL_SEQ=401 JEV_BACKOFF=0" dsyn >/dev/null 2>&1
+  [ "$(command cat "$W/rec/count" 2>/dev/null || echo 0)" -eq 1 ]'
+t "D6.7" "fact gathering stops at JEV_DRIFT_MAX_ITEMS: brew is asked about at most that many formulae" '
+  W=$(senv); dstub "$W"; printf "wget\nfzf\na1\na2\na3\na4\na5\na6\n" >"$W/state/leaves"
+  DX="JEV_DRIFT_MAX_ITEMS=3" dsyn >/dev/null 2>&1
+  [ "$(_calls "^brew desc")" -eq 3 ] && [ "$(_facts pkg | grep -c .)" -eq 3 ]'
+t "D6.8" "an undeclared VS Code extension is classified too: public to packages/code.list, private to code.local.list" '
+  W=$(senv); dstub "$W"; printf "ms-python.python\nFoo.Bar\nBaz.Qux\n" >"$W/state/vscode"
+  _suggest pkg code:Foo.Bar public; _suggest pkg code:Baz.Qux private; DXY=1 dsyn >/dev/null 2>&1
+  [ "$(_facts pkg | grep -c "^code:Foo.Bar	.*VS Code extension")" -eq 1 ] && [ "$(_lines pub/packages/code.list | grep -c "^Foo.Bar$")" -eq 1 ] &&
+  [ "$(_lines pub/packages/code.local.list | grep -c "^Baz.Qux$")" -eq 1 ]'
+t "D6.9" "an extension id outside publisher.name is not written" '
+  W=$(senv); dstub "$W"; printf "ms-python.python\nx;touch.pwned\n" >"$W/state/vscode"; b=$(shasum "$W/pub/packages/code.list")
+  _suggest pkg "code:x;touch.pwned" public; out=$(DXY=1 dsyn 2>&1); [ "$(shasum "$W/pub/packages/code.list")" = "$b" ] && printf "%s\n" "$out" | grep -q "add by hand"'
+t "D6.10" "a defaults integer like 5-3 and a domain with a shell metacharacter are shown, never appended" '
+  W=$(senv); dstub "$W"; mkdir -p "$W/pub/macos"; : >"$W/pub/macos/defaults.sh"; printf "integer" >"$W/state/deftype"
+  printf "com.example.a\tBeta\t5\t5-3\nevil;dom\tK\t1\t2\n" >"$W/state/changed"
+  _suggest defaults "com.example.a Beta" public; _suggest defaults "evil;dom K" public; out=$(DXY=1 dsyn 2>&1)
+  [ ! -s "$W/pub/macos/defaults.sh" ] && [ "$(printf "%s\n" "$out" | grep -c "by hand")" -eq 2 ]'
+
 t "D5.1" "sync never writes to a Brewfile or a defaults file without going through confirm" '
   c=$(code_of bin/dotfiles-sync)
-  [ "$(printf "%s\n" "$c" | grep -c "confirm \"Add ")" -ge 1 ] && [ "$(printf "%s\n" "$c" | grep -c "^[[:space:]]*brew uninstall")" -eq 0 ]'
+  [ "$(printf "%s\n" "$c" | grep -c "strict_confirm \"Add ")" -ge 1 ] && [ "$(printf "%s\n" "$c" | grep -c "[^_]confirm \"Add ")" -eq 0 ] && [ "$(printf "%s\n" "$c" | grep -c "^[[:space:]]*brew uninstall")" -eq 0 ]'
 
 #############################################################################
 section "V -- dotfiles vault migrate (bin/dotfiles-vault)"

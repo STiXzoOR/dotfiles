@@ -98,7 +98,7 @@ sync only reports the change and never imports.
    the packages, the macOS defaults that read back differently from the baseline
    snapshot and the unmanaged `~/.config` directories are also classified in one
    batched request per kind; `on` mode offers the pre-filled line behind a
-   confirm, `shadow` only logs, and nothing is ever written or committed without
+   strict prompt (a terminal and a typed y), `shadow` only logs, and nothing is ever written or committed without
    you (see [jev.md](jev.md)).
 
 5. **Scheduled runs only**, once a day: `dotfiles jev scan-vault` over the vault's
