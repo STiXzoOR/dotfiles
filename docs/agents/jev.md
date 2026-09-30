@@ -29,7 +29,7 @@ hook does exactly what it did before plus its deterministic checks.
 | Point | Where it runs | What it asks Jev (one `noul` each) |
 | ----- | ------------- | ---------------------------------- |
 | `privacy` | `.githooks/pre-commit`, per added hunk that no deterministic check caught | Does this added text reveal a person's name, a computer or host name, a client or private project name, a private network address or a home directory path? |
-| `secrets` | pre-commit, `dotfiles apps backup` (staging tree), `dotfiles jev scan-vault` | Is this masked value a live credential rather than a placeholder, example, hash or identifier? Asked only for an *ambiguous* hit. |
+| `secrets` | pre-commit (public repo), the private repo's pre-commit hook | Is this masked value a live credential rather than a placeholder, example, hash or identifier? Asked only for an *ambiguous* hit. |
 | `drift` | `dotfiles sync`, after the deterministic drift report | One `choice` per undeclared item (name and a few facts: package descriptions, `defaults` domain, key and old and new values, `~/.config` directory names and sizes), one batched request per kind, all after redaction: see "Drift" below. |
 | `skip` | the scheduled `dotfiles sync` and `dotfiles apps backup`, before any work | One `noul`: would running the job now do useful work? It sends a few shell-computed facts (commit and path counts, whether lockfiles changed, how many allowlisted apps changed prefs, hours since the last run), never file contents: see "Skip gate" below. |
 | `apps` | `dotfiles sync`, after drift | One `choice` (`backup` / `own-sync` / `not-worth-it`) per installed app mackup supports and nobody has decided on, one batched request per run: see "App-choice" below. This is app choice, not the `skip` gate on the daily `apps backup` job. |
@@ -37,14 +37,16 @@ hook does exactly what it did before plus its deterministic checks.
 Every point starts in `shadow`. Ambiguous secrets never block in `shadow` or when
 Jev fails (no key, timeout, HTTP error): only a definite hit blocks. Defaults
 values and `~/.config` directory names are sent, after the same redaction as any
-other request. With `DOTFILES_JEV=off` the local vault scan still runs; it only
+other request. With `DOTFILES_JEV=off` the local deterministic checks still run; it only
 makes no requests.
 
 The `secrets` point also runs in the private repo's pre-commit hook
-(`dotfiles jev guard-private`, installed by `dotfiles private`) and in the daily
-scheduled sync (the vault scan): see "Secrets leakage" below.
+(`dotfiles jev guard-private`, installed by `dotfiles private`): see "Secrets
+leakage" below.
 
-Each point is `off`, `shadow` (the default for every point) or `on`.
+Each point is `off`, `shadow` (the default for every point) or `on`. In the
+owner's private config every point is set to `off`; the deterministic guards
+still run.
 
 | Mode | Effect |
 | ---- | ------ |
@@ -226,7 +228,7 @@ scores labelled cases from `tests/fixtures/jev/replay/drift.jsonl`.
 
 `--max-time` 2 seconds interactive, 10 scheduled (`JEV_SCHEDULED=1`);
 `JEV_TIMEOUT` overrides. `JEV_TRIES` (2) with backoff, on 429 and 5xx only; a
-timeout is not retried. `JEV_MAX_REQUESTS` (20 per run, 40 for a scan) caps the
+timeout is not retried. `JEV_MAX_REQUESTS` (20 per run) caps the
 calls, and a 401 or 403 stops all further calls in that run. `JEV_MAX_HUNKS`
 (8) caps the hunks asked about per commit.
 
@@ -254,20 +256,12 @@ pinned model changes.
 ## Secrets leakage
 
 Detection stays local; Jev only sees a masked shape and only for ambiguous
-hits.
+hits. Secret scanning covers only commits to the dotfiles repos (public and private). App backups and the vault are not scanned: that is the owner's decision, accepting the risk.
 
 - **Pre-commit (public repo)**: definite hits (gitleaks, a credential format,
   your own value) block. Ambiguous ones (a long random-looking value under a
   key named like `token`, `secret`, `password`, `api`; or a long random token)
   warn, and in `on` mode Jev can block them.
-- **`dotfiles apps backup`**: the mackup staging tree is scanned before it is
-  published to iCloud (`dotfiles jev scan-tree`). A hit keeps the snapshot local
-  in the staging tree and reports it; nothing reaches iCloud. The scan fails
-  closed (exit 2, the backup refuses) when a file could not be read, a directory
-  could not be listed, gitleaks exits with anything but 0 or 1, or the secret
-  pattern list is empty or fails to load. A Keychain failure in the own-secret
-  layer stays a warning, so a locked keychain under launchd does not stop every
-  nightly backup.
 - **Private repo (pre-commit)**: `dotfiles private` installs the hook, which runs
   `dotfiles jev guard-private`. It is the same secrets guard as the public
   repo's, with gitleaks included (the private repo has no other gitleaks hook):
@@ -275,15 +269,9 @@ hits.
   `secrets.age` is the one exempt file. The privacy checks are not run, since
   names, hosts and addresses belong in that repo. A missing guard blocks the
   commit.
-- **`dotfiles jev scan-vault [dir]`**: scans `Claude-Sessions/` in the vault
-  (`DOTFILES_VAULT_DIR`, default `~/Vault`), which syncs through iCloud. It
-  reports `file:line`, never edits or deletes, and exits 1 on a hit and 2 when
-  the tree could not be fully scanned (a listing or read failure, so a
-  TCC-denied vault never reads as "no credentials found"). The daily
-  `dotfiles sync --scheduled` runs it once a day and notifies on hits (file and
-  line only, never the value; report-only). Binary
-  plists are converted with `plutil`, other binary files are read as their
-  printable runs; an unreadable file makes the scan exit 2.
+- **Not scanned**: `dotfiles apps backup` snapshots and the vault are never scanned
+  for credentials. Secret scanning covers only commits to the dotfiles repos (public and private). App backups and the vault are not scanned: that is the owner's decision, accepting the risk. There is no `scan-tree` or `scan-vault`
+  command.
 
 ## App-choice: app-backup suggestions (`apps`)
 

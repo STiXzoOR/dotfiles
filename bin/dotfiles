@@ -46,7 +46,7 @@ sub_help() {
   echo "   help             This help message"
   echo "   hooks            Install git pre-commit hooks"
   echo "   install          Bootstrap system"
-  echo "   jev              Jev privacy and secrets guards (status, log, replay, promote, scan-vault)"
+  echo "   jev              Jev privacy and secrets guards (status, log, replay, promote)"
   echo "   link             Link dotfiles to ~/"
   echo "   open             Open dotfiles in Finder"
   echo "   private          Private companion repo for gitignored files (init, clone, link, status)"

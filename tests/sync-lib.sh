@@ -97,15 +97,13 @@ brew \"jq\""
   : >"$1/state/unsatisfied"
 }
 
-# The daily vault scan (Task 12.2). vault_of <W>: the sandbox vault's
-# Claude-Sessions folder. jevstub <W> <exit> [output line]: a dotfiles-jev that
+# vault_of <W>: the sandbox vault's Claude-Sessions folder. jevstub <W> <exit> [output line]: a dotfiles-jev that
 # logs its argv and JEV_SCHEDULED, prints the line and exits with <exit>.
 vault_of() { mkdir -p "$1/home/Vault/Claude-Sessions"; printf '%s' "$1/home/Vault/Claude-Sessions"; }
 jevstub() {
   stub "$1/bin" dotfiles-jev-stub 'echo "JEV_SCHEDULED=${JEV_SCHEDULED:-}" >>"$STUB_LOG"; [ -n "'"${3:-}"'" ] && printf "%s\n" "'"${3:-}"'"; exit '"$2"
 }
 JEVSTUB_ENV() { printf 'DOTFILES_JEV_BIN=%s/bin/dotfiles-jev-stub' "$1"; }
-stampf() { printf '%s/home/.local/state/dotfiles/vault-scan-last' "$1"; }
 
 # dstub <W> [mode]: a private-repo-independent jev.conf (drift=<mode>, default
 # on), a dotfiles-jev that records its stdin (the facts) per kind and prints

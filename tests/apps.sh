@@ -584,29 +584,17 @@ t "C12" "minimal PATH (as under launchd) still finds mackup when installed (skip
      DOTFILES_APPS_STORE="$W/icloud" bash "$APPS" check; }'
 
 #############################################################################
-section "K -- the staging tree is scanned for credentials before it is published (Task 8)"
+section "K -- app backups are not scanned for credentials (owner decision)"
 #############################################################################
 
-t "K1" "a credential in an app setting keeps the snapshot local: refused, reported, nothing published" \
+t "K1" "a high-entropy value in an app setting is published without a refusal or a scan" \
   'W=$(newenv); tok="ghp_$(rand_chars 36 A-Za-z0-9)"
    printf "{\"a\":1,\"token\":\"%s\"}\n" "$tok" >"$W/home/Library/Application Support/Beta/settings.json"
-   out=$(run_apps backup 2>&1); rc=$?
-   [ "$rc" -ne 0 ] && [ "$(nsnaps)" -eq 0 ] && [ ! -e "$W/icloud/macA/latest" ] &&
-   [ "$(printf "%s\n" "$out" | grep -c "BLOCK .*settings.json:1:")" -eq 1 ] &&
-   [ "$(printf "%s\n" "$out" | grep -c "stays local")" -eq 1 ] &&
-   [ "$(printf "%s\n" "$out" | grep -c "$tok")" -eq 0 ] &&
-   [ "$(grep -rc "$tok" "$W/icloud" | grep -vc ":0$")" -eq 0 ] &&
-   [ "$(grep -rl "$tok" "$W/home/.local/state" | wc -l | tr -d " ")" -ge 1 ]'
-t "K2" "with the credential removed the same backup publishes" \
-  'W=$(newenv); run_apps backup && [ "$(nsnaps)" -eq 1 ]'
-t "K3" "a scan that cannot run refuses (fails closed)" \
-  'W=$(newenv); printf "#!/bin/sh\nexit 9\n" >"$W/fakejev"; chmod +x "$W/fakejev"
+   printf "#!/bin/sh\necho called >>\"%s\"\nexit 1\n" "$W/scan.called" >"$W/fakejev"; chmod +x "$W/fakejev"
    out=$(APPS_ENV="DOTFILES_APPS_JEV=$W/fakejev" run_apps backup 2>&1); rc=$?
-   [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "credential scan of the staging tree failed")" -eq 1 ] && [ "$(nsnaps)" -eq 0 ]'
-t "K3b" "a missing scanner refuses too (fails closed)" \
-  'W=$(newenv)
-   out=$(APPS_ENV="DOTFILES_APPS_JEV=$W/no-such-jev" run_apps backup 2>&1); rc=$?
-   [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "cannot be scanned for credentials")" -eq 1 ] && [ "$(nsnaps)" -eq 0 ] && [ ! -e "$W/icloud/macA/latest" ]'
+   [ "$rc" -eq 0 ] && [ "$(nsnaps)" -eq 1 ] && [ -e "$W/icloud/macA/latest" ] &&
+   [ ! -e "$W/scan.called" ] && [ "$(printf "%s\n" "$out" | grep -c "refusing")" -eq 0 ] &&
+   [ "$(grep -rl "$tok" "$W/icloud" | wc -l | tr -d " ")" -ge 1 ]'
 #############################################################################
 section "L -- Task 14: Task 6 leftovers (helpers, log cap, stale-lock race) and app candidates"
 #############################################################################
@@ -694,9 +682,9 @@ t "L16" "mackup's paths are separated by semicolons" \
 section "J -- Jev skip gate in the scheduled backup (Task 15)"
 #############################################################################
 # jev_gate_stub <W>: a stub dotfiles-jev that logs the argv of `skip` and answers
-# $STUB_GATE (DOTFILES_APPS_JEV also serves the staging scan, which it passes).
+# $STUB_GATE.
 jev_gate_stub() {
-  printf '#!/bin/bash\n[ "$1" = scan-tree ] && exit 0\nprintf "%%s\\n" "$*" >>"$STUB_LOG.jev"\nprintf "%%s\\n" "$STUB_GATE"\n' >"$1/jev-stub"; chmod +x "$1/jev-stub"
+  printf '#!/bin/bash\nprintf "%%s\\n" "$*" >>"$STUB_LOG.jev"\nprintf "%%s\\n" "$STUB_GATE"\n' >"$1/jev-stub"; chmod +x "$1/jev-stub"
 }
 jgate() { APPS_ENV="DOTFILES_APPS_JEV=$W/jev-stub STUB_GATE=$1 DOTFILES_JEV=shadow" run_apps backup --scheduled; }
 jlog() { command cat "$W/log.jev" 2>/dev/null; }
@@ -721,7 +709,7 @@ t "J5" "an interactive backup never asks the gate" '
   W=$(newenv); jev_gate_stub "$W"; APPS_ENV="DOTFILES_APPS_JEV=$W/jev-stub STUB_GATE=SKIP DOTFILES_JEV=shadow" run_apps backup >/dev/null 2>&1
   [ "$(jlog | grep -c .)" -eq 0 ] && [ "$(nsnaps)" -eq 1 ]'
 t "J6" "a failing gate runs the backup (fail open)" '
-  W=$(newenv); printf "#!/bin/bash\n[ \"\$1\" = scan-tree ] && exit 0\nexit 3\n" >"$W/jev-stub"; chmod +x "$W/jev-stub"; run_apps backup >/dev/null 2>&1
+  W=$(newenv); printf "#!/bin/bash\nexit 3\n" >"$W/jev-stub"; chmod +x "$W/jev-stub"; run_apps backup >/dev/null 2>&1
   APPS_ENV="DOTFILES_APPS_JEV=$W/jev-stub DOTFILES_JEV=shadow" run_apps backup --scheduled >/dev/null 2>&1; [ "$(nsnaps)" -eq 2 ]'
 t "J7" "master switch off: the gate is never asked" '
   W=$(newenv); jev_gate_stub "$W"; run_apps backup >/dev/null 2>&1

@@ -107,19 +107,7 @@ sync only reports the change and never imports.
    no fact gathering, no fetch. In `shadow` mode at most 10 items are gathered
    per request, since its answers are never shown.
 
-5. **Scheduled runs only**, once a day: `dotfiles jev scan-vault` over the vault's
-   `Claude-Sessions/` notes, which sync through iCloud (a token pasted into a
-   session lands there). A hit, definite or ambiguous, adds one line to the
-   notification: the count and up to three `file:line` positions, never the value.
-   It is report-only, so nothing in the vault is edited, moved or deleted. A day
-   stamp (`~/.local/state/dotfiles/vault-scan-last`) keeps it to one scan a day; a
-   scan that could not run is notified and retried the next run. No vault folder
-   means nothing to scan. The scan is bounded: dataless iCloud files can block a
-   listing under launchd, so it runs as a background job that is killed after 300 s
-   (`DOTFILES_VAULT_SCAN_TIMEOUT` overrides). A timeout, or any exit other than 0
-   (clean) and 1 (hits), is notified and leaves no day stamp; the notification and
-   the lock-hash stamp still happen.
-6. **Scheduled runs only**, before the work: the skip gate (`dotfiles-jev skip
+5. **Scheduled runs only**, before the work: the skip gate (`dotfiles-jev skip
    sync`, when the `skip` point is not `off` and a key exists). Facts are computed
    here: upstream commit counts, the paths a **public** upstream commit touches
    (the private repo contributes a count only, because private file names can name
@@ -129,6 +117,8 @@ sync only reports the change and never imports.
    lockfiles, `claude/`, `codex/` or `secrets.age`, pending actions, a first run.
    The gate's fetch uses `ConnectTimeout=10` and ssh keepalives
    (`ServerAliveInterval=15`, `ServerAliveCountMax=2`).
+
+The vault (`Claude-Sessions/` notes, which sync through iCloud) is **not** scanned for credentials: secret scanning covers only commits to the dotfiles repos (public and private). App backups and the vault are not scanned; that is the owner's decision, accepting the risk.
 
 **Interactively**, step 3 asks (`confirm`) before each action. **Scheduled**
 (`--scheduled`) it logs to `~/Library/Logs/dotfiles-sync.log`, never prompts,

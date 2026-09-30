@@ -130,19 +130,6 @@ t "F3.5" "shadow mode gathers at most 10 app candidates" '
   W=$(senv); estub "$W" shadow; i=0; while [ "$i" -lt 14 ]; do i=$((i + 1)); printf "app%s\tpaths=1\n" "$i" >>"$W/state/apps-candidates"; done
   esyn >/dev/null 2>&1; [ "$(_facts apps | grep -c .)" -eq 10 ]'
 
-t "F4.1" "a vault scan that hangs is killed after the timeout, notifies, and writes no stamp; the run finishes" '
-  W=$(senv); d=$(vault_of "$W"); stub "$W/bin" dotfiles-jev-stub "exec sleep 30"
-  SYNENV="$(JEVSTUB_ENV "$W") DOTFILES_VAULT_SCAN_TIMEOUT=1" syn --scheduled >/dev/null 2>&1; rc=$?
-  [ "$rc" -eq 0 ] && [ "$(_calls "^osascript")" -eq 1 ] && grep "^osascript" "$W/log" | grep -q "vault scan timed out" && [ ! -e "$(stampf "$W")" ]'
-t "F4.2" "a scan that exits 2 is a failure: notified, no stamp" '
-  W=$(senv); d=$(vault_of "$W"); jevstub "$W" 2 "cannot list"; SYNENV="$(JEVSTUB_ENV "$W")" syn --scheduled >/dev/null 2>&1
-  [ "$(_calls "^osascript")" -eq 1 ] && grep "^osascript" "$W/log" | grep -q "vault scan could not run" && [ ! -e "$(stampf "$W")" ]'
-t "F4.3" "a hung scan does not stop the notification or the lock-hash stamp" '
-  W=$(senv); d=$(vault_of "$W"); h="$W/home/.local/state/dotfiles/skip-sync.lockhash"; mkdir -p "$(dirname "$h")"
-  stub "$W/bin" dotfiles-jev-stub "case \"\$1\" in skip) echo RUN_x ;; scan-vault) exec sleep 30 ;; esac"
-  SYNENV="DOTFILES_JEV=shadow DOTFILES_JEV_BIN=$W/bin/dotfiles-jev-stub DOTFILES_VAULT_SCAN_TIMEOUT=1" syn --scheduled >/dev/null 2>&1
-  [ -s "$h" ] && grep "^osascript" "$W/log" | grep -q "timed out"'
-
 t "F5.1" "the private repo contributes a count, never a path, to the gate facts and the work reason" '
   W=$(senv); stub "$W/bin" jev-stub '"'"'cat >>"$STUB_LOG.body"; echo RUN_x'"'"'
   mkdir -p "$W/home/.local/state/dotfiles"; printf "" | shasum | cut -d" " -f1 >"$W/home/.local/state/dotfiles/skip-sync.lockhash"

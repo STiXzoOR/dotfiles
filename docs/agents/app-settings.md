@@ -103,6 +103,8 @@ file is checked. Only the root `MANIFEST` is left out of the listing; an app fil
 named `MANIFEST` deeper in the tree is listed like any other, and a file in the
 snapshot that the manifest does not list is refused.
 
+**No credential scan.** Secret scanning covers only commits to the dotfiles repos (public and private). App backups and the vault are not scanned: that is the owner's decision, accepting the risk. A backup publishes after the staging, symlink, plist and manifest checks.
+
 The **daily agent** (`launchagents/com.stixzoor.dotfiles-apps-backup.plist`,
 installed by `dotfiles install --launchagents`) runs `backup --scheduled` at
 12:30. It prints nothing on success and logs to `~/Library/Logs/dotfiles-apps.log`,

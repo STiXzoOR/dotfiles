@@ -31,10 +31,6 @@
 # per kind); `on` offers the pre-filled line behind a strict prompt (a terminal
 # and a typed y; DOTFILES_YES does not answer it), nothing is ever written
 # unconfirmed, committed, uninstalled or moved. See docs/agents/jev.md.
-# Once a day it also runs `dotfiles jev scan-vault` over the vault's
-# Claude-Sessions notes (they sync through iCloud, and a token pasted into a
-# session lands there) and notifies on hits: file and line, never the value.
-# Report-only: nothing in the vault is edited, moved or deleted.
 #
 # Bash 3.2 (macOS /bin/bash): no mapfile, no associative arrays, and never
 # `((x++))`. GNU tools are not on PATH under launchd, so only BSD-safe flags.
@@ -51,7 +47,6 @@ PENDING_FILE="$STATE_DIR/sync-pending"
 LOG="${DOTFILES_SYNC_LOG:-$HOME/Library/Logs/dotfiles-sync.log}"
 JEV_BIN="${DOTFILES_JEV_BIN:-$SELF_DIR/dotfiles-jev}"
 APPS_BIN="${DOTFILES_APPS_BIN:-$SELF_DIR/dotfiles-apps}"
-VAULT_SCAN_STAMP="$STATE_DIR/vault-scan-last"
 
 export DOTFILES_DIR DOTFILES_PRIVATE_DIR="$PRIVATE_DIR"
 
@@ -992,70 +987,6 @@ EOF
 }
 
 #############################################################################
-# The daily vault scan
-#############################################################################
-
-# scan_vault_daily: scheduled runs only, once per calendar day (the stamp is
-# written only when the scan actually ran, so a failed one is retried).
-scan_vault_daily() {
-  local dir today out rc hits n first outf pid waited limit timedout=0
-  dir="${DOTFILES_VAULT_DIR:-$HOME/Vault}/Claude-Sessions"
-  say "== vault scan: $dir"
-  if [ ! -d "$dir" ]; then
-    say "  no such folder; skipped"
-    return 0
-  fi
-  today=$(date +%Y-%m-%d)
-  if [ "$(cat "$VAULT_SCAN_STAMP" 2>/dev/null)" = "$today" ]; then
-    say "  already scanned today"
-    return 0
-  fi
-  # Dataless iCloud files can block a listing under launchd: bound the scan.
-  # A background job and a kill of its recorded pid (no `timeout` on macOS).
-  limit="${DOTFILES_VAULT_SCAN_TIMEOUT:-300}"
-  outf=$(mktemp "${TMPDIR:-/tmp}/sync-vault.XXXXXX") || { attn "vault scan could not run (no temp file)"; return 0; }
-  JEV_SCHEDULED=1 "$JEV_BIN" scan-vault "$dir" >"$outf" 2>&1 &
-  pid=$!
-  waited=0
-  while kill -0 "$pid" 2>/dev/null; do
-    if [ "$waited" -ge "$limit" ]; then
-      pkill -P "$pid" 2>/dev/null
-      kill "$pid" 2>/dev/null
-      timedout=1
-      break
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  wait "$pid" 2>/dev/null
-  rc=$?
-  out=$(cat "$outf")
-  rm -f "$outf"
-  printf '%s\n' "$out" | sed 's/^/  /'
-  if [ "$timedout" -eq 1 ]; then
-    attn "vault scan timed out after ${limit}s (see the log)"
-    return 0
-  fi
-  if [ "$rc" -gt 1 ]; then
-    attn "vault scan could not run (exit $rc; see the log)"
-    return 0
-  fi
-  mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "$today" >"$VAULT_SCAN_STAMP" 2>/dev/null
-  # FOUND is a definite hit, WARN an ambiguous one; both are file:line.
-  hits=$(printf '%s\n' "$out" | sed -n -E 's/^(FOUND|WARN)[[:space:]]+(.+:[0-9]+): .*/\2/p')
-  n=$(printf '%s\n' "$hits" | grep -c .)
-  if [ "$n" -gt 0 ]; then
-    first=$(printf '%s\n' "$hits" | sed -n '1,3p' | paste -sd, - | sed 's/,/, /g')
-    [ "$n" -gt 3 ] && first="$first (+$((n - 3)) more)"
-    attn "vault scan: $n possible credential(s) in Claude-Sessions: $first (dotfiles jev scan-vault)"
-  fi
-  # The scan's own exit status is the truth: never let an unparsed line hide a hit.
-  if [ "$n" -eq 0 ] && [ "$rc" -eq 1 ]; then
-    attn "vault scan: possible credential(s) in the vault, see the sync log (dotfiles jev scan-vault)"
-  fi
-}
-
-#############################################################################
 # The skip gate: should the daily run do its work at all?
 #############################################################################
 #
@@ -1219,7 +1150,6 @@ main() {
   report_drift
   jev_drift
   jev_apps
-  [ "$SCHEDULED" -eq 1 ] && scan_vault_daily
 
   if [ "$SCHEDULED" -eq 1 ]; then
     [ -n "$ATTN" ] && notify

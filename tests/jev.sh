@@ -517,7 +517,7 @@ t "E6" "the hook asks the guard not to rerun gitleaks (it already ran)" '
   [ "$(code_of .githooks/pre-commit | grep -c "JEV_GITLEAKS=0")" -ge 1 ] && [ "$(code_of .githooks/pre-commit | grep -c "guard-staged")" -ge 1 ]'
 
 #############################################################################
-section "F -- scan-tree, scan-vault and the apps staging tree"
+section "F -- tool runner"
 #############################################################################
 
 # grun-free runner for the tools that are not run inside a repo
@@ -528,51 +528,6 @@ jtool() { # jtool <args...>: bin/dotfiles-jev from the real repo, sandbox env
     XDG_STATE_HOME="$W/state" DOTFILES_PRIVATE_DIR="$W/priv" DOTFILES_DIR="$W/repo" JEV_BACKOFF=0 \
     DOTFILES_JEV_LOCAL_ZSH="$W/repo/profiles/local.zsh" ${JENV:-} bash "$ROOT_DIR/bin/dotfiles-jev" "$@"
 }
-
-t "F1" "scan-tree finds a credential: exit 1, file and line, never the value" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree/sub"; tok="ghp_$(rand 36 A-Za-z0-9)"
-  printf "a\nb\ntoken = %s\n" "$tok" >"$W/tree/sub/settings.ini"; printf "clean\n" >"$W/tree/ok.txt"
-  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
-  [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK sub/settings.ini:3:")" -eq 1 ] &&
-  [ "$(printf "%s\n" "$out" | grep -c "$tok")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "ok.txt")" -eq 0 ]'
-t "F2" "scan-tree on a clean tree: exit 0, no request" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "clean\nalso clean\n" >"$W/tree/ok.txt"
-  out=$(JENV="TYPESAFE_API_KEY=k1" jtool scan-tree "$W/tree" 2>&1); rc=$?
-  [ "$rc" -eq 0 ] && [ "$(calls)" -eq 0 ]'
-t "F3" "scan-tree reads a harmless binary file and does not call it unscanned" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "\000\001\002" >"$W/tree/x.bin"
-  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
-  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "not scanned")" -eq 0 ]'
-t "F4" "scan-tree checks the owners own Keychain values" '
-  W=$(sandbox); mkenv "$W"; redact_env "$W"; mkdir -p "$W/tree"; printf "x = %s\n" "$OWN" >"$W/tree/a.txt"
-  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
-  [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK a.txt:1:.*own Keychain")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "$OWN")" -eq 0 ]'
-t "F5" "scan-tree: an ambiguous value warns in shadow, and blocks in on mode when Jev says live" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; v=$(rand 40 A-Za-z0-9); printf "api_secret: %s\n" "$v" >"$W/tree/a.txt"
-  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-high.json" jtool scan-tree "$W/tree" 2>&1); rc=$?
-  bad=; [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "WARN  a.txt:1:")" -eq 1 ] && [ "$(recorded | grep -c "$v")" -eq 0 ] || bad=1
-  setmode secrets=on
-  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-high.json" jtool scan-tree "$W/tree" 2>&1); rc=$?
-  [ -z "$bad" ] && [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK a.txt:1: Jev thinks")" -eq 1 ]'
-t "F6" "scan-vault reports file and line, changes nothing, exits 1 on a hit" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/vault/Claude-Sessions/2026"; tok="sk-ant-$(rand 40 A-Za-z0-9)"
-  printf "notes\nI pasted %s here\n" "$tok" >"$W/vault/Claude-Sessions/2026/s1.md"; printf "fine\n" >"$W/vault/Claude-Sessions/s2.md"
-  before=$(cd "$W/vault" && find . -type f | sort | xargs shasum | shasum)
-  out=$(JENV="DOTFILES_VAULT_DIR=$W/vault" jtool scan-vault 2>&1); rc=$?
-  after=$(cd "$W/vault" && find . -type f | sort | xargs shasum | shasum)
-  [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "FOUND 2026/s1.md:2:")" -eq 1 ] &&
-  [ "$(printf "%s\n" "$out" | grep -c "$tok")" -eq 0 ] && [ "$before" = "$after" ]'
-t "F7" "scan-vault with nothing found exits 0; a missing directory is exit 2" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/vault/Claude-Sessions"; printf "fine\n" >"$W/vault/Claude-Sessions/s.md"
-  JENV="DOTFILES_VAULT_DIR=$W/vault" jtool scan-vault >/dev/null 2>&1; rc=$?
-  JENV="DOTFILES_VAULT_DIR=$W/nowhere" jtool scan-vault >/dev/null 2>&1; rc2=$?
-  [ "$rc" -eq 0 ] && [ "$rc2" -eq 2 ]'
-t "F8" "scan-tree reads gitleaks when installed (one run over the tree)" '
-  ! command -v gitleaks >/dev/null 2>&1 || {
-    W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; bash "$ROOT_DIR/tests/fixtures/make-secrets.sh" >"$W/tree/leak.txt"
-    out=$(PATH="$PATH:/opt/homebrew/bin" jtool scan-tree "$W/tree" 2>&1); rc=$?
-    [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK leak.txt:")" -ge 8 ]
-  }'
 
 #############################################################################
 section "G -- status, log, promote, replay"
@@ -660,12 +615,13 @@ section "H -- wiring: dotfiles jev, apps, docs"
 t "H1" "bin/dotfiles routes jev and lists it in help" '
   [ "$(code_of bin/dotfiles | grep -c "sub_jev()")" -eq 1 ] && [ "$(code_of bin/dotfiles | grep -c "dotfiles-jev")" -ge 1 ] &&
   [ "$(code_of bin/dotfiles | grep -c "\"apps\" | \"jev\"\|\"jev\"")" -ge 1 ] && [ "$(code_of bin/dotfiles | grep -c "   jev ")" -eq 1 ]'
-t "H2" "dotfiles-apps scans the staging tree with the secrets guard before it publishes" '
-  a=$(_first_line "dotfiles-jev" bin/dotfiles-apps); p=$(_first_line "publish \"\$STORE" bin/dotfiles-apps)
-  [ "$a" -gt 0 ] && [ "$p" -gt 0 ] && [ "$(code_of bin/dotfiles-apps | grep -c "scan-tree")" -ge 1 ]'
+t "H2" "dotfiles-apps, dotfiles-sync and dotfiles-jev have no credential scan (owner decision: only repo commits are scanned)" '
+  [ "$(code_of bin/dotfiles-apps | grep -c "scan-tree\|scan-vault\|validate_secrets")" -eq 0 ] &&
+  [ "$(code_of bin/dotfiles-sync | grep -c "scan-tree\|scan-vault\|scan_vault")" -eq 0 ] &&
+  [ "$(code_of bin/dotfiles-jev | grep -c "scan-tree\|scan-vault")" -eq 0 ]'
 t "H3" "docs/agents/jev.md exists and covers the required topics" '
   d=docs/agents/jev.md
-  [ -f "$d" ] && (for w in "never-send" "shadow" "promote" "replay" "DOTFILES_JEV=off" "not used for training" "masked" "jev-1.13.0" "scan-vault" "DOTFILES_PRIVACY_OK"; do
+  [ -f "$d" ] && (for w in "never-send" "shadow" "promote" "replay" "DOTFILES_JEV=off" "not used for training" "masked" "jev-1.13.0" "DOTFILES_PRIVACY_OK"; do
     [ "$(grep -c -- "$w" "$d")" -ge 1 ] || exit 1
   done)'
 t "H4" "AGENTS.md links the Jev page" '
@@ -720,31 +676,6 @@ mkplist() { # mkplist <file> <value>: a BINARY plist holding <value>
   printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>k</key><string>%s</string></dict></plist>' "$2" >"$1.xml"
   plutil -convert binary1 -o "$1" "$1.xml" && command rm -f "$1.xml"
 }
-tp "I3" "scan-tree scans a binary plist through plutil: a credential in it is found" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; tok="ghp_$(rand 36 A-Za-z0-9)"
-  mkplist "$W/tree/settings.plist" "é$tok"
-  bad=; [ "$(head -c 6 "$W/tree/settings.plist")" = bplist ] || bad=1
-  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
-  [ -z "$bad" ] && [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK settings.plist:")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "$tok")" -eq 0 ]'
-t "I4" "scan-tree finds a credential and an own secret inside other binary files" '
-  W=$(sandbox); mkenv "$W"; redact_env "$W"; mkdir -p "$W/tree"; tok="ghp_$(rand 36 A-Za-z0-9)"
-  { printf "\000\001\002"; printf "token = %s" "$tok"; printf "\000\003"; } >"$W/tree/blob.dat"
-  { printf "\000\001"; printf "x %s y" "$OWN"; printf "\000"; } >"$W/tree/other.dat"
-  printf "garbage\000not a plist" >"$W/tree/bad.plist"
-  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
-  [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK blob.dat:")" -eq 1 ] &&
-  [ "$(printf "%s\n" "$out" | grep -c "BLOCK other.dat:.*own Keychain")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "bad.plist")" -eq 0 ] &&
-  [ "$(printf "%s\n" "$out" | grep -c -e "$tok" -e "$OWN")" -eq 0 ]'
-t "I5" "only a file that cannot be read is reported as not scanned" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "x\n" >"$W/tree/locked.txt"; chmod 000 "$W/tree/locked.txt"
-  out=$(jtool scan-tree "$W/tree" 2>&1); chmod 600 "$W/tree/locked.txt"
-  [ "$(printf "%s\n" "$out" | grep -c "1 file(s) not scanned (unreadable)")" -eq 1 ]'
-tp "I6" "a settings backup with a credential inside a binary plist is refused" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; tok="ghp_$(rand 36 A-Za-z0-9)"
-  mkplist "$W/tree/a.plist" "$tok"
-  mkdir -p "$W/vault/Claude-Sessions"; cp "$W/tree/a.plist" "$W/vault/Claude-Sessions/a.plist"
-  JENV="DOTFILES_VAULT_DIR=$W/vault" jtool scan-vault >/dev/null 2>&1; [ $? -eq 1 ]'
-
 hostenv() { # hostenv <W>: ssh aliases with and without a digit or hyphen
   printf 'Host mediashelf\n  HostName example.invalid\nHost my-mac-mini\nHost github.com\n' >"$1/home/.ssh/config"
 }
@@ -771,13 +702,11 @@ t "I10" "a locked keychain warns once per run that the own-secret check is skipp
   gstage "$W" a.txt "we shipped an ordinary line" ; gstage "$W" b.txt "another ordinary line of prose"
   out=$(JENV="TYPESAFE_API_KEY=k1" guard 2>&1); rc=$?
   [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "own-secret check skipped: keychain locked (security exit 36)")" -eq 1 ]'
-t "I11" "the same warning, once, from scans and from redaction inside jev_ask" '
-  W=$(sandbox); mkenv "$W"; stub_locked_keychain "$W"; mkdir -p "$W/tree"; printf "fine\n" >"$W/tree/a.txt"; printf "fine\n" >"$W/tree/b.txt"
-  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
-  bad=; [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "own-secret check skipped")" -eq 1 ] || bad=1
+t "I11" "the locked-keychain warning is printed once from redaction inside jev_ask" '
+  W=$(sandbox); mkenv "$W"; stub_locked_keychain "$W"
   printf "x\n" >"$W/state.txt"
   out2=$(JENV="TYPESAFE_API_KEY=k1" jrun "jev_init; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_ask privacy state.txt '"'"'$Q'"'"' >/dev/null; jev_cleanup" 2>&1)
-  [ -z "$bad" ] && [ "$(printf "%s\n" "$out2" | grep -c "own-secret check skipped: keychain locked")" -eq 1 ]'
+  [ "$(printf "%s\n" "$out2" | grep -c "own-secret check skipped: keychain locked")" -eq 1 ]'
 t "I12" "docs record the in-memory grep -F match and why it replaces SHA-256 hashes" '
   [ "$(grep -c "grep -F -f <(printf" docs/agents/jev.md)" -ge 1 ] && [ "$(grep -ci "sha-256" docs/agents/jev.md)" -ge 1 ]'
 
@@ -819,29 +748,6 @@ t "J3" "PEM armor and other structural lines of a multi-line secret are not own-
   printf "%s\n" "$PEM_BEGIN" "public notes" "$PEM_END" "----------------" "line MIIEvQIBADANBgkqhki here" >"$W/f.txt"
   out=$(jrun "jev_own_secret_lines f.txt" 2>&1)
   [ "$out" = 5 ]'
-t "J4" "a scan killed while it converts a plist leaves no temporary directory behind" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree" "$W/tmp"; printf "\000\001bin" >"$W/tree/a.plist"
-  printf "#!/bin/sh\nprintf \"%%s %%s\" \"\$PPID\" \"\$\$\" >\"\$FAKE_PLUTIL_OUT\"\nexec sleep 20\n" >"$W/stubs/plutil"; chmod +x "$W/stubs/plutil"
-  JENV="TMPDIR=$W/tmp FAKE_PLUTIL_OUT=$W/plutil.out" jtool scan-tree "$W/tree" >/dev/null 2>&1 &
-  bg=$!
-  n=0; while [ "$n" -lt 100 ] && [ ! -s "$W/plutil.out" ]; do sleep 0.1; n=$((n + 1)); done
-  read -r sp cp <"$W/plutil.out"
-  kill -TERM "$sp" 2>/dev/null; kill -TERM "$cp" 2>/dev/null; wait "$bg" 2>/dev/null
-  [ -n "$sp" ] && [ -z "$(ls -A "$W/tmp")" ]'
-# mkdataplist <file> <text>: a BINARY plist whose <data> element holds <text>.
-mkdataplist() {
-  printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>k</key><data>%s</data></dict></plist>' \
-    "$(printf '%s' "$2" | base64 | tr -d '\n')" >"$1.xml"
-  plutil -convert binary1 -o "$1" "$1.xml" && command rm -f "$1.xml"
-}
-tp "J5" "a plist <data> value is decoded: an own secret inside it is found, and neither it nor its base64 is printed" '
-  W=$(sandbox); mkenv "$W"; redact_env "$W"; mkdir -p "$W/tree"
-  mkdataplist "$W/tree/a.plist" "prefix-bytes $OWN and more"
-  mkdataplist "$W/tree/b.plist" "nothing of interest here"
-  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
-  [ "$rc" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK a.plist:[0-9]*: contains the value of one of your own Keychain")" -eq 1 ] &&
-  [ "$(printf "%s\n" "$out" | grep -c "b.plist")" -eq 0 ] &&
-  [ "$(printf "%s\n" "$out" | grep -c -e "$OWN" -e "$(printf "%s" "$OWN" | base64 | cut -c1-12)")" -eq 0 ]'
 t "J6" "a multi-word computer name is a deterministic block; a blank one is ignored, not a three-space pattern" '
   newrepo; gstage "$W" a.txt "notes about frobnitz mini and its disk"
   out=$(JENV="STUB_LOCALHOST=plainhost" T_COMPUTER="Frobnitz Mini" guard 2>&1); rc=$?
@@ -1176,41 +1082,9 @@ t "L20" "docs/agents/jev.md has a section each for the drift, app-choice and ski
   [ "$(grep -c "replay skip\|replay drift\|replay apps" "$d")" -ge 1 ]'
 
 #############################################################################
-section "N -- final fixes: scan-tree fails closed, skip on a TTY, replay measures production"
+section "N -- final fixes: skip on a TTY, replay measures production"
 #############################################################################
 
-# gitleaks_stub <W> <exit code> [report json]: a gitleaks that writes the given
-# report to the -r path and exits with the given code.
-gitleaks_stub() {
-  printf '%s' "${3:-}" >"$1/gl-report.json"
-  printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = -r ] && rep="$2"; shift; done\ncat "%s/gl-report.json" >"$rep"\nexit %s\n' "$1" "$2" >"$1/stubs/gitleaks"
-  chmod +x "$1/stubs/gitleaks"
-}
-
-t "N1" "scan-tree refuses (exit 2) when a file could not be read, and says so" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "x\n" >"$W/tree/locked.txt"; printf "y\n" >"$W/tree/ok.txt"; chmod 000 "$W/tree/locked.txt"
-  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?; chmod 600 "$W/tree/locked.txt"
-  [ "$rc" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "not scanned")" -ge 1 ]'
-t "N2" "scan-tree refuses (exit 2) when gitleaks crashes, even with an empty report" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "clean\n" >"$W/tree/ok.txt"; gitleaks_stub "$W" 2
-  out=$(jtool scan-tree "$W/tree" 2>&1); rc=$?
-  [ "$rc" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "gitleaks")" -ge 1 ]'
-t "N3" "scan-tree with a gitleaks that exits 0 (clean) or 1 (findings) still works" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "clean\n" >"$W/tree/ok.txt"; gitleaks_stub "$W" 0 "[]"
-  jtool scan-tree "$W/tree" >/dev/null 2>&1; r0=$?
-  gitleaks_stub "$W" 1 "[{\"File\":\"$W/tree/ok.txt\",\"StartLine\":1}]"
-  out=$(jtool scan-tree "$W/tree" 2>&1); r1=$?
-  [ "$r0" -eq 0 ] && [ "$r1" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "BLOCK ok.txt:1: flagged by gitleaks")" -eq 1 ]'
-t "N4" "scan-tree refuses (exit 2) when the secret-pattern list is empty or fails to load" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/tree"; printf "clean\n" >"$W/tree/ok.txt"
-  printf "#!/bin/sh\nexit 0\n" >"$W/empty-hook"; printf "#!/bin/sh\nexit 3\n" >"$W/bad-hook"
-  JENV="JEV_HOOK=$W/empty-hook" jtool scan-tree "$W/tree" >/dev/null 2>&1; r1=$?
-  out=$(JENV="JEV_HOOK=$W/bad-hook" jtool scan-tree "$W/tree" 2>&1); r2=$?
-  [ "$r1" -eq 2 ] && [ "$r2" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "pattern")" -ge 1 ] && [ "$(calls)" -eq 0 ]'
-t "N5" "scan-vault: a directory that cannot be listed is exit 2 with a message, not no credentials found" '
-  W=$(sandbox); mkenv "$W"; mkdir -p "$W/vault/Claude-Sessions/locked"; printf "fine\n" >"$W/vault/Claude-Sessions/s.md"; chmod 000 "$W/vault/Claude-Sessions/locked"
-  out=$(JENV="DOTFILES_VAULT_DIR=$W/vault" jtool scan-vault 2>&1); rc=$?; chmod 700 "$W/vault/Claude-Sessions/locked"
-  [ "$rc" -eq 2 ] && [ "$(printf "%s\n" "$out" | grep -c "no credentials found")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "could not list")" -eq 1 ]'
 # ttyrun <cmd...>: run a command with a pseudo-terminal as stdin and stdout
 # (script(1) needs a real terminal of its own; this does not).
 ttyrun() {

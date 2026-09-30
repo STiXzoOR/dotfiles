@@ -195,7 +195,7 @@ Settings of apps that nothing else here manages (Bartender, CleanShot, Flux, iSt
 
 Restoring is never part of `install --all`. See [docs/agents/app-settings.md](docs/agents/app-settings.md).
 
-A backup is scanned for credentials before it is published; a hit keeps the snapshot local and says where (see below).
+A backup is not scanned for credentials. Secret scanning covers only commits to the dotfiles repos (public and private). App backups and the vault are not scanned: that is the owner's decision, accepting the risk.
 
 ## Privacy and Secrets Guards (Jev)
 
@@ -206,7 +206,6 @@ The pre-commit hook blocks private values before they reach this public repo: a 
 ./bin/dotfiles jev log                      # what shadow mode would have done
 ./bin/dotfiles jev replay privacy           # pick thresholds from labelled cases (real API, by hand)
 ./bin/dotfiles jev promote privacy          # shadow -> on
-./bin/dotfiles jev scan-vault               # look for pasted tokens in Claude-Sessions notes
 ```
 
 See [docs/agents/jev.md](docs/agents/jev.md).
