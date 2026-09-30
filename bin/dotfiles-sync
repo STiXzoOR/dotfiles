@@ -50,6 +50,7 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
 PENDING_FILE="$STATE_DIR/sync-pending"
 LOG="${DOTFILES_SYNC_LOG:-$HOME/Library/Logs/dotfiles-sync.log}"
 JEV_BIN="${DOTFILES_JEV_BIN:-$SELF_DIR/dotfiles-jev}"
+APPS_BIN="${DOTFILES_APPS_BIN:-$SELF_DIR/dotfiles-apps}"
 VAULT_SCAN_STAMP="$STATE_DIR/vault-scan-last"
 
 export DOTFILES_DIR DOTFILES_PRIVATE_DIR="$PRIVATE_DIR"
@@ -795,6 +796,127 @@ jev_drift() {
 }
 
 #############################################################################
+# App-backup suggestions: apps mackup supports that nobody has decided on
+#############################################################################
+#
+# `dotfiles-apps candidates` computes the facts in shell (mackup's paths,
+# Setapp / App Store / direct build, sandbox container) for installed apps that
+# mackup supports and that are neither allowlisted, ignored nor declined. They
+# go to `dotfiles-jev apps` as ONE batched request per run. The name Jev is
+# shown for must be one of the facts and fit a conservative character set; the
+# text shown is built here, never taken from Jev. Nothing is written into the
+# allowlist: an allowlisted app also needs a process line in processes.list
+# (`dotfiles apps check` enforces it), so the owner adds both by hand. The one
+# thing written is the owner's "no": the app's name goes on a list in the
+# private repo (not committed) so it is not asked about again, and only after a
+# STRICT prompt on a terminal. Shadow mode asks and logs and shows nothing;
+# scheduled runs only notify. A failed drift request stops this too.
+
+APPS_MODE=off
+APPS_FACTS=""
+APPS_SUGGESTED=0
+APPS_MAX="${JEV_APPS_MAX_ITEMS:-25}"
+RE_APP='^[a-z0-9][a-z0-9.+-]*$'
+
+apps_declined_file() { printf '%s/jev/apps-declined.list' "$PRIVATE_DIR"; }
+
+# apps_gather: APPS_FACTS = the candidate lines with a safe name, at most APPS_MAX.
+apps_gather() {
+  local line name n=0
+  APPS_FACTS=""
+  while IFS= read -r line; do
+    [ "$n" -lt "$APPS_MAX" ] || break
+    name=${line%%$'\t'*}
+    matches "$RE_APP" "$name" || continue
+    APPS_FACTS="${APPS_FACTS}${line}"$'\n'
+    n=$((n + 1))
+  done <<EOF
+$(DOTFILES_APPS_DECLINED="$(apps_declined_file)" "$APPS_BIN" candidates 2>/dev/null)
+EOF
+  [ "$n" -gt 0 ]
+}
+
+# apps_decline <name>: remember the owner's "no" in the private repo.
+apps_decline() {
+  local f
+  if [ ! -d "$PRIVATE_DIR" ]; then
+    say "    not remembered (no private repo at $PRIVATE_DIR)"
+    return 0
+  fi
+  f=$(apps_declined_file)
+  mkdir -p "$(dirname "$f")" 2>/dev/null && append_line "$f" "$1" && say "    remembered in the private repo (jev/apps-declined.list, not committed)"
+}
+
+# apps_offer <name> <choice>: show the suggestion; on a terminal (or the test
+# seam) ask, and remember a decision that means "stop asking".
+apps_offer() {
+  local name="$1" choice="$2"
+  if [ "$APPS_SUGGESTED" -eq 0 ]; then
+    say "== apps: what Jev suggests (nothing is written except your no)"
+  fi
+  APPS_SUGGESTED=$((APPS_SUGGESTED + 1))
+  case "$choice" in
+    backup)
+      say "  Jev suggests backup: $name      (add it under [applications_to_sync] in config/mackup/mackup.cfg and its process name to config/mackup/processes.list by hand; dotfiles apps check needs both)"
+      ;;
+    own-sync) say "  Jev suggests own-sync: $name      (the app syncs its own settings; nothing to back up)" ;;
+    not-worth-it) say "  Jev suggests not-worth-it: $name      (little to lose; nothing to back up)" ;;
+  esac
+  [ "$SCHEDULED" -eq 1 ] && return 0
+  # No terminal and no seam means nobody answered: that is not a "no".
+  [ -t 0 ] || [ -n "${DOTFILES_STRICT_ANSWERS:-}" ] || return 0
+  case "$choice" in
+    backup)
+      strict_confirm "Will you add $name to the mackup allowlist? (no: stop suggesting it)" || apps_decline "$name"
+      ;;
+    *)
+      if strict_confirm "Agree? Stop suggesting $name"; then apps_decline "$name"; else say "    kept: it may be suggested again"; fi
+      ;;
+  esac
+}
+
+# apps_ask: sets DRIFT_OUT to the SUGGEST lines Jev returns; a failed request
+# sets DRIFT_ABORT. Timeouts as in ask_jev (6 s interactive `on`, 2 s shadow).
+apps_ask() {
+  local t="" f rc
+  [ "$SCHEDULED" -eq 0 ] && [ "$APPS_MODE" = on ] && t=6
+  f=$(mktemp "${TMPDIR:-/tmp}/sync-apps.XXXXXX") || { DRIFT_OUT=""; return 0; }
+  printf '%s' "$APPS_FACTS" | JEV_SCHEDULED="$([ "$SCHEDULED" -eq 1 ] && echo 1)" JEV_TIMEOUT="${JEV_TIMEOUT:-$t}" "$JEV_BIN" apps >"$f" 2>/dev/null
+  rc=$?
+  DRIFT_OUT=$(cat "$f")
+  rm -f "$f"
+  # A failed request acts on nothing, whatever it printed.
+  [ "$rc" -eq 0 ] || { DRIFT_ABORT=1; DRIFT_OUT=""; }
+  return 0
+}
+
+jev_apps() {
+  local tag key choice p c
+  [ "$DRIFT_ABORT" -eq 0 ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  APPS_MODE=$(jev_mode apps)
+  [ "$APPS_MODE" = off ] && return 0
+  [ -x "$JEV_BIN" ] && [ -x "$APPS_BIN" ] || return 0
+  apps_gather || return 0
+  jev_init || return 0
+  apps_ask
+  jev_cleanup
+  if [ "$APPS_MODE" = on ]; then
+    while IFS=$'\t' read -r tag key choice p c; do
+      [ "$tag" = SUGGEST ] || continue
+      printf '%s' "$APPS_FACTS" | awk -F'\t' -v k="$key" '$1 == k { f = 1 } END { exit !f }' || continue
+      matches "$RE_APP" "$key" || continue
+      case "$choice" in backup | own-sync | not-worth-it) apps_offer "$key" "$choice" ;; esac
+    done <<EOF
+$DRIFT_OUT
+EOF
+  fi
+  if [ "$APPS_SUGGESTED" -gt 0 ] && [ "$SCHEDULED" -eq 1 ]; then
+    attn "Jev suggests $APPS_SUGGESTED app(s) for settings backup (run dotfiles sync)"
+  fi
+}
+
+#############################################################################
 # The daily vault scan
 #############################################################################
 
@@ -905,6 +1027,7 @@ main() {
   do_pending
   report_drift
   jev_drift
+  jev_apps
   [ "$SCHEDULED" -eq 1 ] && scan_vault_daily
 
   if [ "$SCHEDULED" -eq 1 ]; then

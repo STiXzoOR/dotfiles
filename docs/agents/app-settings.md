@@ -72,7 +72,7 @@ custom definition if the built-in one misses a path, then run
 
 ## Backup: stage, validate, publish, rotate
 
-1. Take a lock (`mkdir` of `~/.local/state/dotfiles/mackup/lock.d`; stale after one hour).
+1. Take a lock (`mkdir` of `~/.local/state/dotfiles/mackup/lock.d`; stale after one hour). Taking a stale lock over is guarded by a second `mkdir` marker (`lock.d.steal`, ignored after five minutes), and the age is checked again once it is held, so two runs that both see the same stale lock cannot delete each other's fresh one.
 2. Refuse when a covered path is a symlink into the storage folder (the leftover
    of the old link mode); the message says how to replace it with a real copy.
 3. `mackup -c <cfg> backup -f -v` into a local staging directory under
@@ -105,10 +105,21 @@ snapshot that the manifest does not list is refused.
 
 The **daily agent** (`launchagents/com.stixzoor.dotfiles-apps-backup.plist`,
 installed by `dotfiles install --launchagents`) runs `backup --scheduled` at
-12:30. It prints nothing on success and logs to `~/Library/Logs/dotfiles-apps.log`.
+12:30. It prints nothing on success and logs to `~/Library/Logs/dotfiles-apps.log`,
+which moves to `dotfiles-apps.log.1` once it passes 256 KiB (`DOTFILES_APPS_LOG_MAX`),
+so it never holds more than about twice that.
 On a Mac with no `mackup` installed or no iCloud Drive it logs one line,
 `skipped: <reason>`, and exits 0, so a Mac that is not set up yet does not fill
 the log with failures. An interactive `backup` still errors in both cases.
+
+## Suggestions for more apps
+
+`dotfiles apps candidates` (read-only) lists installed apps that mackup supports
+and that are neither allowlisted, under `[applications_to_ignore]` nor declined
+in the private repo's `jev/apps-declined.list`, one `name<TAB>facts` line each.
+`dotfiles sync` feeds it to the Jev `apps` point: see `docs/agents/jev.md`.
+Adding an app is always by hand: the name under `[applications_to_sync]` and a
+process line in `config/mackup/processes.list`, then `dotfiles apps check`.
 
 ## Restore and undo
 
@@ -129,11 +140,14 @@ with a manifest whose header does not match its body, is refused); copy it to
 staging and verify the staged copy against the manifest again, because mackup
 restores from that copy and iCloud may have changed a file since the first
 check; refuse while an allowlisted app is running (it lists them; quit them
-first); take a rescue copy of the current local files (same stage and validate
+first; besides the names in `processes.list` it also looks for `<name> Helper`, `<name> Helper (Renderer)` and `<name> Helper (GPU)`, which Electron and Chromium apps leave behind; list any other helper as an extra `app|process` line); take a rescue copy of the current local files (same stage and validate
 path, except that a corrupt local plist is kept as it is instead of blocking the
 restore, since that is often why you are restoring; stored locally under `~/.local/state/dotfiles/mackup/Mackup/rescue/`, never in
 iCloud); `mackup restore -f`; confirm no restored path is a symlink; then
-`killall cfprefsd` so the preferences daemon rereads from disk. The flush happens
+`killall cfprefsd` so the preferences daemon rereads from disk (cfprefsd caches
+preferences in memory and may otherwise serve the old values, or write them back
+over the restored file; an app that was already running can still overwrite them
+when it quits, hence the refusal above). The flush happens
 on every path after local files may have changed, including a failed
 `mackup restore`; the message then points at `dotfiles apps undo`.
 

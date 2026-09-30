@@ -987,5 +987,67 @@ t "K19" "a run dir shared by the caller survives: two drift calls, one request c
   JENV="TYPESAFE_API_KEY=k1 JEV_RUN_DIR=$d FAKE_CURL_SEQ=401" drift pkg "$DRIFT3" >/dev/null 2>&1; r1=$?
   JENV="TYPESAFE_API_KEY=k1 JEV_RUN_DIR=$d FAKE_CURL_SEQ=401" drift config "x	y" >/dev/null 2>&1; r2=$?
   [ -d "$d" ] && [ "$(calls)" -eq 1 ] && [ "$r1" -eq 3 ] && [ "$r2" -eq 3 ]'
+#############################################################################
+section "M -- Task 14: app-backup suggestions (dotfiles jev apps)"
+#############################################################################
+
+# Three installed apps mackup supports, as the sync facts feed them: key<TAB>facts.
+APPS3=$(printf 'gamma\tpaths=2 (Library/Application Support/Gamma); build=direct; sandbox container=no\ndelta\tpaths=1 (Library/Preferences/com.example.delta.plist); build=Setapp; sandbox container=no\nepsilon\tpaths=1 (Library/Preferences/com.example.epsilon.plist); build=App Store; sandbox container=yes\n')
+apps() { printf '%s\n' "$1" | jtool apps; }
+
+t "M1" "shadow mode (the default) asks once, logs a would-have decision, prints nothing" '
+  W=$(sandbox); mkenv "$W"
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-apps.json" apps "$APPS3" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ -z "$out" ] && [ "$(calls)" -eq 1 ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .point)" = apps ] && [ "$(tail -n 1 "$(LOGF)" | jq -r .mode)" = shadow ] &&
+  [ "$(tail -n 1 "$(LOGF)" | jq -r .action | grep -c "^shadow: would have suggested")" -eq 1 ]'
+t "M2" "on: prints SUGGEST key, choice, p, confidence for each item at or above the warn line" '
+  W=$(sandbox); mkenv "$W"; setmode apps=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-apps.json" apps "$APPS3" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST")" -eq 2 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST	gamma	backup	0.9	0.9$")" -eq 1 ] &&
+  [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST	delta	own-sync	")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c epsilon)" -eq 0 ]'
+t "M3" "the request offers exactly backup, own-sync and not-worth-it, one question per app, in one request" '
+  W=$(sandbox); mkenv "$W"; setmode apps=on
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-apps.json" apps "$APPS3" >/dev/null 2>&1
+  [ "$(calls)" -eq 1 ] && [ "$(jq -r ".questions | length" "$W/rec/body.log")" -eq 3 ] &&
+  [ "$(jq -r ".questions.i1.criteria | keys | join(\",\")" "$W/rec/body.log")" = "backup,not-worth-it,own-sync" ] &&
+  [ "$(jq -r ".questions.i1.type" "$W/rec/body.log")" = choice ]'
+t "M4" "low probabilities offer nothing" '
+  W=$(sandbox); mkenv "$W"; setmode apps=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-apps-low.json" apps "$APPS3" 2>&1)
+  [ -z "$out" ]'
+t "M5" "a choice that is not one of the three is ignored" '
+  W=$(sandbox); mkenv "$W"; setmode apps=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-apps-bogus.json" apps "$APPS3" 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "frobnicate\|public")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST	epsilon	backup")" -eq 1 ]'
+t "M6" "a failed request exits 3 so the caller stops asking" '
+  W=$(sandbox); mkenv "$W"; setmode apps=on
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_TIMEOUT=1" apps "$APPS3" >/dev/null 2>&1; r1=$?
+  JENV="" apps "$APPS3" >/dev/null 2>&1; r2=$?
+  [ "$r1" -eq 3 ] && [ "$r2" -eq 3 ]'
+t "M7" "off (the point or the master switch): no request, exit 0" '
+  W=$(sandbox); mkenv "$W"; setmode apps=off
+  JENV="TYPESAFE_API_KEY=k1" apps "$APPS3" >/dev/null 2>&1; r1=$?
+  setmode apps=on
+  JENV="TYPESAFE_API_KEY=k1 DOTFILES_JEV=off" apps "$APPS3" >/dev/null 2>&1; r2=$?
+  [ "$r1" -eq 0 ] && [ "$r2" -eq 0 ] && [ "$(calls)" -eq 0 ]'
+t "M8" "the never-send list is redacted from the facts before they leave" '
+  W=$(sandbox); mkenv "$W"; setmode apps=on; printf "Zorblax-Depot\n" >"$W/priv/jev/never-send.list"
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-apps.json" apps "$(printf "gamma\tpaths=1 (Library/Zorblax-Depot/x); build=direct\n")" >/dev/null 2>&1
+  [ "$(calls)" -eq 1 ] && [ "$(grep -c "Zorblax-Depot" "$W/rec/body.log")" -eq 0 ]'
+t "M9" "JEV_APPS_MAX_ITEMS caps the items sent, and nothing is asked for an empty feed" '
+  W=$(sandbox); mkenv "$W"; setmode apps=on
+  many=$(i=1; while [ "$i" -le 9 ]; do printf "app%s\tpaths=1; build=direct\n" "$i"; i=$((i + 1)); done)
+  JENV="TYPESAFE_API_KEY=k1 JEV_APPS_MAX_ITEMS=4 FAKE_CURL_ANSWER=answer-apps.json" apps "$many" >/dev/null 2>&1
+  n=$(jq -r ".questions | length" "$W/rec/body.log")
+  JENV="TYPESAFE_API_KEY=k1" jtool apps </dev/null >/dev/null 2>&1
+  [ "$n" -eq 4 ] && [ "$(calls)" -eq 1 ]'
+t "M10" "status lists the apps point, shadow by default" '
+  W=$(sandbox); mkenv "$W"; out=$(jtool status 2>&1); [ "$(printf "%s\n" "$out" | grep -c "apps  *shadow")" -eq 1 ]'
+t "M11" "the API key never reaches argv or the log" '
+  W=$(sandbox); mkenv "$W"; setmode apps=on
+  JENV="TYPESAFE_API_KEY=k-secret-77 FAKE_CURL_ANSWER=answer-apps.json" apps "$APPS3" >/dev/null 2>&1
+  [ "$(cat "$W/rec/argv.log" "$(LOGF)" | grep -c "k-secret-77")" -eq 0 ] && [ "$(grep -c "k-secret-77" "$W/rec/stdin.log")" -ge 1 ]'
 
 finish

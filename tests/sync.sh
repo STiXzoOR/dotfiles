@@ -665,5 +665,81 @@ t "A1.5" "no StandardOutPath or StandardErrorPath (the script logs itself under 
   '[ "$(grep -c "<key>Standard\(Out\|Error\)Path</key>" "$PLIST")" -eq 0 ] && grep -q "Library/Logs" bin/dotfiles-sync'
 t "A1.6" "the plist carries no absolute home path" \
   '[ "$(grep -c "/Users/" "$PLIST")" -eq 0 ]'
+#############################################################################
+section "E -- Task 14: app-backup suggestions (Jev, mackup-supported apps)"
+#############################################################################
+# estub <W> [mode]: jev.conf (apps=<mode>, default on), a dotfiles-jev that
+# records the apps facts and prints $STUB_STATE/suggest-apps, and a
+# dotfiles-apps whose `candidates` prints $STUB_STATE/apps-candidates.
+estub() {
+  printf 'apps=%s\n' "${2:-on}" >"$1/jev.conf"
+  stub "$1/bin" dotfiles-jev-stub 'case "$1" in
+  apps) echo "JEV_SCHEDULED=${JEV_SCHEDULED:-} JEV_TIMEOUT=${JEV_TIMEOUT:-}" >>"$STUB_LOG"; cat >"$STUB_STATE/facts-apps"; cat "$STUB_STATE/suggest-apps" 2>/dev/null; exit ${JEVAPPS_RC:-0} ;;
+  drift) cat >/dev/null; exit ${JEVSTUB_RC:-0} ;;
+esac'
+  stub "$1/bin" dotfiles-apps-stub 'case "$1" in candidates) echo "DECLINED=${DOTFILES_APPS_DECLINED:-}" >>"$STUB_LOG"; cat "$STUB_STATE/apps-candidates" 2>/dev/null ;; esac'
+  printf 'gamma\tpaths=2 (Library/Application Support/Gamma); build=direct; sandbox container=no\ndelta\tpaths=1 (Library/Preferences/com.example.delta.plist); build=Setapp; sandbox container=no\n' >"$1/state/apps-candidates"
+}
+# esyn <args>: syn with Jev and the app stubs. EA="y n" answers the strict prompts in order.
+esyn() {
+  local ans=""
+  # shellcheck disable=SC2086
+  if [ -n "${EA:-}" ]; then printf '%s\n' $EA >"$W/yes"; ans="DOTFILES_STRICT_ANSWERS=$W/yes"; fi
+  local SYNENV="$ans DOTFILES_JEV= DOTFILES_JEV_CONFIG=$W/jev.conf DOTFILES_JEV_BIN=$W/bin/dotfiles-jev-stub DOTFILES_APPS_BIN=$W/bin/dotfiles-apps-stub DOTFILES_BASELINE_BIN=$W/bin/dotfiles-baseline-stub ${DX:-}"
+  syn "$@"
+}
+_asuggest() { printf 'SUGGEST\t%s\t%s\t0.9\t0.9\n' "$1" "$2" >>"$W/state/suggest-apps"; }
+DECL() { printf '%s/priv/jev/apps-declined.list' "$W"; }
+
+t "E1" "the candidates go to Jev as one batched request, and the declined list is the private repo's" '
+  W=$(senv); estub "$W"; esyn >/dev/null 2>&1
+  [ "$(_calls "^dotfiles-jev-stub apps")" -eq 1 ] && [ "$(_facts apps | grep -c .)" -eq 2 ] && [ "$(_facts apps | grep -c "^gamma	")" -eq 1 ] &&
+  [ "$(_calls "^DECLINED=$W/priv/jev/apps-declined.list$")" -eq 1 ]'
+t "E2" "shadow mode: asked, but a SUGGEST from Jev is neither printed nor acted on, even answered yes" '
+  W=$(senv); estub "$W" shadow; _asuggest gamma backup; out=$(EA="y y" esyn 2>&1)
+  [ "$(_calls "^dotfiles-jev-stub apps")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "gamma")" -eq 0 ] && [ ! -e "$(DECL)" ]'
+t "E3" "master switch off, or the point off: nothing is gathered and nothing is asked" '
+  W=$(senv); estub "$W"; DX="DOTFILES_JEV=off" esyn >/dev/null 2>&1; a=$(_calls "^dotfiles-apps-stub")
+  W=$(senv); estub "$W" off; esyn >/dev/null 2>&1
+  [ "$a" -eq 0 ] && [ "$(_calls "^dotfiles-apps-stub")" -eq 0 ] && [ "$(_calls "^dotfiles-jev-stub apps")" -eq 0 ]'
+t "E4" "on, backup: the allowlist line and the process-list hint are shown; a yes writes nothing, a no is remembered in the private repo" '
+  W=$(senv); estub "$W"; _asuggest gamma backup; c=$(shasum "$W/pub/config/mackup/mackup.cfg" 2>/dev/null); out=$(EA="y" esyn 2>&1)
+  a=$([ -e "$(DECL)" ] && echo declined || echo none)
+  W=$(senv); estub "$W"; _asuggest gamma backup; EA="n" esyn >/dev/null 2>&1
+  [ "$(printf "%s\n" "$out" | grep -c "Jev suggests backup: gamma")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "mackup.cfg")" -ge 1 ] && [ "$(printf "%s\n" "$out" | grep -c "processes.list")" -ge 1 ] &&
+  [ "$a" = none ] && [ "$(shasum "$W/pub/config/mackup/mackup.cfg" 2>/dev/null)" = "$c" ] && [ "$(grep -cx gamma "$(DECL)")" -eq 1 ]'
+t "E5" "on, own-sync and not-worth-it: agreeing (yes) remembers the app, disagreeing does not" '
+  W=$(senv); estub "$W"; _asuggest gamma own-sync; _asuggest delta not-worth-it; EA="y n" esyn >/dev/null 2>&1
+  [ "$(grep -cx gamma "$(DECL)")" -eq 1 ] && [ "$(grep -cx delta "$(DECL)")" -eq 0 ]'
+t "E6" "interactive without a terminal or an answer: offered, nothing is decided, so nothing is remembered" '
+  W=$(senv); estub "$W"; _asuggest gamma backup; out=$(esyn 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "Jev suggests backup: gamma")" -eq 1 ] && [ ! -e "$(DECL)" ]'
+t "E7" "DOTFILES_YES does not answer the prompt: nothing is remembered" '
+  W=$(senv); estub "$W"; _asuggest gamma own-sync; DX="DOTFILES_YES=1" esyn >/dev/null 2>&1; [ ! -e "$(DECL)" ]'
+t "E8" "scheduled: no prompt, no write, one notification that names the apps" '
+  W=$(senv); estub "$W"; _asuggest gamma backup; EA="n" esyn --scheduled >/dev/null 2>&1
+  [ ! -e "$(DECL)" ] && [ "$(_calls "^osascript")" -eq 1 ] && grep "^osascript" "$W/log" | grep -q "app"'
+t "E9" "a name Jev returns that was not in the facts is ignored, and an unsafe candidate name is never sent or offered" '
+  W=$(senv); estub "$W"; printf "evil;touch pwned\tpaths=1\n" >>"$W/state/apps-candidates"; _asuggest zzz backup; _asuggest "evil;touch pwned" backup
+  out=$(EA="n n n" esyn 2>&1)
+  [ "$(_facts apps | grep -c "evil")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "zzz\|evil")" -eq 0 ] && [ ! -e "$(DECL)" ]'
+t "E10" "no private repo: the no is not remembered anywhere and nothing is created" '
+  W=$(senv); estub "$W"; _asuggest gamma backup; command mv "$W/priv" "$W/priv-gone"; out=$(EA="n" esyn 2>&1)
+  [ ! -e "$W/priv" ] && [ "$(printf "%s\n" "$out" | grep -c "not remembered")" -eq 1 ]'
+t "E11" "a failed drift request stops the run: apps is not asked; a failed apps request changes nothing, exit 0" '
+  W=$(senv); estub "$W"; printf "wget\nfzf\njq\n" >"$W/state/leaves"; DX="JEVSTUB_RC=3" esyn >/dev/null 2>&1; a=$(_calls "^dotfiles-jev-stub apps")
+  W=$(senv); estub "$W"; _asuggest gamma backup; out=$(DX="JEVAPPS_RC=3" EA="n" esyn 2>&1); rc=$?
+  [ "$a" -eq 0 ] && [ "$rc" -eq 0 ] && [ ! -e "$(DECL)" ]'
+t "E12" "interactive on gets 6 s; shadow keeps the 2 s default; scheduled marks JEV_SCHEDULED for the 10 s" '
+  W=$(senv); estub "$W"; esyn >/dev/null 2>&1; a=$(grep "^JEV_SCHEDULED=" "$W/log" | head -n 1)
+  : >"$W/log"; esyn --scheduled >/dev/null 2>&1; b=$(grep "^JEV_SCHEDULED=" "$W/log" | head -n 1)
+  : >"$W/log"; estub "$W" shadow; esyn >/dev/null 2>&1; c=$(grep "^JEV_SCHEDULED=" "$W/log" | head -n 1)
+  [ "$a" = "JEV_SCHEDULED= JEV_TIMEOUT=6" ] && [ "$b" = "JEV_SCHEDULED=1 JEV_TIMEOUT=" ] && [ "$c" = "JEV_SCHEDULED= JEV_TIMEOUT=" ]'
+t "E13" "the apps suggestion goes only through strict_confirm, and no fact list exceeds the cap" '
+  c=$(code_of bin/dotfiles-sync)
+  W=$(senv); estub "$W"; i=1; while [ "$i" -le 9 ]; do printf "app%s\tpaths=1\n" "$i" >>"$W/state/apps-candidates"; i=$((i + 1)); done
+  DX="JEV_APPS_MAX_ITEMS=4" esyn >/dev/null 2>&1
+  [ "$(printf "%s\n" "$c" | grep -c "strict_confirm \"")" -ge 3 ] && [ "$(printf "%s\n" "$c" | grep -c "[^_]confirm \"\(Will you\|Agree\)")" -eq 0 ] &&
+  [ "$(_facts apps | grep -c .)" -eq 4 ]'
 
 finish

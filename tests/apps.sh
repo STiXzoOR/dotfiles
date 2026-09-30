@@ -607,5 +607,72 @@ t "K3b" "a missing scanner refuses too (fails closed)" \
   'W=$(newenv)
    out=$(APPS_ENV="DOTFILES_APPS_JEV=$W/no-such-jev" run_apps backup 2>&1); rc=$?
    [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "cannot be scanned for credentials")" -eq 1 ] && [ "$(nsnaps)" -eq 0 ] && [ ! -e "$W/icloud/macA/latest" ]'
+#############################################################################
+section "L -- Task 14: Task 6 leftovers (helpers, log cap, stale-lock race) and app candidates"
+#############################################################################
+
+t "L1" "a lingering helper process of an allowlisted app blocks restore too" \
+  'W=$(newenv); run_apps backup && chg && printf "alphaProc Helper\n" >"$W/running" &&
+   out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "alpha")" -ge 1 ] && [ "$(mackup_calls restore)" -eq 0 ]'
+t "L2" "the scheduled log is rotated once it passes the cap: the old text moves to .1, the live log starts small" \
+  'W=$(newenv); l="$W/home/Library/Logs/dotfiles-apps.log"; mkdir -p "$(dirname "$l")"
+   i=0; while [ "$i" -lt 60 ]; do printf "OLDLINE %s padding padding padding\n" "$i"; i=$((i + 1)); done >"$l"
+   APPS_ENV="DOTFILES_APPS_LOG_MAX=1000" run_apps backup --scheduled >/dev/null 2>&1 &&
+   [ "$(grep -c OLDLINE "$l.1")" -eq 60 ] && [ "$(grep -c OLDLINE "$l")" -eq 0 ] && [ -s "$l" ]'
+t "L3" "a log under the cap is appended to, not rotated" \
+  'W=$(newenv); l="$W/home/Library/Logs/dotfiles-apps.log"; mkdir -p "$(dirname "$l")"; printf "OLDLINE\n" >"$l"
+   run_apps backup --scheduled >/dev/null 2>&1 && [ "$(grep -c OLDLINE "$l")" -eq 1 ] && [ ! -e "$l.1" ] && [ "$(grep -c "backup --scheduled" "$l")" -eq 1 ]'
+t "L4" "two runs racing to take over a stale lock: the loser sees the takeover marker and leaves the lock alone" \
+  'W=$(newenv); mkdir -p "$(lock_dir)" "$(lock_dir).steal"; touch -t 202001010000 "$(lock_dir)"
+   refused "lock" backup && [ -d "$(lock_dir)" ] && [ "$(nsnaps)" -eq 0 ]'
+t "L5" "a successful takeover leaves no marker behind" \
+  'W=$(newenv); mkdir -p "$(lock_dir)"; touch -t 202001010000 "$(lock_dir)"
+   run_apps backup && [ "$(nsnaps)" -eq 1 ] && [ ! -e "$(lock_dir).steal" ] && [ ! -e "$(lock_dir)" ]'
+t "L6" "a takeover marker that died with its run (older than 5 minutes) does not wedge the lock for good" \
+  'W=$(newenv); mkdir -p "$(lock_dir)" "$(lock_dir).steal"; touch -t 202001010000 "$(lock_dir)" "$(lock_dir).steal"
+   run_apps backup && [ "$(nsnaps)" -eq 1 ]'
+
+# candidates: apps installed here that mackup supports and nobody has decided on.
+# mkapps <W>: an Applications folder (DOTFILES_APPS_APPDIR) with gamma (App Store
+# build, sandbox container), delta (Setapp build), alpha (already allowlisted),
+# nomac (no mackup definition) and epsilon (direct download).
+mkapps() {
+  local w="$1" a="$1/Applications"
+  mkdir -p "$a/Gamma.app/Contents/_MASReceipt" "$a/Setapp/Delta.app/Contents" "$a/Alpha.app/Contents" "$a/Nomac.app/Contents" "$a/Epsilon.app/Contents" "$w/home/Library/Containers/com.example.gamma"
+  : >"$a/Gamma.app/Contents/_MASReceipt/receipt"
+  add_app "$w" gamma "Library/Containers/com.example.gamma/Data/Library/Preferences/com.example.gamma.plist" "Library/Application Support/Gamma"
+  add_app "$w" delta "Library/Preferences/com.example.delta.plist"
+  add_app "$w" epsilon "Library/Preferences/com.example.epsilon.plist"
+  printf '#!/bin/sh\ncase "$4" in *Gamma.app) printf "com.example.gamma";; *Delta.app) printf "com.example.delta";; *) printf "(null)";; esac\n' >"$w/stubs/mdls"
+  chmod +x "$w/stubs/mdls"
+}
+cands() { APPS_ENV="DOTFILES_APPS_APPDIR=$W/Applications DOTFILES_APPS_DECLINED=$W/declined.list ${CANDENV:-}" run_apps candidates; }
+
+t "L7" "candidates lists installed apps mackup supports that are not allowlisted, one name<TAB>facts line each" \
+  'W=$(newenv); mkapps "$W"; out=$(cands 2>&1); rc=$?
+   [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | cut -f1 | sort | tr "\n" " ")" = "delta epsilon gamma " ]'
+t "L8" "the facts say the build kind, the sandbox container and mackup's paths (home-relative)" \
+  'W=$(newenv); mkapps "$W"; out=$(cands 2>&1)
+   g=$(printf "%s\n" "$out" | grep "^gamma	"); d=$(printf "%s\n" "$out" | grep "^delta	"); e=$(printf "%s\n" "$out" | grep "^epsilon	")
+   [ "$(printf "%s" "$g" | grep -c "build=App Store")" -eq 1 ] && [ "$(printf "%s" "$g" | grep -c "sandbox container=yes")" -eq 1 ] &&
+   [ "$(printf "%s" "$g" | grep -c "Library/Application Support/Gamma")" -eq 1 ] && [ "$(printf "%s" "$g" | grep -c "paths=2")" -eq 1 ] &&
+   [ "$(printf "%s" "$d" | grep -c "build=Setapp")" -eq 1 ] && [ "$(printf "%s" "$d" | grep -c "sandbox container=no")" -eq 1 ] &&
+   [ "$(printf "%s" "$e" | grep -c "build=direct")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "$W")" -eq 0 ]'
+t "L9" "an app the owner declined (private repo list) is not offered again" \
+  'W=$(newenv); mkapps "$W"; printf "gamma\n" >"$W/declined.list"; out=$(cands 2>&1)
+   [ "$(printf "%s\n" "$out" | cut -f1 | sort | tr "\n" " ")" = "delta epsilon " ]'
+t "L10" "an app under [applications_to_ignore] is not offered" \
+  'W=$(newenv); mkapps "$W"; printf "\n[applications_to_ignore]\ndelta\n" >>"$W/cfg/mackup.cfg"; out=$(cands 2>&1)
+   [ "$(printf "%s\n" "$out" | cut -f1 | sort | tr "\n" " ")" = "epsilon gamma " ]'
+t "L11" "JEV_APPS_MAX_ITEMS caps how many candidates are gathered" \
+  'W=$(newenv); mkapps "$W"; out=$(CANDENV="JEV_APPS_MAX_ITEMS=2" cands 2>&1)
+   [ "$(printf "%s\n" "$out" | grep -c .)" -eq 2 ]'
+t "L12" "candidates writes nothing: no allowlist edit, no declined list" \
+  'W=$(newenv); mkapps "$W"; b=$(shasum "$W/cfg/mackup.cfg" "$W/cfg/processes.list"); cands >/dev/null 2>&1
+   [ "$(shasum "$W/cfg/mackup.cfg" "$W/cfg/processes.list")" = "$b" ] && [ ! -e "$W/declined.list" ]'
+t "L13" "without mackup on PATH candidates prints nothing and succeeds" \
+  'W=$(newenv); mkapps "$W"; command rm -f "$W/stubs/mackup"; out=$(APPS_ENV="DOTFILES_APPS_NO_BREW_PATH=1" cands 2>&1); rc=$?
+   [ "$rc" -eq 0 ] && [ -z "$out" ]'
 
 finish

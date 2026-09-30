@@ -31,6 +31,7 @@ hook does exactly what it did before plus its deterministic checks.
 | `privacy` | `.githooks/pre-commit`, per added hunk that no deterministic check caught | Does this added text reveal a person's name, a computer or host name, a client or private project name, a private network address or a home directory path? |
 | `secrets` | pre-commit, `dotfiles apps backup` (staging tree), `dotfiles jev scan-vault` | Is this masked value a live credential rather than a placeholder, example, hash or identifier? Asked only for an *ambiguous* hit. |
 | `drift` | `dotfiles sync`, after the deterministic drift report | One `choice` per undeclared item, one batched request per kind: see "Drift" below. |
+| `apps` | `dotfiles sync`, after drift | One `choice` (`backup` / `own-sync` / `not-worth-it`) per installed app mackup supports and nobody has decided on, one batched request per run: see "App-backup suggestions" below. |
 
 The `secrets` point also runs in the private repo's pre-commit hook
 (`dotfiles jev guard-private`, installed by `dotfiles private`) and in the daily
@@ -273,6 +274,36 @@ hits.
   line only, never the value; report-only). Binary
   plists are converted with `plutil`, other binary files are read as their
   printable runs; only an unreadable file is reported as not scanned.
+
+## App-backup suggestions (`apps`)
+
+`dotfiles sync` runs `dotfiles-apps candidates`, which lists apps in
+`/Applications` (and its `Setapp/` folder) that `mackup list` supports and that
+are not in `[applications_to_sync]`, not in `[applications_to_ignore]` and not
+on the owner's declined list. Facts are computed in shell: how many paths mackup
+covers and the first three (home-relative), whether the build is Setapp, App
+Store or direct, and whether the app's preferences live in a sandbox container.
+At most `JEV_APPS_MAX_ITEMS` (25) apps go in **one** request through
+`dotfiles jev apps`, which returns one `choice` per app.
+
+- `shadow` (the default): asked and logged, nothing shown, nothing written.
+  Interactive timeout 2 s.
+- `on`: each suggestion at or above the warn line is shown, with a line built
+  in shell from the shell's own facts (a name that is not in the facts or not
+  `[a-z0-9.+-]` is dropped). A `backup` suggestion says to add the name under
+  `[applications_to_sync]` in `config/mackup/mackup.cfg` **and** its process name
+  to `config/mackup/processes.list` by hand: `dotfiles apps check` needs both, so
+  nothing writes the allowlist. Interactive timeout 6 s.
+- The owner's "no" is remembered in the private repo, in
+  `jev/apps-declined.list` (one mackup app name per line, never committed for
+  you), so the app is not asked about again. The write goes through
+  `strict_confirm` only (a terminal and a typed yes; `DOTFILES_YES` does not
+  answer it), and only when someone was actually asked: no terminal is not a
+  "no". For `backup` a no to "will you add it?" is remembered; for `own-sync`
+  and `not-worth-it` a yes to "agree, stop suggesting it?" is. With no private
+  repo nothing is created and the message says so.
+- `--scheduled` never prompts and only adds to the daily notification.
+- A failed drift request stops this too; a failed apps request acts on nothing.
 
 ## The decision log
 
