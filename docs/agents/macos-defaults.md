@@ -87,6 +87,31 @@ Nothing else in `defaults*.sh` changes system-wide appearance or accessibility
 (no increase contrast, no reduce motion); the only `universalaccess` keys are
 the Ctrl-scroll zoom ones.
 
+macOS 26+ also gets dark icons (`AppleIconAppearanceTheme`, default
+`RegularDark`) and Clear Liquid Glass. The glass key depends on the release:
+26.x uses `NSGlassDiffusionSetting` (0 Clear, 1 Tinted; unset means Clear), 27+
+uses `NSGlassTintAmount` (float, 0 Clear, about 0.86 Tinted) and never the other
+key. Override with `DOTFILES_ICON_STYLE` (`{Regular,Clear,Tinted}{Automatic,Light,Dark}`)
+and `DOTFILES_GLASS` (`clear` or `tinted`) in `macos/local.sh`. Each value is read
+back; a mismatch is a counted failure. Icon and glass changes fully apply after a
+logout.
+
+## Real-tool quirks (macOS 27)
+
+- Remote Login: the state is read first and `systemsetup -setremotelogin` only
+  runs when it is off (the setter errors without Full Disk Access even when it
+  is already on).
+- `socketfilterfw --getstealthmode` prints "Firewall stealth mode is on" on 27
+  and "Stealth mode enabled" before; both count as on.
+- `defaults write` needs `-string` for the Tinycast hotkey: an untyped value
+  starting with `{` is parsed as an old-style plist and rejected.
+- `lsregister -kill` is gone; the Open With rebuild is `-r -apps local,system,user`
+  then `-gc`, and a failure is a warning.
+- `mdutil -i on /` only runs when `mdutil -s /` says indexing is off; a failure
+  is a warning with the error text and the manual command.
+- `print_result` in `defaults.sh` names the step on failure, so no `[error]`
+  line is bare.
+
 ## Dock
 
 `dock.sh` rebuilds the Dock with `dockutil`. `defaults.sh` ends by restarting

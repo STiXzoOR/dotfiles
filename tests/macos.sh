@@ -291,9 +291,23 @@ _g_env() {
   _stub "$W/bin" defaults '
 if [ "$1 $2" = "write com.tinycast.app" ]; then
   case "$3" in
-    hotkey.togglePalette) printf "%s" "$4" >"$HK_STATE" ;;
+    # Like the real tool: an untyped value starting with "{" is parsed as an
+    # old-style plist dictionary and rejected.
+    hotkey.togglePalette)
+      case "$4" in
+        -string) printf "%s" "$5" >"$HK_STATE" ;;
+        "{"*) echo "Could not parse: $4.  Try single-quoting it." >&2; exit 1 ;;
+        *) printf "%s" "$4" >"$HK_STATE" ;;
+      esac ;;
     settingsFileEnabled) [ "$4" = "-bool" ] && printf "%s" "$5" >"$SFE_STATE" ;;
   esac
+fi
+# Global domain: writes are stored per key, reads print them (G_WRONG makes
+# every read come back wrong, G_ABSENT makes it fail like a missing key).
+if [ "$1 $2" = "write -g" ]; then printf "%s\n" "$5" >"$W_STATE/g.$3"; fi
+if [ "$1 $2" = "read -g" ]; then
+  [ -z "${G_ABSENT:-}" ] || exit 1
+  if [ -n "${G_WRONG:-}" ]; then echo wrong; else cat "$W_STATE/g.$3" 2>/dev/null || exit 1; fi
 fi
 if [ "$1 $2" = "export com.tinycast.app" ]; then
   {
@@ -334,6 +348,19 @@ fi
 exit 0'
   _stub "$W/bin" nc '[ -n "${RL_PORT:-}" ]'
   mkdir -p "$W/Tinycast.app"
+  _stub "$W/bin" sw_vers 'echo "${SW_VERS:-27.0.1}"'
+  # mdutil: -s reports MDUTIL_OFF; -i on fails like macOS 27 when MDUTIL_FAIL is set.
+  _stub "$W/bin" mdutil '
+case "$1" in
+  -s) if [ -n "${MDUTIL_OFF:-}" ]; then printf "/:\n\tIndexing disabled.\n"; else printf "/:\n\tIndexing enabled. \n"; fi ;;
+  -i) [ -z "${MDUTIL_FAIL:-}" ] || { echo "Error: unable to perform operation. (-400)" >&2; exit 1; } ;;
+esac
+exit 0'
+  # lsregister: -kill was removed and fails like the real tool.
+  _stub "$W/bin" lsregister '
+[ -z "${LSR_FAIL:-}" ] || exit 1
+for a in "$@"; do [ "$a" != -kill ] || { echo "# The -kill option has been removed because it was dangerous and no longer useful." >&2; exit 1; }; done
+exit 0'
   _stub "$W/bin" xattr 'exit 1'
   _stub "$W/bin" sleep ''
   _stub "$W/bin" sysctl 'echo 8'
@@ -349,7 +376,10 @@ case "$1" in
     else echo "Firewall is disabled. (State = 0)"; fi ;;
   --getstealthmode)
     if [ "$(cat "$FW_STATE/stealth" 2>/dev/null)" = on ]; then
-      echo "Stealth mode enabled"; else echo "Stealth mode disabled"; fi ;;
+      if [ -n "${FW_NEWWORD:-}" ]; then echo "Firewall stealth mode is on"; else echo "Stealth mode enabled"; fi
+    else
+      if [ -n "${FW_NEWWORD:-}" ]; then echo "Firewall stealth mode is off"; else echo "Stealth mode disabled"; fi
+    fi ;;
 esac
 exit 0'
   printf '%s' "$W"
@@ -745,7 +775,7 @@ _g_launch_run() { # _g_launch_run <W> [VAR=val ...]
 
 TC=$(_g_env); _g_launch_run "$TC"
 t "G8.1" "default (no launcher configured): Tinycast's summon hotkey is set to Cmd-Space" \
-  '_logged "$TC" "defaults write com.tinycast.app hotkey.togglePalette $HK"'
+  '_logged "$TC" "defaults write com.tinycast.app hotkey.togglePalette -string $HK"'
 t "G8.2" "the Tinycast settings-file switch is turned on (the documented settingsFileEnabled default)" \
   '_logged "$TC" "defaults write com.tinycast.app settingsFileEnabled -bool true"'
 t "G8.3" "the hotkey is read back after the write, as the raw value (not through defaults read, which quotes it)" \
@@ -785,13 +815,13 @@ RP=$(_g_env); mkdir -p "$RP/Raycast.app"; _g_launch_run "$RP"
 t "G8.14" "tinycast with Raycast.app present: one warning with the exact removal command" \
   '[ "$(grep -c "brew uninstall --cask raycast" "$RP/out")" -eq 1 ]'
 t "G8.15" "the warning is only a warning: Raycast is never uninstalled and Tinycast is still set up" \
-  '[ "$(_logcount "$RP" "uninstall")" -eq 0 ] && _logged "$RP" "defaults write com.tinycast.app hotkey.togglePalette $HK"'
+  '[ "$(_logcount "$RP" "uninstall")" -eq 0 ] && _logged "$RP" "defaults write com.tinycast.app hotkey.togglePalette -string $HK"'
 t "G8.16" "tinycast without Raycast.app: no Raycast warning" \
   '! grep -q "brew uninstall --cask raycast" "$TC/out"'
 
 PM=$(_g_env); printf "DOTFILES_LAUNCHER=raycast\n" >"$PM/df/macos/local.sh"; printf "DOTFILES_LAUNCHER=tinycast\n" >"$PM/df/macos/machine.local.sh"; _g_launch_run "$PM"
 t "G8.17" "macos/machine.local.sh beats macos/local.sh (sourcing local.sh must not hide it)" \
-  '_logged "$PM" "defaults write com.tinycast.app hotkey.togglePalette $HK"'
+  '_logged "$PM" "defaults write com.tinycast.app hotkey.togglePalette -string $HK"'
 PL=$(_g_env); printf "DOTFILES_LAUNCHER=raycast\n" >"$PL/df/macos/local.sh"; _g_launch_run "$PL"
 t "G8.18" "a launcher set only in macos/local.sh is honoured" \
   '[ "$(_logcount "$PL" "com.tinycast.app")" -eq 0 ]'
@@ -874,7 +904,7 @@ t "G10.2" "Tinycast.app absent: nothing is written and the tally stays zero" '
   [ "$(_tally "$W" FW_TAKES=1 RL_TAKES=1)" -eq 0 ] && [ "$(_logcount "$W" "com.tinycast.app")" -eq 0 ]'
 t "G10.3" "Tinycast.app present and not running: written, read back, no info line" '
   W=$(_g_env); _g_run "$W" defaults.sh
-  _logged "$W" "defaults write com.tinycast.app hotkey.togglePalette $HK" &&
+  _logged "$W" "defaults write com.tinycast.app hotkey.togglePalette -string $HK" &&
   [ "$(sed -n "/defaults write com.tinycast.app hotkey.togglePalette/,\$p" "$W/log" | grep -c "defaults export")" -ge 1 ] &&
   [ "$(grep -c "not installed yet" "$W/out")" -eq 0 ]'
 t "G10.4" "launcher=raycast: no Tinycast info line" '
@@ -935,6 +965,70 @@ _d_run() {
 }
 _d_has() { grep -qxF "$2" "$1/state"; }
 _d_failed() { sed -n 's/^FAILED=//p' "$1/out"; }
+
+#############################################################################
+section "G12 -- what the real macOS 27 tools do: wording, refusals, removed flags"
+#############################################################################
+OK_ENV="FW_TAKES=1 RL_TAKES=1"
+t "G12.1" "macOS 27 stealth wording (Firewall stealth mode is on) is on, not an error" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV FW_NEWWORD=1)" -eq 0 ] && [ "$(grep -c "stealth mode is still off" "$W/out")" -eq 0 ]'
+t "G12.2" "macOS 27 stealth wording off (Firewall stealth mode is off) is still an error" '
+  W=$(_g_env) && _g_run "$W" defaults.sh RL_TAKES=1 FW_NEWWORD=1 && [ "$(grep -c "stealth mode is still off" "$W/out")" -ge 1 ]'
+t "G12.3" "Remote Login already on: the setter is never called" '
+  W=$(_g_env) && _g_run "$W" defaults.sh FW_TAKES=1 RL_LAUNCHD=1 && [ "$(_logcount "$W" "-setremotelogin")" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
+t "G12.4" "Remote Login off and the setter works: setter called once, no error" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV)" -eq 0 ] && [ "$(grep -cxF "systemsetup -setremotelogin -f on" "$W/log")" -eq 1 ]'
+t "G12.5" "Remote Login off and the setter fails: one failure with the Sharing instruction" '
+  W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1 SYSTEMSETUP_RC=1)" -eq 1 ] && grep -qE "error.*Remote Login.*Sharing" "$W/out"'
+t "G12.6" "the Tinycast hotkey is written typed, so the real defaults does not refuse it" '
+  W=$(_g_env) && _g_run "$W" defaults.sh && [ "$(grep -c "Could not parse" "$W/out")" -eq 0 ] && [ "$(grep -c "error.*Tinycast" "$W/out")" -eq 0 ]'
+t "G12.7" "the untyped write is refused by the stub exactly as the real tool does (harness check)" '
+  W=$(_g_env); ! PATH="$W/bin:$PATH" STUB_LOG="$W/log" HK_STATE="$W/hk" defaults write com.tinycast.app hotkey.togglePalette "{\"a\":1}"'
+t "G12.8" "lsregister is never called with -kill, and garbage-collects instead" '
+  W=$(_g_env) && _g_run "$W" defaults.sh && [ "$(_logcount "$W" "lsregister -kill")" -eq 0 ] && [ "$(_logcount "$W" "lsregister -gc")" -eq 1 ] && [ "$(grep -c "# The -kill option" "$W/out")" -eq 0 ]'
+t "G12.9" "a failing lsregister is a warning naming the command, not an error and not a failure" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV LSR_FAIL=1)" -eq 0 ] && grep -q "warning.*lsregister" "$W/out" && [ "$(grep -c "error.*lsregister" "$W/out")" -eq 0 ]'
+t "G12.10" "indexing already on: mdutil -i on is not called" '
+  W=$(_g_env) && _g_run "$W" defaults.sh && [ "$(_logcount "$W" "mdutil -i on")" -eq 0 ] && _logged "$W" "mdutil -s /"'
+t "G12.11" "indexing off: mdutil -i on / runs" '
+  W=$(_g_env) && _g_run "$W" defaults.sh MDUTIL_OFF=1 && _logged "$W" "sudo mdutil -i on /"'
+t "G12.12" "indexing off and mdutil fails: a warning with the error text and the manual command, not a failure" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV MDUTIL_OFF=1 MDUTIL_FAIL=1)" -eq 0 ] &&
+  grep "warning" "$W/out" | grep -q "unable to perform operation" && grep "warning" "$W/out" | grep -qF "sudo mdutil -i on /"'
+t "G12.13" "print_result with no message names the step that failed (never a bare [error])" '
+  W=$(_g_env); G_TAIL="running \"Step Alpha\"; print_result 3" _g_run "$W" defaults.sh; grep -q "error.*Step Alpha failed" "$W/out"'
+t "G12.14" "no bare [error] line in a run where everything fails" '
+  W=$(_g_env); _g_run "$W" defaults.sh MDUTIL_OFF=1 MDUTIL_FAIL=1 LSR_FAIL=1 SYSTEMSETUP_RC=1; [ "$(grep "error" "$W/out" | grep -cE "error[^a-z]*\]?[[:space:]]*\$")" -eq 0 ]'
+
+#############################################################################
+section "G13 -- macOS 26+ appearance: dark icons and Clear Liquid Glass"
+#############################################################################
+t "G13.1" "macOS 27: dark icons and NSGlassTintAmount 0; never NSGlassDiffusionSetting" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV SW_VERS=27.0.1)" -eq 0 ] &&
+  _logged "$W" "defaults write -g AppleIconAppearanceTheme -string RegularDark" &&
+  _logged "$W" "defaults write -g NSGlassTintAmount -float 0" && [ "$(_logcount "$W" "NSGlassDiffusionSetting")" -eq 0 ]'
+t "G13.2" "macOS 26.6.1: NSGlassDiffusionSetting 0; never NSGlassTintAmount" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV SW_VERS=26.6.1)" -eq 0 ] &&
+  _logged "$W" "defaults write -g AppleIconAppearanceTheme -string RegularDark" &&
+  _logged "$W" "defaults write -g NSGlassDiffusionSetting -int 0" && [ "$(_logcount "$W" "NSGlassTintAmount")" -eq 0 ]'
+t "G13.3" "macOS 15: no icon or glass keys" '
+  W=$(_g_env) && _g_run "$W" defaults.sh SW_VERS=15.6.1 && [ "$(_logcount "$W" "AppleIconAppearanceTheme")" -eq 0 ] &&
+  [ "$(_logcount "$W" "NSGlass")" -eq 0 ] && _logged "$W" "defaults write NSGlobalDomain AppleInterfaceStyle -string Dark"'
+t "G13.4" "DOTFILES_GLASS=tinted: 0.86 on 27, 1 on 26" '
+  W=$(_g_env); X=$(_g_env); _g_run "$W" defaults.sh SW_VERS=27.0.1 DOTFILES_GLASS=tinted; _g_run "$X" defaults.sh SW_VERS=26.6.1 DOTFILES_GLASS=tinted
+  _logged "$W" "defaults write -g NSGlassTintAmount -float 0.86" && _logged "$X" "defaults write -g NSGlassDiffusionSetting -int 1"'
+t "G13.5" "DOTFILES_ICON_STYLE overrides the icon style" '
+  W=$(_g_env) && _g_run "$W" defaults.sh DOTFILES_ICON_STYLE=TintedDark && _logged "$W" "defaults write -g AppleIconAppearanceTheme -string TintedDark"'
+t "G13.6" "a value that reads back wrong is a counted failure naming the key" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV SW_VERS=27.0.1 G_WRONG=1)" -ge 2 ] && grep -qE "error.*NSGlassTintAmount.*expected" "$W/out"'
+t "G13.7" "a value that cannot be read back at all is a counted failure" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV SW_VERS=26.6.1 G_ABSENT=1)" -ge 2 ]'
+t "G13.8" "an unknown DOTFILES_GLASS warns and writes no glass key" '
+  W=$(_g_env) && _g_run "$W" defaults.sh DOTFILES_GLASS=frosted && grep -q "warning.*DOTFILES_GLASS" "$W/out" && [ "$(_logcount "$W" "NSGlass")" -eq 0 ]'
+t "G13.9" "reduceTransparency is never written at runtime" '
+  W=$(_g_env) && _g_run "$W" defaults.sh && [ "$(_logcount "$W" "reduceTransparency")" -eq 0 ]'
+t "G13.10" "local.sh.example documents both variables" \
+  'grep -q DOTFILES_ICON_STYLE macos/local.sh.example && grep -q DOTFILES_GLASS macos/local.sh.example'
 
 t "G11.1" "a Dock that relaunches over the first edits still ends with every installed app" '
   W=$(_d_env); _d_run "$W"
