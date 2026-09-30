@@ -97,10 +97,22 @@ write_run_cfg() {
 run_mackup() { mackup -c "$RUN_CFG" "$@"; }
 
 # The home-relative paths an app covers, one per line. Fails for an unknown app.
+# `mackup show` starts Python, so each app is asked once per process: the answer
+# is cached under $PATHS_CACHE (removed by cleanup) and every pass reads it.
+PATHS_CACHE="$STATE/paths.$$"
 app_paths() {
-  local out
-  out=$(run_mackup show "$1" 2>&1) || return 1
-  printf '%s\n' "$out" | sed -n 's/^ - //p'
+  local f out
+  f="$PATHS_CACHE/$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')"
+  if [ ! -f "$f" ]; then
+    out=$(run_mackup show "$1" 2>&1) || return 1
+    mkdir -p "$PATHS_CACHE" || return 1
+    printf '%s\n' "$out" | sed -n 's/^ - //p' >"$f.tmp$$" && mv "$f.tmp$$" "$f" || return 1
+  fi
+  command cat "$f"
+}
+cleanup() {
+  rm -rf "$PATHS_CACHE"
+  release_lock
 }
 
 # Process names for an app, from processes.list (`app|process`). `app|-` marks
@@ -382,7 +394,7 @@ take_lock() {
   fi
   LOCK_HELD=1
   printf '%s\n' "$$" >"$LOCK/pid"
-  trap release_lock EXIT
+  trap cleanup EXIT
   trap 'exit 130' INT TERM
 }
 
@@ -559,6 +571,10 @@ stage_local() {
   run_mackup -f -v backup 2>&1 | strip_ansi >"$out"
   rc=${PIPESTATUS[0]}
 
+  # iCloud Drive never syncs .DS_Store, so a snapshot that holds one fails
+  # verification on the other Mac. Finder litter, not settings: drop it.
+  find "$STAGE" -name .DS_Store -type f -delete 2>/dev/null
+
   # A TCC denial is not a mackup failure: it prints the error and carries on.
   denials=$(awk '
     /^--- .* ---$/ { app = $0; sub(/^--- /, "", app); sub(/ ---$/, "", app); next }
@@ -609,7 +625,7 @@ write_manifest() { # write_manifest <tree> <out>
   while IFS= read -r f; do
     printf '%s\t%s\t%s\n' "$(sha_of "$1/$f")" "$(wc -c <"$1/$f" | tr -d ' ')" "$f" >>"$body" || return 1
     n=$((n + 1))
-  done < <(cd "$1" && find . -type f ! -path ./MANIFEST | sed 's|^\./||' | sort)
+  done < <(cd "$1" && find . -type f ! -path ./MANIFEST ! -name .DS_Store | sed 's|^\./||' | sort)
   { printf '# dotfiles-apps manifest v1 files=%s sha256=%s\n' "$n" "$(sha_of "$body")"; command cat "$body"; } >"$2" || return 1
   rm -f "$body"
 }
@@ -638,6 +654,9 @@ verify_manifest() { # verify_manifest <snapshot dir>
   while IFS=$'\t' read -r sum size f; do
     [ -n "$f" ] || continue
     n=$((n + 1))
+    # Older snapshots list a .DS_Store that iCloud never synced; the header
+    # count still includes it, so count it and skip the check.
+    case "$f" in .DS_Store | */.DS_Store) continue ;; esac
     if [ ! -f "$dir/$f" ]; then
       err "manifest: '$f' is missing from the snapshot"
       rc=1
@@ -658,8 +677,8 @@ verify_manifest() { # verify_manifest <snapshot dir>
   while IFS= read -r actual; do
     err "manifest: '$actual' is in the snapshot but not in the manifest"
     rc=1
-  done < <(comm -13 <(tail -n +2 "$dir/MANIFEST" | awk -F'\t' '{ print $3 }' | LC_ALL=C sort) \
-    <(cd "$dir" && find . -type f ! -path ./MANIFEST | sed 's|^\./||' | LC_ALL=C sort))
+  done < <(comm -13 <(tail -n +2 "$dir/MANIFEST" | awk -F'\t' '$3 !~ /(^|\/)\.DS_Store$/ { print $3 }' | LC_ALL=C sort) \
+    <(cd "$dir" && find . -type f ! -path ./MANIFEST ! -name .DS_Store | sed 's|^\./||' | LC_ALL=C sort))
   return "$rc"
 }
 
@@ -1112,6 +1131,7 @@ usage() {
 
 main() {
   local cmd="${1:-}"
+  trap cleanup EXIT
   [ $# -gt 0 ] && shift
   case "$cmd" in
     check) cmd_check "$@" ;;
