@@ -14,19 +14,23 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # default 900) bounds each suite; one that expires is named and the rest run.
 trap "" PIPE
 
-# TEST_JOBS suites run at once (default: hw.ncpu, at least 2; 1 is serial).
+# TEST_JOBS suites run at once (default: hw.ncpu capped at 6, at least 2; 1 is
+# serial). Measured 4, 6 and 8 jobs on 8 cores: the same wall time within 5%.
 # bash 3.2 has no `wait -n`, so the pool polls recorded PIDs with `kill -0`.
 # Each suite writes to its own file and is printed as one block, in
 # alphabetical order, as soon as every earlier suite has finished.
 suite_args=("$@")
 jobs_max=${TEST_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null)}
 case "$jobs_max" in '' | *[!0-9]*) jobs_max=2 ;; esac
-if [ -z "${TEST_JOBS:-}" ] && [ "$jobs_max" -lt 2 ]; then jobs_max=2; fi
+if [ -z "${TEST_JOBS:-}" ]; then
+  [ "$jobs_max" -ge 2 ] || jobs_max=2
+  [ "$jobs_max" -le 6 ] || jobs_max=6
+fi
 [ "$jobs_max" -ge 1 ] || jobs_max=1
 
 suites=()
 for f in tests/*.sh; do
-  case "$(basename "$f")" in lib.sh | run.sh) continue ;; esac
+  case "$(basename "$f")" in lib.sh | run.sh | sync-lib.sh) continue ;; esac
   suites+=("$f")
 done
 total=${#suites[@]}

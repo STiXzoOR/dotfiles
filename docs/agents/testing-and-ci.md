@@ -32,7 +32,7 @@ any suite failed. Arguments are passed through to each suite.
 | `tests/mise.sh`            | mise config, the lockfile and `config/mise/locks/`             |
 | `tests/ci.sh`              | The workflows and git hooks                                    |
 | `tests/secrets.sh`         | `bin/dotfiles-secrets`                                         |
-| `tests/sync.sh`            | `scripts/lib/machine.sh`, `bin/dotfiles-sync`, `bin/dotfiles-vault`, the sync LaunchAgent (`SYNC_ONLY="S V"` runs a subset) |
+| `tests/sync-*.sh`          | `scripts/lib/machine.sh`, `bin/dotfiles-sync`, `bin/dotfiles-vault`, the sync LaunchAgent, split into six suites (core, sched, drift, defaults, vault, gate) so they run in parallel; shared fixtures in `tests/sync-lib.sh` (not a suite; `run.sh` skips it). `SYNC_ONLY="S4 D1"` runs the tests whose id starts with one of those prefixes |
 | `tests/private.sh`         | `bin/dotfiles-private` (sandbox repos and a bare remote)       |
 | `tests/jev.sh`             | `scripts/lib/jev.sh`, `bin/dotfiles-jev`, the pre-commit guard (fake `curl`, stub keychain; never the real API) |
 
@@ -56,7 +56,7 @@ signals the whole process group. `tests/repo.sh` (H.11) fails on any tracked scr
 `/dev/urandom` or `/dev/zero`, or runs `yes`, without a bound.
 
 `tests/run.sh` runs suites concurrently, `TEST_JOBS` at a time (default
-`sysctl -n hw.ncpu`, at least 2; `TEST_JOBS=1` is serial, in alphabetical
+`sysctl -n hw.ncpu` capped at 6, at least 2; 4, 6 and 8 jobs took the same wall time on an 8-core Mac, so the cap is about load, not speed; `TEST_JOBS=1` is serial, in alphabetical
 order). The slowest suites start first (shell, cli, sync, jev, macos, apps,
 claude, then the rest alphabetically). Each suite writes to its own temp file
 and is printed as one block, in alphabetical order, as soon as every earlier

@@ -245,9 +245,9 @@ t "F5.1" "every job in every workflow sets timeout-minutes" '
   done; [ "$n" -ge 1 ])'
 t "F5.2" "the workflow runs the bash suites through tests/run.sh" \
   '[ "$(code_of .github/workflows/ci.yml | grep -c "bash tests/run.sh")" -ge 1 ]'
-t "F5.3" "run.sh skips only lib.sh and itself, so codex.sh and apps.sh are picked up" '
+t "F5.3" "run.sh skips only lib.sh, sync-lib.sh and itself, so codex.sh and apps.sh are picked up" '
   [ -f tests/codex.sh ] && [ -f tests/apps.sh ] && [ -f tests/mise.sh ] &&
-  [ "$(code_of tests/run.sh | grep -c "lib.sh | run.sh) continue")" -eq 1 ] &&
+  [ "$(code_of tests/run.sh | grep -c "lib.sh | run.sh | sync-lib.sh) continue")" -eq 1 ] &&
   [ "$(code_of tests/run.sh | grep -c "for f in tests/\*.sh")" -eq 1 ]'
 t "F5.4" "the test job installs age, so the secrets suite exercises the age path the tool prefers" \
   '[ "$(code_of .github/workflows/ci.yml | grep -cE "brew install .*[[:space:]]age([[:space:]]|$)")" -ge 1 ]'
