@@ -264,7 +264,7 @@ t "A9.1c" "a foreign symlink is preserved in the backup" '
   (source scripts/lib/fs.sh; dotfiles_backup_stow_targets "$W/pkg" "$W/target" "$W/backup")
   [ -L "$W/backup/.testrc" ]'
 t "A9.1d" "link stows config against XDG_CONFIG_HOME through the shared helper" \
-  'grep -q "dotfiles_stow_all - \"\$ROOT_DIR\" \"\$HOME\" \"\$XDG_CONFIG_HOME\"" <(code_of bin/dotfiles) && grep -q "dotfiles_stow \"\$1\" \"\$4\" config" <(code_of scripts/lib/fs.sh)'
+  'grep -q "dotfiles_stow_all - \"\$ROOT_DIR\" \"\$HOME\" \"\$XDG_CONFIG_HOME\"" <(code_of bin/dotfiles) && grep -q "dotfiles_stow \"\$1\" \"\$2\" \"\$4\" config" <(code_of scripts/lib/fs.sh)'
 t "A9.2" "unlink on an empty backup does not claim success" '
   W=$(sandbox); mkdir -p "$W/h/.dotfiles_backup/2026.01.01"
   out=$(HOME="$W/h" bash bin/dotfiles unlink 2026.01.01 2>&1 || true)
@@ -827,10 +827,14 @@ t "N2.20" "a SIGKILLed parent does not leave the keep-alive holding sudo warm" '
   bgpid=$!
   # Wait for the keep-alive to have fired (bounded, so a loaded machine is fine).
   i=0; while [ "$(grep -c "^sudo -n true" "$W/log")" -lt 2 ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
-  kill -KILL "$(command cat "$W/pid")"; wait "$bgpid" 2>/dev/null
+  pid=$(command cat "$W/pid"); kids=$(pgrep -P "$pid")
+  kill -KILL "$pid"; wait "$bgpid" 2>/dev/null
   sleep 1
   n=$(grep -c "^sudo -n true" "$W/log"); sleep 0.8
-  [ "$n" -ge 1 ] && [ "$(grep -c "^sudo -n true" "$W/log")" -eq "$n" ]'
+  [ "$n" -ge 1 ] && [ "$(grep -c "^sudo -n true" "$W/log")" -eq "$n" ]; rc=$?
+  # A loop that survived (the failure being tested) must not outlive the test.
+  [ -z "$kids" ] || kill $kids 2>/dev/null
+  [ "$rc" -eq 0 ]'
 
 
 #############################################################################
@@ -1683,5 +1687,13 @@ t "L5.3" "a TERM while stow runs rolls back what the sweep moved and stops link"
   [ "$(ls "$W"/dotfiles-link.* 2>/dev/null | wc -l)" -eq 0 ]'
 
 t "L5.4" "the link tests never inherit a STOW_DIR from the launcher" '[ -z "${STOW_DIR+set}" ]'
+
+t "L5.5" "an exported STOW_DIR does not redirect stow away from the repo it was given" '
+  _have_stow || return 0
+  W=$(sandbox); mkdir -p "$W/repo/runcom" "$W/repo/config/git" "$W/decoy/runcom" "$W/decoy/config" "$W/h/.config"
+  echo sb >"$W/repo/runcom/.sbfile"; echo sb >"$W/repo/config/git/config"; echo decoy >"$W/decoy/runcom/.decoyfile"
+  ( export STOW_DIR="$W/decoy"; source scripts/lib/fs.sh
+    dotfiles_stow_all -n "$W/repo" "$W/h" "$W/h/.config" && dotfiles_stow_all - "$W/repo" "$W/h" "$W/h/.config" ) >/dev/null 2>&1
+  [ -L "$W/h/.sbfile" ] && [ ! -e "$W/h/.decoyfile" ] && [ -L "$W/h/.config/git" ]'
 
 finish

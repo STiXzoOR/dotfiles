@@ -216,7 +216,7 @@ dotfiles_link_abort() {
   kill -s "$1" "$$"
 }
 
-# usage: dotfiles_stow <-n|-> <target-dir> <package>   (run from the repo root)
+# usage: dotfiles_stow <-n|-> <stow-dir> <target-dir> <package>
 #
 # The one place the stow command line is spelled, so `dotfiles link` and
 # `dotfiles-sync` cannot drift. --restow makes a re-run idempotent (not
@@ -228,10 +228,12 @@ dotfiles_link_abort() {
 # .stow-local-ignore would REPLACE stow's built-in ignore list; a command-line
 # --ignore adds to it.
 dotfiles_stow() {
+  # -d is explicit: stow's default source directory is $STOW_DIR when that is
+  # exported, which silently beat the caller's `cd` to the repo root.
   if [ "$1" = "-n" ]; then
-    stow -n --restow --ignore='^\.DS_Store$' -t "$2" "$3"
+    stow -n --restow --ignore='^\.DS_Store$' -d "$2" -t "$3" "$4"
   else
-    stow --restow --ignore='^\.DS_Store$' -t "$2" "$3"
+    stow --restow --ignore='^\.DS_Store$' -d "$2" -t "$3" "$4"
   fi
 }
 
@@ -243,7 +245,7 @@ dotfiles_stow() {
 dotfiles_stow_all() {
   (
     cd "$2" || exit 1
-    dotfiles_stow "$1" "$3" runcom && dotfiles_stow "$1" "$4" config
+    dotfiles_stow "$1" "$2" "$3" runcom && dotfiles_stow "$1" "$2" "$4" config
   )
 }
 
