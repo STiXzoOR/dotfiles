@@ -341,11 +341,26 @@ _lock_missing() {
   printf '%s' "$n"
 }
 
+# _lock_untracked <lockfile> -- how many aube paths git does not track (a file
+# that exists in the working tree but is ignored or unadded is missing on a clone).
+_lock_untracked() {
+  local base n=0 p
+  base=$(dirname "$1")
+  while IFS= read -r p; do
+    [ -n "$(git ls-files -- "$base/$p")" ] || n=$((n + 1))
+  done < <(sed -nE 's/^aube = \{ path = "([^"]+)".*/\1/p' "$1")
+  printf '%s' "$n"
+}
+
 t "M4.6" "mise.lock carries aube entries to check" \
   '[ "$(grep -c "^aube = { path" config/mise/mise.lock)" -gt 0 ]'
 
-t "M4.7" "every aube sidecar path in mise.lock exists in the repo" \
-  '[ "$(_lock_missing config/mise/mise.lock)" -eq 0 ]'
+t "M4.7" "every aube sidecar path in mise.lock exists in the repo and is tracked" \
+  '[ "$(_lock_missing config/mise/mise.lock)" -eq 0 ] && [ "$(_lock_untracked config/mise/mise.lock)" -eq 0 ]'
+t "M4.7b" "the tracked check notices an untracked path (mutation, in a sandbox repo)" \
+  'W=$(sandbox) && mkdir -p "$W/r/mise/locks/a" && ( cd "$W/r" && git init -q . && : >mise/locks/a/f &&
+   printf "aube = { path = \"locks/a\" }\n" >mise/mise.lock &&
+   [ "$(_lock_untracked mise/mise.lock)" -eq 1 ] && git add mise/locks && [ "$(_lock_untracked mise/mise.lock)" -eq 0 ] )'
 
 t "M4.8" "the check notices a deleted sidecar (mutation, in a sandbox copy)" \
   'W=$(sandbox) && mkdir -p "$W/mise" &&
@@ -356,7 +371,7 @@ t "M4.8" "the check notices a deleted sidecar (mutation, in a sandbox copy)" \
 
 # The tree used to be ignored, which is what left a fresh clone without it.
 t "M4.9" "config/mise/locks is not gitignored" \
-  '! git -c core.excludesFile=/dev/null check-ignore -q config/mise/locks/npm-svgo/x'
+  'git -c core.excludesFile=/dev/null check-ignore -q config/mise/locks/npm-svgo/x; [ "$?" -eq 1 ]'
 
 t "M4.10" "the sidecar tree is tracked" \
   '[ "$(git ls-files config/mise/locks | grep -c .)" -gt 0 ]'

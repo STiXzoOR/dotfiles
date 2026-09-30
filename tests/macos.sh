@@ -658,6 +658,8 @@ t "G5.9" "gh config carries no token" \
   '[ "$(grep -ciE "oauth_token|ghp_|gho_|github_pat" config/gh/config.yml)" -eq 0 ]'
 t "G5.10" "the VS Code keybindings are valid JSON with the two ctrl+d bindings" \
   'jq -e "map(select(.key == \"ctrl+d\")) | length == 2" <(sed "/^[[:space:]]*\/\//d" apps/vscode/keybindings.json) >/dev/null'
+t "G5.10b" "the VS Code keybindings end with a newline" \
+  '[ "$(tail -c 1 apps/vscode/keybindings.json | od -An -c | tr -d " ")" = "\\n" ]'
 t "G5.11" "the VS Code installer links keybindings.json beside settings.json" '
   W=$(_g_env) && mkdir -p "$W/df/apps/vscode" && echo "{}" >"$W/df/apps/vscode/settings.json" && echo "[]" >"$W/df/apps/vscode/keybindings.json" &&
   _g_run "$W" defaults-vscode.sh &&
