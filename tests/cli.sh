@@ -15,6 +15,11 @@
 # shellcheck disable=SC2016
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# `dotfiles test` runs under the bin/dotfiles launcher, which exports STOW_DIR.
+# Every real stow the link tests run in a sandbox repo would then use the
+# checkout's runcom/config instead of the sandbox's.
+unset STOW_DIR
+
 #############################################################################
 section "A0 — scripts/echos.sh helpers"
 #############################################################################
@@ -1676,5 +1681,7 @@ t "L5.3" "a TERM while stow runs rolls back what the sweep moved and stops link"
   _lk_run "$W"; rc=$?
   [ "$rc" -ne 0 ] && [ "$(_lk_state "$W")" = "$before" ] && [ "$(command cat "$W/h/.hushlogin")" = MINE ] &&
   [ "$(ls "$W"/dotfiles-link.* 2>/dev/null | wc -l)" -eq 0 ]'
+
+t "L5.4" "the link tests never inherit a STOW_DIR from the launcher" '[ -z "${STOW_DIR+set}" ]'
 
 finish
