@@ -70,10 +70,62 @@ gated by machine role. Until the sync work lands, do not re-run
 `dotfiles configure` on the MacBook: it would enable Remote Login and the
 mini's power settings there.
 
-Remote Login is read back like the firewall: `systemsetup -setremotelogin` can
-print success without Full Disk Access and change nothing, so the state is read
-with `systemsetup -getremotelogin`, and a Mac where it is still off gets an
-`error` naming Full Disk Access.
+Remote Login is read back like the firewall, but `systemsetup -getremotelogin`
+itself needs Full Disk Access (without it it reports Off while sshd runs), so it
+is not trusted alone. The state counts as on if any of these says so:
+`systemsetup -getremotelogin`, `sudo launchctl print-disabled system` showing
+`"com.openssh.sshd" => enabled`, or sshd answering on `127.0.0.1:22`. A Mac
+where all three say off gets an `error` saying to turn it on in System Settings,
+General, Sharing, Remote Login, and to re-run `dotfiles configure --defaults`;
+it is counted as a failure.
+
+## Appearance
+
+`AppleInterfaceStyle Dark` (dark mode) is set on purpose. Reduce transparency
+is intentionally not set: it turned Liquid Glass fully tinted on a fresh Mac. A
+Mac where an older configure already set it gets it reset (only when it reads
+1; a failed reset is a warning with the System Settings step).
+Nothing else in `defaults*.sh` changes system-wide appearance or accessibility
+(no increase contrast, no reduce motion); the only `universalaccess` keys are
+the Ctrl-scroll zoom ones.
+
+macOS 26+ also gets dark icons (`AppleIconAppearanceTheme`, default
+`RegularDark`) and Clear Liquid Glass. The glass key depends on the release:
+26.x uses `NSGlassDiffusionSetting` (0 Clear, 1 Tinted; unset means Clear), 27+
+uses `NSGlassTintAmount` (float, 0 Clear, about 0.86 Tinted) and never the other
+key. Override with `DOTFILES_ICON_STYLE` (`{Regular,Clear,Tinted}{Automatic,Light,Dark}`)
+and `DOTFILES_GLASS` (`clear` or `tinted`); an invalid value warns and falls back to the default in `macos/local.sh`. Each value is read
+back; a mismatch is a counted failure. Icon and glass changes fully apply after a
+logout.
+
+## Real-tool quirks (macOS 27)
+
+- Remote Login: the state is read first and `systemsetup -setremotelogin` only
+  runs when it is off (the setter errors without Full Disk Access even when it
+  is already on).
+- `socketfilterfw --getstealthmode` prints "Firewall stealth mode is on" on 27
+  and "Stealth mode enabled" before; both count as on.
+- `defaults write` needs `-string` for the Tinycast hotkey: an untyped value
+  starting with `{` is parsed as an old-style plist and rejected.
+- `lsregister -kill` is gone; the Open With rebuild is `-r -apps local,system,user`
+  then `-gc`, and a failure is a warning.
+- `mdutil -i on /` only runs when `mdutil -s /` says indexing is off; a failure
+  is a warning with the error text and the manual command.
+- `print_result` in `defaults.sh` names the step on failure, so no `[error]`
+  line is bare.
+
+## Dock
+
+`dock.sh` rebuilds the Dock with `dockutil`. `defaults.sh` ends by restarting
+the Dock, and a relaunching Dock writes its old state back over edits made
+meanwhile, so `dock.sh` first waits (up to `DOTFILES_DOCK_SETTLE_TIMEOUT`
+seconds, default 10) for the Dock process and its list to settle, edits, restarts
+the Dock, waits again, and checks `dockutil --list` for every app it added. If
+entries are missing it rebuilds once more; if they are still missing it prints an
+`error` naming them and `dotfiles configure --dock` exits non-zero. An app that
+is not installed yet (Spark Mail under `/Applications/Setapp`, a cask not yet
+installed) is a `skipped (not installed yet)` info line saying to re-run
+`dotfiles configure --dock` after installing it: never a warning or a failure.
 
 ## Other things worth knowing
 
@@ -83,7 +135,10 @@ with `systemsetup -getremotelogin`, and a Mac where it is still off gets an
 - The Spotlight (Cmd-Space), Finder search and screenshot symbolic hotkeys are
   disabled because the launcher (Tinycast or Raycast) and Shottr replace them.
 - The launcher block (`dotfiles_launcher`, see [new-mac.md](new-mac.md#launcher))
-  runs after them. On a Tinycast Mac it first reads the stored hotkey and switch
+  runs after them. On a Tinycast Mac where `/Applications/Tinycast.app` is not
+  installed yet it only prints "Tinycast is not installed yet; run
+  `dotfiles configure --defaults` after `dotfiles install --packages`" (info, not
+  a failure) and writes nothing. Otherwise it first reads the stored hotkey and switch
   (raw, through PlistBuddy: `defaults read` quotes and escapes strings) and does
   nothing when both are already right. Otherwise it says so, quits a running
   Tinycast (skipping with a warning if it will not quit), writes
@@ -113,3 +168,10 @@ with `systemsetup -getremotelogin`, and a Mac where it is still off gets an
 - Tests run the scripts against stub binaries (`tests/macos.sh`, section G). The
   three absolute-path binaries have seams: `DOTFILES_SOCKETFILTERFW`,
   `DOTFILES_ACTIVATE_SETTINGS`, `DOTFILES_LSREGISTER`.
+
+## Failures versus warnings
+
+Only real system settings (firewall, stealth mode, Remote Login, the appearance
+read-backs) count toward `DOTFILES_DEFAULTS_FAILURES` and the exit status.
+Things with a GUI fallback (the Tinycast hotkey, Spotlight indexing, the Open
+With rebuild, the reduce-transparency reset) are warnings that name the fallback.

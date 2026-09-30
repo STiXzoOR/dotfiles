@@ -26,3 +26,9 @@ DOTFILES_MEASUREMENT_UNITS="Centimeters"
 
 # See `sudo systemsetup -listtimezones`.
 DOTFILES_TIMEZONE="UTC"
+
+# macOS 26+ appearance (optional; these are the defaults). Icon style is
+# {Regular,Clear,Tinted}{Automatic,Light,Dark}; glass is clear or tinted.
+# Both fully apply after a logout.
+# DOTFILES_ICON_STYLE="RegularDark"
+# DOTFILES_GLASS="clear"

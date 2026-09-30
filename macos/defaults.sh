@@ -31,6 +31,22 @@ source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
 source "$DOTFILES_DIR/scripts/lib/machine.sh"
 
+# scripts/echos.sh prints a bare "[error]" when print_result has no message.
+# Here every error line names the step that failed and says what to do, so
+# running() remembers its title and print_result uses it.
+DOTFILES_STEP=""
+running() {
+  DOTFILES_STEP="${1:-}"
+  echo -en "${COL_YELLOW} ⇒ ${COL_RESET}${1:-}: "
+}
+print_result() {
+  if [[ "${1:-1}" -eq 0 ]]; then
+    ok "${2:-}"
+  else
+    error "${2:-"${DOTFILES_STEP:-a step} failed (exit ${1:-1}); fix what the output above says, then run \`dotfiles configure --defaults\` again"}"
+  fi
+}
+
 # desktop or laptop (scripts/lib/machine.sh). Remote Login and the power
 # settings below are desktop-only: the laptop keeps its own, and this script
 # neither turns them on nor off there.
@@ -39,16 +55,9 @@ DOTFILES_ROLE=$(dotfiles_machine_role)
 # Failed read-backs (firewall, stealth mode, Remote Login) are counted here;
 # `dotfiles configure --defaults` turns a non-zero count into a non-zero status.
 DOTFILES_DEFAULTS_FAILURES=0
-
-# `ok` is an unconditional echo, so every step used to report success whether
-# or not it did anything. print_result takes the command's exit status instead.
-# It lives in scripts/echos.sh; this fallback keeps the file honest when it is
-# sourced against an older copy.
-if ! type print_result >/dev/null 2>&1; then
-  print_result() {
-    if [ "$1" -eq 0 ]; then ok "${2:-}"; else error "${2:-}"; fi
-  }
-fi
+# Only real system settings count as failures. Anything with a documented GUI
+# fallback (the Tinycast hotkey, Spotlight indexing, the Open With rebuild, the
+# reduce-transparency reset) is a warning that names the fallback.
 
 # Ask for the administrator password upfront
 sudo -v
@@ -93,18 +102,29 @@ if [ "$DOTFILES_ROLE" = desktop ]; then
   # confirmation prompt, which would otherwise block forever because it is
   # written to a stream that goes to /dev/null while stdin is still the
   # terminal. See `man systemsetup`, -setremotelogin [-f] on | off.
+  #
+  # The state is read first and the setter only runs when it is off: without
+  # Full Disk Access the setter errors even when Remote Login is already on
+  # (enabled by hand), and `-getremotelogin` needs Full Disk Access too, reading
+  # Off while sshd runs. So the state is read from systemsetup, from launchd's
+  # disabled list and from sshd listening on port 22; the last two need no Full
+  # Disk Access.
+  _remote_login_on() {
+    sudo systemsetup -getremotelogin 2>/dev/null | grep -q "Remote Login: On" ||
+      sudo launchctl print-disabled system 2>/dev/null | grep -q '"com.openssh.sshd" => enabled' ||
+      nc -z 127.0.0.1 22 >/dev/null 2>&1
+  }
   running "Enable remote login"
-  sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
-  print_result $?
-
-  # Like the firewall, systemsetup can print success and change nothing without
-  # Full Disk Access, so read the state back.
-  running "Verify Remote Login is really on"
-  if sudo systemsetup -getremotelogin 2>/dev/null | grep -q "On"; then
-    ok
+  if _remote_login_on; then
+    ok "already on"
   else
-    error "Remote Login is still off: grant Full Disk Access to this terminal and run again"
-    DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
+    sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
+    if _remote_login_on; then
+      ok
+    else
+      error "Remote Login is off: turn it on in System Settings, General, Sharing, Remote Login (or grant Full Disk Access to this terminal), then run \`dotfiles configure --defaults\` again"
+      DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
+    fi
   fi
 
   # Power. Apple silicon ignores `standbydelay` (it reads back absent), so it is
@@ -178,7 +198,9 @@ else
 fi
 
 running "Verify stealth mode is really on"
-if "$FIREWALL_CTL" --getstealthmode 2>/dev/null | grep -q "enabled"; then
+# macOS 26 and earlier print "Stealth mode enabled"; macOS 27 prints "Firewall
+# stealth mode is on". Off reads "disabled" or "is off", neither of which matches.
+if "$FIREWALL_CTL" --getstealthmode 2>/dev/null | grep -qiE "stealth mode (is )?(enabled|on)"; then
   ok
 else
   error "stealth mode is still off: grant Full Disk Access to this terminal and run again"
@@ -271,9 +293,72 @@ ok
 
 # Note: AppleHighlightColor removed - it has had no effect since macOS Tahoe.
 
+# An older configure wrote reduceTransparency true, which tints Liquid Glass
+# fully. It is no longer set, so undo it where it was: only when it reads 1.
+if [ "$(defaults read com.apple.universalaccess reduceTransparency 2>/dev/null)" = 1 ]; then
+  running "Turn the old Reduce transparency setting back off"
+  defaults write com.apple.universalaccess reduceTransparency -bool false
+  if [ "$(defaults read com.apple.universalaccess reduceTransparency 2>/dev/null)" = 0 ]; then
+    ok
+  else
+    warn "could not turn Reduce transparency off (writing it may need Full Disk Access); turn it off in System Settings, Accessibility, Display, Reduce transparency"
+  fi
+fi
+
 running "Use the dark appearance"
 defaults write NSGlobalDomain AppleInterfaceStyle -string Dark
 ok
+
+# macOS 26+ appearance: dark icons and Clear Liquid Glass. Icon style and glass
+# changes fully apply after a logout. Override in macos/local.sh:
+#   DOTFILES_ICON_STYLE  {Regular,Clear,Tinted}{Automatic,Light,Dark}
+#   DOTFILES_GLASS       clear | tinted
+# Transparency is left at the system default.
+: "${DOTFILES_ICON_STYLE:=RegularDark}"
+case "$DOTFILES_ICON_STYLE" in
+  RegularAutomatic | RegularLight | RegularDark | ClearAutomatic | ClearLight | ClearDark | TintedAutomatic | TintedLight | TintedDark) ;;
+  *)
+    warn "DOTFILES_ICON_STYLE='$DOTFILES_ICON_STYLE' is not one of {Regular,Clear,Tinted}{Automatic,Light,Dark}; using RegularDark"
+    DOTFILES_ICON_STYLE=RegularDark
+    ;;
+esac
+: "${DOTFILES_GLASS:=clear}"
+DOTFILES_OS_MAJOR=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
+# _appearance_check <key> <expected> -- read the key back; a mismatch is counted.
+_appearance_check() {
+  local got
+  got=$(defaults read -g "$1" 2>/dev/null)
+  if awk -v a="$got" -v b="$2" 'BEGIN { exit !(a != "" && a == b) }' 2>/dev/null || [ "$got" = "$2" ]; then
+    ok
+  else
+    error "$1 reads back as '${got:-nothing}', expected '$2'; set it in System Settings, Appearance, then log out and back in"
+    DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
+  fi
+}
+if [ "${DOTFILES_OS_MAJOR:-0}" -ge 26 ] 2>/dev/null; then
+  running "Use dark icons ($DOTFILES_ICON_STYLE)"
+  defaults write -g AppleIconAppearanceTheme -string "$DOTFILES_ICON_STYLE"
+  _appearance_check AppleIconAppearanceTheme "$DOTFILES_ICON_STYLE"
+
+  case "$DOTFILES_GLASS" in
+    clear) glass_int=0 glass_float=0 ;;
+    tinted) glass_int=1 glass_float=0.86 ;;
+    *) glass_int="" glass_float="" ;;
+  esac
+  if [ -z "$glass_int" ]; then
+    warn "DOTFILES_GLASS='$DOTFILES_GLASS' is not clear or tinted; Liquid Glass left alone"
+  elif [ "$DOTFILES_OS_MAJOR" -ge 27 ]; then
+    # macOS 27 tints by a float strength; it does not use NSGlassDiffusionSetting.
+    running "Liquid Glass: $DOTFILES_GLASS (NSGlassTintAmount $glass_float)"
+    defaults write -g NSGlassTintAmount -float "$glass_float"
+    _appearance_check NSGlassTintAmount "$glass_float"
+  else
+    # macOS 26: 0 is Clear, 1 is Tinted; a fresh Mac has the key unset (Clear).
+    running "Liquid Glass: $DOTFILES_GLASS (NSGlassDiffusionSetting $glass_int)"
+    defaults write -g NSGlassDiffusionSetting -int "$glass_int"
+    _appearance_check NSGlassDiffusionSetting "$glass_int"
+  fi
+fi
 
 running "Use 24-hour time, do not minimize on title-bar double-click, enable the Web Inspector"
 defaults write NSGlobalDomain AppleICUForce24HourTime -bool true
@@ -327,9 +412,15 @@ ok
 # Quarantine dialog: kept enabled for security
 # To bypass for a specific app: xattr -d com.apple.quarantine /path/to/app
 
-running "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)"
-"$LSREGISTER" -kill -r -domain local -domain system -domain user
-print_result $?
+# lsregister -kill was removed (macOS 27 prints a notice and does nothing). The
+# supported rebuild is to register the applications again and garbage-collect
+# the stale entries, which is what removes the duplicates.
+running "Remove duplicates in the 'Open With' menu"
+if "$LSREGISTER" -r -apps local,system,user >/dev/null 2>&1 && "$LSREGISTER" -gc >/dev/null 2>&1; then
+  ok
+else
+  warn "lsregister could not rebuild the Open With list; log out and back in, or run: $LSREGISTER -r -apps local,system,user && $LSREGISTER -gc"
+fi
 
 running "Show control characters"
 defaults write NSGlobalDomain NSTextShowsControlCharacters -bool true
@@ -428,6 +519,7 @@ ok
 DOTFILES_LAUNCHER=$(dotfiles_launcher "$DOTFILES_DIR")
 TINYCAST_HOTKEY='{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}'
 RAYCAST_APP="${DOTFILES_RAYCAST_APP:-/Applications/Raycast.app}"
+TINYCAST_APP="${DOTFILES_TINYCAST_APP:-/Applications/Tinycast.app}"
 # _tinycast_get <key> -- the raw stored value, or nothing. `defaults read`
 # prints a string quoted and escaped, so the domain is exported to a plist and
 # read with PlistBuddy (":" is its path separator, so a dotted key is one key).
@@ -439,7 +531,9 @@ _tinycast_get() {
   rm -f "$tmp"
   printf '%s' "$v"
 }
-if [ "$DOTFILES_LAUNCHER" = tinycast ]; then
+if [ "$DOTFILES_LAUNCHER" = tinycast ] && [ ! -d "$TINYCAST_APP" ]; then
+  skip "Tinycast is not installed yet; run \`dotfiles configure --defaults\` after \`dotfiles install --packages\`"
+elif [ "$DOTFILES_LAUNCHER" = tinycast ]; then
   running "Tinycast: Cmd-Space as the summon hotkey, settings file on"
   if [ "$(_tinycast_get hotkey.togglePalette)" = "$TINYCAST_HOTKEY" ] &&
     [ "$(_tinycast_get settingsFileEnabled)" = true ]; then
@@ -456,12 +550,15 @@ if [ "$DOTFILES_LAUNCHER" = tinycast ]; then
     if pgrep -x Tinycast >/dev/null 2>&1; then
       warn "Tinycast is still running, so its hotkey was not set; quit it and re-run configure, or set Cmd-Space in Tinycast > Settings > General"
     else
-      defaults write com.tinycast.app hotkey.togglePalette "$TINYCAST_HOTKEY"
+      # -string: without a type, `defaults` parses a value starting with "{" as
+      # an old-style plist dictionary and fails with "Could not parse".
+      defaults write com.tinycast.app hotkey.togglePalette -string "$TINYCAST_HOTKEY" ||
+        warn "defaults could not write the Tinycast hotkey; set Cmd-Space in Tinycast > Settings > General"
       defaults write com.tinycast.app settingsFileEnabled -bool true
       got=$(_tinycast_get hotkey.togglePalette)
       sfe=$(_tinycast_get settingsFileEnabled)
       if [ "$got" != "$TINYCAST_HOTKEY" ]; then
-        error "Tinycast hotkey read back as '$got', expected '$TINYCAST_HOTKEY'; set Cmd-Space in Tinycast > Settings > General"
+        warn "Tinycast hotkey read back as '$got', expected '$TINYCAST_HOTKEY'; set Cmd-Space in Tinycast > Settings > General"
       elif [ "$sfe" != true ]; then
         warn "Tinycast settingsFileEnabled read back as '$sfe', expected 'true'; switch on Tinycast > Settings > Backup > Settings File"
       else
@@ -495,13 +592,6 @@ bot "Trackpad, mouse, Bluetooth accessories"
 #running "Increase sound quality for Bluetooth headphones/headsets"
 #defaults write com.apple.BluetoothAudioAgent "Apple Bitpool Min (editable)" -int 40
 #ok
-
-# macOS 26 Tahoe's Liquid Glass redesign makes translucent chrome hard to read
-# over busy backgrounds. reduceTransparency is unset by default rather than
-# removed, so writing it is still the supported way to tone it down.
-running "Reduce transparency"
-defaults write com.apple.universalaccess reduceTransparency -bool true
-ok
 
 # These three closeView keys read back ABSENT on both macOS 15.6.1 and 26.6.1
 # on the audited machine: the accessibility daemon rewrites the plist and the
@@ -779,9 +869,20 @@ running "Load new settings before rebuilding the index"
 sudo killall mds >/dev/null 2>&1
 print_result $?
 
+# `mdutil -i on /` errors on some macOS 27 setups even with indexing already on,
+# so it only runs when `mdutil -s /` says indexing is off, and a failure is a
+# warning that says what to do.
 running "Make sure indexing is enabled for the main volume"
-sudo mdutil -i on / >/dev/null 2>&1
-print_result $?
+md_state=$(mdutil -s / 2>&1)
+if printf '%s\n' "$md_state" | grep -qi "indexing enabled"; then
+  ok "already enabled"
+else
+  if md_out=$(sudo mdutil -i on / 2>&1); then
+    ok
+  else
+    warn "could not turn Spotlight indexing on (${md_out:-no output}); enable it in System Settings, Spotlight, or run: sudo mdutil -i on /"
+  fi
+fi
 
 ###############################################################################
 bot "Time Machine"

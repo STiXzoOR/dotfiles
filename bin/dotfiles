@@ -815,7 +815,7 @@ sub_configure() {
     export DOTFILES_YES=1
     local _rc=0
     sub_configure_defaults || _rc=1
-    sub_configure_dock
+    sub_configure_dock || _rc=1
     if [[ -n "$_prev_yes" ]]; then
       export DOTFILES_YES="$_prev_yes"
     else
@@ -868,6 +868,9 @@ sub_configure_dock() {
   if confirm "Do you want to update the dock configuration?"; then
     . "$DOTFILES_DIR/macos/dock.sh"
 
+    if [[ "${DOTFILES_DOCK_FAILED:-0}" -ne 0 ]]; then
+      return 1
+    fi
     ok "Dock reloaded!"
   else
     skip
