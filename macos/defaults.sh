@@ -100,9 +100,10 @@ bot "Security"
 # Full Disk Access, and revoke it afterwards: a standing grant lets every
 # script run from that terminal bypass TCC.
 # Only warn when the terminal really lacks it: reading the TCC database
-# directory succeeds only with Full Disk Access.
+# directory succeeds only with Full Disk Access. Not run through sudo: root has
+# its own TCC context.
 if ! /bin/ls "${DOTFILES_FDA_PROBE:-$HOME/Library/Application Support/com.apple.TCC}" >/dev/null 2>&1; then
-  warn "systemsetup and the firewall need Full Disk Access for the terminal running this install (System Settings, Privacy & Security, Full Disk Access). Without it they fail or silently change nothing."
+  warn "this terminal does not appear to have Full Disk Access, which systemsetup and the firewall need (System Settings, Privacy & Security, Full Disk Access); without it they fail or silently change nothing"
 fi
 
 running "Disable remote apple events"

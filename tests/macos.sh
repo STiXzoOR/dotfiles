@@ -1112,8 +1112,10 @@ t "G15.4" "Full Disk Access present (probe succeeds): no Full Disk Access warnin
   _g_run "$FDA" defaults.sh FW_TAKES=1 RL_TAKES=1 DOTFILES_FDA_PROBE="$FDA/tcc"; [ "$(grep -c "warning.*Full Disk Access" "$FDA/out")" -eq 0 ]'
 t "G15.5" "Full Disk Access absent (probe fails): the warning is printed" '
   W=$(_g_env); _g_run "$W" defaults.sh DOTFILES_FDA_PROBE="$W/nope"; [ "$(grep -c "warning.*Full Disk Access" "$W/out")" -ge 1 ]'
-t "G15.6" "the probe reads a TCC directory" \
-  '[ "$(code_of macos/defaults.sh | grep -c "com.apple.TCC")" -ge 1 ]'
+t "G15.6" "the probe reads a TCC directory, not through sudo" \
+  '[ "$(code_of macos/defaults.sh | grep -c "com.apple.TCC")" -ge 1 ] && [ "$(code_of macos/defaults.sh | grep -c "sudo .*com.apple.TCC")" -eq 0 ]'
+t "G15.6b" "the warning says this terminal does not appear to have Full Disk Access" '
+  W=$(_g_env); _g_run "$W" defaults.sh DOTFILES_FDA_PROBE="$W/nope"; grep -q "this terminal does not appear to have Full Disk Access" "$W/out"'
 
 if command -v script >/dev/null 2>&1; then
   t "G15.7" "on a terminal, the DOTFILES_YES that configure sets for itself does not stop the screen lock" '
