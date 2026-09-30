@@ -117,8 +117,8 @@ t "B5.6" "WindowManager tiling keys declared" \
 t "B5.11" "drag-tiling keys are declared at the audited value, not an invented one" \
   'grep -q "EnableTilingByEdgeDrag -bool false" macos/defaults.sh && grep -q "EnableTopTilingByEdgeDrag -bool false" macos/defaults.sh'
 # Liquid Glass came out fully tinted on the Mac mini; the owner wants the system look.
-t "B5.7" "reduceTransparency, increaseContrast and reduceMotion are not set in any defaults file" \
-  '[ "$(cat macos/defaults*.sh | grep -ci "reduceTransparency\|increaseContrast\|reduceMotion")" -eq 0 ]'
+t "B5.7" "reduceTransparency is never turned on, and increaseContrast and reduceMotion are not set" \
+  '[ "$(cat macos/defaults*.sh | grep -ci "reduceTransparency -bool true\|increaseContrast\|reduceMotion")" -eq 0 ]'
 t "B5.7b" "the dark appearance is still declared" \
   'grep -q "AppleInterfaceStyle -string Dark" macos/defaults.sh'
 t "B5.8" "no AdminHostInfo without a comment explaining it" \
@@ -294,6 +294,7 @@ if [ "$1 $2" = "write com.tinycast.app" ]; then
     # Like the real tool: an untyped value starting with "{" is parsed as an
     # old-style plist dictionary and rejected.
     hotkey.togglePalette)
+      [ -z "${HK_WRITEFAIL:-}" ] || { echo "write failed" >&2; exit 1; }
       case "$4" in
         -string) printf "%s" "$5" >"$HK_STATE" ;;
         "{"*) echo "Could not parse: $4.  Try single-quoting it." >&2; exit 1 ;;
@@ -301,6 +302,17 @@ if [ "$1 $2" = "write com.tinycast.app" ]; then
       esac ;;
     settingsFileEnabled) [ "$4" = "-bool" ] && printf "%s" "$5" >"$SFE_STATE" ;;
   esac
+fi
+# universalaccess reduceTransparency: RT_INIT seeds it (unset = absent), RT_STUCK
+# makes a write to false not stick.
+if [ "$1 $2 $3" = "write com.apple.universalaccess reduceTransparency" ]; then
+  [ ! -f "$W_STATE/rt" ] && [ -n "${RT_INIT:-}" ] && printf %s "$RT_INIT" >"$W_STATE/rt"
+  [ -n "${RT_STUCK:-}" ] || { [ "$5" = false ] && printf 0 >"$W_STATE/rt" || printf 1 >"$W_STATE/rt"; }
+fi
+if [ "$1 $2 $3" = "read com.apple.universalaccess reduceTransparency" ]; then
+  if [ -f "$W_STATE/rt" ]; then cat "$W_STATE/rt"; echo
+  elif [ -n "${RT_INIT:-}" ]; then echo "$RT_INIT"
+  else echo "The domain/default pair of (com.apple.universalaccess, reduceTransparency) does not exist" >&2; exit 1; fi
 fi
 # Global domain: writes are stored per key, reads print them (G_WRONG makes
 # every read come back wrong, G_ABSENT makes it fail like a missing key).
@@ -941,6 +953,7 @@ if [ "$1" = Dock ]; then
   if [ "$n" -gt 0 ]; then : >"$W_STATE/revert"; printf %s "$((n - 1))" >"$W_STATE/kills"; fi
 fi'
   _stub "$W/bin" dockutil "$tick"'
+[ -z "${DOCK_REMOVE_FAIL:-}" ] || case "$*" in *"--remove"*) exit 1 ;; esac
 case "$1" in
   --list) while IFS= read -r l; do printf "%s\tfile:///x/%s.app/\tpersistent-apps\n" "$l" "$l"; done <"$W_STATE/state" ;;
   *)
@@ -1026,7 +1039,7 @@ t "G13.7" "a value that cannot be read back at all is a counted failure" '
 t "G13.8" "an unknown DOTFILES_GLASS warns and writes no glass key" '
   W=$(_g_env) && _g_run "$W" defaults.sh DOTFILES_GLASS=frosted && grep -q "warning.*DOTFILES_GLASS" "$W/out" && [ "$(_logcount "$W" "NSGlass")" -eq 0 ]'
 t "G13.9" "reduceTransparency is never written at runtime" '
-  W=$(_g_env) && _g_run "$W" defaults.sh && [ "$(_logcount "$W" "reduceTransparency")" -eq 0 ]'
+  W=$(_g_env) && _g_run "$W" defaults.sh && [ "$(_logcount "$W" "reduceTransparency -bool true")" -eq 0 ]'
 t "G13.10" "local.sh.example documents both variables" \
   'grep -q DOTFILES_ICON_STYLE macos/local.sh.example && grep -q DOTFILES_GLASS macos/local.sh.example'
 
@@ -1051,5 +1064,35 @@ t "G11.6" "a Dock that never comes back: the wait is bounded, the run ends, and 
   W=$(_d_env); _d_run "$W" DOCK_NEVER=1 DOTFILES_DOCK_SETTLE_TIMEOUT=3; [ -n "$(_d_failed "$W")" ] && [ "$(_logcount "$W" "sleep 1")" -le 12 ] && grep -q "did not settle" "$W/out"'
 t "G11.7" "the Dock process is waited for before the first edit" '
   W=$(_d_env); _d_run "$W"; a=$(_first_line "pgrep -x Dock" "$W/log"); b=$(_first_line "dockutil --no-restart --remove all" "$W/log"); [ "$a" -gt 0 ] && [ "$a" -lt "$b" ]'
+
+#############################################################################
+section "G14 -- review round: undo reduceTransparency, Tinycast is a warning, validation"
+#############################################################################
+t "G14.1" "reduceTransparency set to 1 by an older configure: reset to false" '
+  W=$(_g_env) && _g_run "$W" defaults.sh RT_INIT=1 && _logged "$W" "defaults write com.apple.universalaccess reduceTransparency -bool false" &&
+  [ "$(grep -c "warning.*Reduce transparency" "$W/out")" -eq 0 ]'
+t "G14.2" "reduceTransparency already 0: not written" '
+  W=$(_g_env) && _g_run "$W" defaults.sh RT_INIT=0 && [ "$(_logcount "$W" "write com.apple.universalaccess reduceTransparency")" -eq 0 ]'
+t "G14.3" "reduceTransparency absent: not written" '
+  W=$(_g_env) && _g_run "$W" defaults.sh && [ "$(_logcount "$W" "write com.apple.universalaccess reduceTransparency")" -eq 0 ]'
+t "G14.4" "a reset that does not stick warns with the System Settings step and is not a counted failure" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV RT_INIT=1 RT_STUCK=1)" -eq 0 ] &&
+  grep "warning" "$W/out" | grep -q "Accessibility.*Display.*Reduce transparency"'
+t "G14.5" "a Tinycast hotkey read-back mismatch is a warning with the GUI fallback, not a counted failure" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV HK_FORCE=bogus)" -eq 0 ] && grep "warning" "$W/out" | grep -q "Tinycast > Settings > General" &&
+  [ "$(grep -c "error.*Tinycast" "$W/out")" -eq 0 ]'
+t "G14.6" "a Tinycast hotkey write failure is a warning, not a counted failure" '
+  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV HK_WRITEFAIL=1)" -eq 0 ] && grep "warning" "$W/out" | grep -q "Tinycast" && [ "$(grep -c "error.*Tinycast" "$W/out")" -eq 0 ]'
+t "G14.7" "an invalid DOTFILES_ICON_STYLE warns and falls back to RegularDark" '
+  W=$(_g_env) && _g_run "$W" defaults.sh DOTFILES_ICON_STYLE=Bogus && grep -q "warning.*DOTFILES_ICON_STYLE" "$W/out" &&
+  _logged "$W" "defaults write -g AppleIconAppearanceTheme -string RegularDark"'
+t "G14.8" "all nine icon styles are accepted" '
+  for a in Regular Clear Tinted; do for b in Automatic Light Dark; do
+    W=$(_g_env); _g_run "$W" defaults.sh DOTFILES_ICON_STYLE=$a$b; _logged "$W" "defaults write -g AppleIconAppearanceTheme -string $a$b" || exit 1
+  done; done'
+t "G14.9" "a failed dockutil --remove all is a Dock failure" '
+  W=$(_d_env); _d_run "$W" DOCK_REMOVE_FAIL=1; [ "$(_d_failed "$W")" = 1 ] && grep -q "error.*clear the Dock" "$W/out"'
+t "G14.10" "an empty but stable Dock list settles at once, without burning the timeout" '
+  W=$(_d_env); : >"$W/old"; : >"$W/state"; _d_run "$W"; [ "$(grep -c "did not settle" "$W/out")" -eq 0 ]'
 
 finish

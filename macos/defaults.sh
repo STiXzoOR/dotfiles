@@ -55,16 +55,9 @@ DOTFILES_ROLE=$(dotfiles_machine_role)
 # Failed read-backs (firewall, stealth mode, Remote Login) are counted here;
 # `dotfiles configure --defaults` turns a non-zero count into a non-zero status.
 DOTFILES_DEFAULTS_FAILURES=0
-
-# `ok` is an unconditional echo, so every step used to report success whether
-# or not it did anything. print_result takes the command's exit status instead.
-# It lives in scripts/echos.sh; this fallback keeps the file honest when it is
-# sourced against an older copy.
-if ! type print_result >/dev/null 2>&1; then
-  print_result() {
-    if [ "$1" -eq 0 ]; then ok "${2:-}"; else error "${2:-}"; fi
-  }
-fi
+# Only real system settings count as failures. Anything with a documented GUI
+# fallback (the Tinycast hotkey, Spotlight indexing, the Open With rebuild, the
+# reduce-transparency reset) is a warning that names the fallback.
 
 # Ask for the administrator password upfront
 sudo -v
@@ -117,7 +110,7 @@ if [ "$DOTFILES_ROLE" = desktop ]; then
   # disabled list and from sshd listening on port 22; the last two need no Full
   # Disk Access.
   _remote_login_on() {
-    sudo systemsetup -getremotelogin 2>/dev/null | grep -q "On" ||
+    sudo systemsetup -getremotelogin 2>/dev/null | grep -q "Remote Login: On" ||
       sudo launchctl print-disabled system 2>/dev/null | grep -q '"com.openssh.sshd" => enabled' ||
       nc -z 127.0.0.1 22 >/dev/null 2>&1
   }
@@ -300,6 +293,18 @@ ok
 
 # Note: AppleHighlightColor removed - it has had no effect since macOS Tahoe.
 
+# An older configure wrote reduceTransparency true, which tints Liquid Glass
+# fully. It is no longer set, so undo it where it was: only when it reads 1.
+if [ "$(defaults read com.apple.universalaccess reduceTransparency 2>/dev/null)" = 1 ]; then
+  running "Turn the old Reduce transparency setting back off"
+  defaults write com.apple.universalaccess reduceTransparency -bool false
+  if [ "$(defaults read com.apple.universalaccess reduceTransparency 2>/dev/null)" = 0 ]; then
+    ok
+  else
+    warn "could not turn Reduce transparency off (writing it may need Full Disk Access); turn it off in System Settings, Accessibility, Display, Reduce transparency"
+  fi
+fi
+
 running "Use the dark appearance"
 defaults write NSGlobalDomain AppleInterfaceStyle -string Dark
 ok
@@ -310,6 +315,13 @@ ok
 #   DOTFILES_GLASS       clear | tinted
 # Transparency is left at the system default.
 : "${DOTFILES_ICON_STYLE:=RegularDark}"
+case "$DOTFILES_ICON_STYLE" in
+  RegularAutomatic | RegularLight | RegularDark | ClearAutomatic | ClearLight | ClearDark | TintedAutomatic | TintedLight | TintedDark) ;;
+  *)
+    warn "DOTFILES_ICON_STYLE='$DOTFILES_ICON_STYLE' is not one of {Regular,Clear,Tinted}{Automatic,Light,Dark}; using RegularDark"
+    DOTFILES_ICON_STYLE=RegularDark
+    ;;
+esac
 : "${DOTFILES_GLASS:=clear}"
 DOTFILES_OS_MAJOR=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
 # _appearance_check <key> <expected> -- read the key back; a mismatch is counted.
@@ -541,12 +553,12 @@ elif [ "$DOTFILES_LAUNCHER" = tinycast ]; then
       # -string: without a type, `defaults` parses a value starting with "{" as
       # an old-style plist dictionary and fails with "Could not parse".
       defaults write com.tinycast.app hotkey.togglePalette -string "$TINYCAST_HOTKEY" ||
-        error "defaults could not write the Tinycast hotkey; set Cmd-Space in Tinycast > Settings > General"
+        warn "defaults could not write the Tinycast hotkey; set Cmd-Space in Tinycast > Settings > General"
       defaults write com.tinycast.app settingsFileEnabled -bool true
       got=$(_tinycast_get hotkey.togglePalette)
       sfe=$(_tinycast_get settingsFileEnabled)
       if [ "$got" != "$TINYCAST_HOTKEY" ]; then
-        error "Tinycast hotkey read back as '$got', expected '$TINYCAST_HOTKEY'; set Cmd-Space in Tinycast > Settings > General"
+        warn "Tinycast hotkey read back as '$got', expected '$TINYCAST_HOTKEY'; set Cmd-Space in Tinycast > Settings > General"
       elif [ "$sfe" != true ]; then
         warn "Tinycast settingsFileEnabled read back as '$sfe', expected 'true'; switch on Tinycast > Settings > Backup > Settings File"
       else

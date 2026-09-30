@@ -44,12 +44,14 @@ Icons=(
 # the Dock ended up with only Apps and Brave on a fresh Mac. Bounded by
 # DOCK_SETTLE_TIMEOUT seconds; returns 1 if the Dock never settled.
 _dock_settle() {
-  local i=0 prev="" cur=""
+  local i=0 prev="" cur="" have_prev=0
   while [ "$i" -lt "$DOCK_SETTLE_TIMEOUT" ]; do
     if pgrep -x Dock >/dev/null 2>&1; then
       cur=$(dockutil --list 2>/dev/null)
-      [ -n "$prev" ] && [ "$cur" = "$prev" ] && return 0
+      # An empty list is fine as long as it is stable.
+      [ "$have_prev" -eq 1 ] && [ "$cur" = "$prev" ] && return 0
       prev="$cur"
+      have_prev=1
     fi
     sleep 1
     i=$((i + 1))
@@ -69,6 +71,7 @@ _dock_build() {
     ok
   else
     error "dockutil could not clear the Dock"
+    DOTFILES_DOCK_FAILED=1
   fi
 
   for icon in "${Icons[@]}"; do

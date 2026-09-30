@@ -82,7 +82,9 @@ it is counted as a failure.
 ## Appearance
 
 `AppleInterfaceStyle Dark` (dark mode) is set on purpose. Reduce transparency
-is intentionally not set: it turned Liquid Glass fully tinted on a fresh Mac.
+is intentionally not set: it turned Liquid Glass fully tinted on a fresh Mac. A
+Mac where an older configure already set it gets it reset (only when it reads
+1; a failed reset is a warning with the System Settings step).
 Nothing else in `defaults*.sh` changes system-wide appearance or accessibility
 (no increase contrast, no reduce motion); the only `universalaccess` keys are
 the Ctrl-scroll zoom ones.
@@ -92,7 +94,7 @@ macOS 26+ also gets dark icons (`AppleIconAppearanceTheme`, default
 26.x uses `NSGlassDiffusionSetting` (0 Clear, 1 Tinted; unset means Clear), 27+
 uses `NSGlassTintAmount` (float, 0 Clear, about 0.86 Tinted) and never the other
 key. Override with `DOTFILES_ICON_STYLE` (`{Regular,Clear,Tinted}{Automatic,Light,Dark}`)
-and `DOTFILES_GLASS` (`clear` or `tinted`) in `macos/local.sh`. Each value is read
+and `DOTFILES_GLASS` (`clear` or `tinted`); an invalid value warns and falls back to the default in `macos/local.sh`. Each value is read
 back; a mismatch is a counted failure. Icon and glass changes fully apply after a
 logout.
 
@@ -166,3 +168,10 @@ installed) is a `skipped (not installed yet)` info line saying to re-run
 - Tests run the scripts against stub binaries (`tests/macos.sh`, section G). The
   three absolute-path binaries have seams: `DOTFILES_SOCKETFILTERFW`,
   `DOTFILES_ACTIVATE_SETTINGS`, `DOTFILES_LSREGISTER`.
+
+## Failures versus warnings
+
+Only real system settings (firewall, stealth mode, Remote Login, the appearance
+read-backs) count toward `DOTFILES_DEFAULTS_FAILURES` and the exit status.
+Things with a GUI fallback (the Tinycast hotkey, Spotlight indexing, the Open
+With rebuild, the reduce-transparency reset) are warnings that name the fallback.
