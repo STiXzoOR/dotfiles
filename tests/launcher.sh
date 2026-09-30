@@ -91,7 +91,7 @@ fn_of() { sed -n "/^$1()/,/^}/p" "${2:-bin/dotfiles}"; }
 _pk() {
   local W="$1"; shift
   mkdir -p "$W/repo/packages" "$W/repo/scripts/lib" "$W/repo/macos" "$W/bin" "$W/h"
-  cp scripts/lib/lists.sh scripts/lib/machine.sh "$W/repo/scripts/lib/"
+  cp scripts/lib/lists.sh scripts/lib/machine.sh scripts/lib/xcode.sh "$W/repo/scripts/lib/"
   cp Brewfile "$W/repo/Brewfile"
   : >"$W/repo/packages/code.list"
   cat >"$W/bin/brew" <<'STUB'
@@ -105,7 +105,7 @@ STUB
   fn_of sub_install_packages >"$W/fn.sh"
   cat >"$W/run.sh" <<RUN
 PATH="$W/bin:/usr/bin:/bin"; HOME="$W/h"; ROOT_DIR="$W/repo"; DOTFILES_YES=1
-DOTFILES_CODE_BIN_FALLBACK="$W/no-such-code"
+DOTFILES_CODE_BIN_FALLBACK="$W/no-such-code"; DOTFILES_XCODE_APP="$W/Xcode.app"
 cd "$PWD" || exit 1
 . scripts/echos.sh; . scripts/requirers.sh; . "$W/fn.sh"
 sub_install_packages

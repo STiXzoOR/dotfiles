@@ -1070,13 +1070,13 @@ section "N6 — the packages step never aborts halfway (1.6)"
 #############################################################################
 
 _pk_setup() { # _pk_setup <W> -- repo with a Brewfile, code.list and stub brew/code
-  local W="$1"; mkdir -p "$W/repo/packages" "$W/repo/scripts/lib" "$W/bin" "$W/h"; cp scripts/lib/lists.sh "$W/repo/scripts/lib/"
+  local W="$1"; mkdir -p "$W/repo/packages" "$W/repo/scripts/lib" "$W/bin" "$W/h"; cp scripts/lib/lists.sh scripts/lib/xcode.sh "$W/repo/scripts/lib/"
   printf 'tap "acme/tools"\nbrew "thing"\nmas "Some App", id: 1\n' > "$W/repo/Brewfile"
   printf '# editors\na.one\nb.two\nc.three\n' > "$W/repo/packages/code.list"
   cat > "$W/bin/brew" <<'STUB'
 #!/bin/bash
 echo "brew $*" >> "$SW/log"
-[ "$1" = bundle ] && exit "${BUNDLE_RC:-0}"
+[ "$1" = bundle ] && { rm -f "$SW/licensed"; exit "${BUNDLE_RC:-0}"; }
 [ "$1" = tap ] && [ -n "${TAP_EATS_STDIN:-}" ] && cat >/dev/null
 if [ "$1" = trust ] && [ -n "${TRUST_FAIL:-}" ]; then echo "Error: trust nope" >&2; exit 1; fi
 exit 0
@@ -1089,14 +1089,26 @@ case "$1" in
   --install-extension) [ "$2" = "${FAILEXT:-}" ] && exit 1; exit 0 ;;
 esac
 STUB
-  chmod +x "$W/bin/brew" "$W/bin/code"
+  # Xcode stand-ins: the app is a directory, the licence a flag file, and a
+  # brew bundle revokes the flag (what mas installing Xcode mid-bundle did).
+  printf '#!/bin/bash\necho "mas $*" >> "$SW/log"\n[ "$1" = install ] && mkdir -p "$SW/Xcode.app"\nexit 0\n' > "$W/bin/mas"
+  cat > "$W/bin/xcodebuild" <<'STUB'
+#!/bin/bash
+echo "xcodebuild $*" >> "$SW/log"
+case "$*" in
+  "-license check") [ -e "$SW/licensed" ] ;;
+  "-license accept") : > "$SW/licensed" ;;
+esac
+STUB
+  printf '#!/bin/bash\necho "sudo $*" >> "$SW/log"\nexec "$@"\n' > "$W/bin/sudo"
+  chmod +x "$W/bin/brew" "$W/bin/code" "$W/bin/mas" "$W/bin/xcodebuild" "$W/bin/sudo"
 }
 _pk_run() { # _pk_run <W> [env...] -- run sub_install_packages; env assignments follow
   local W="$1"; shift
   fn_of sub_install_packages > "$W/fn.sh"
   cat > "$W/run.sh" <<RUN
 PATH="$W/bin:/usr/bin:/bin"; HOME="$W/h"; ROOT_DIR="$W/repo"; DOTFILES_YES=1
-DOTFILES_CODE_BIN_FALLBACK="$W/no-such-code"
+DOTFILES_CODE_BIN_FALLBACK="$W/no-such-code"; DOTFILES_XCODE_APP="$W/Xcode.app"
 cd "$PWD" || exit 1
 . scripts/echos.sh; . scripts/requirers.sh; . "$W/fn.sh"
 sub_install_packages
@@ -1133,6 +1145,40 @@ t "N6.8" "Brewfile.local is not bundled when absent" '
 t "N6.9" "a Brewfile.local tap is trusted too" '
   W=$(sandbox); _pk_setup "$W"; printf "tap \"private/tap\"\n" > "$W/repo/Brewfile.local"
   _pk_run "$W" >/dev/null 2>&1; grep -q "brew trust --tap private/tap" "$W/log"'
+
+# A fresh Mac: the Brewfile's mas "Xcode" installs Xcode mid-bundle, xcode-select
+# switches to it, and from then on every brew command fails until the licence is
+# accepted. Xcode goes first, licence accepted, before brew runs anything.
+_xc_ordered() { # _xc_ordered <log> <a> <b> -- first line of a precedes first line of b
+  local a b; a=$(_first_line "$2" "$1"); b=$(_first_line "$3" "$1"); [ "$a" -gt 0 ] && [ "$a" -lt "$b" ]
+}
+t "N6.10" "Xcode declared via mas and absent: installed first, licence accepted and first launch run, all before brew" '
+  W=$(sandbox); _pk_setup "$W"; printf "mas \"Xcode\", id: 497799835\n" >> "$W/repo/Brewfile"
+  _pk_run "$W" >/dev/null 2>&1
+  _xc_ordered "$W/log" "mas install 497799835" "sudo xcodebuild -license accept" &&
+  _xc_ordered "$W/log" "sudo xcodebuild -license accept" "sudo xcodebuild -runFirstLaunch" &&
+  _xc_ordered "$W/log" "sudo xcodebuild -runFirstLaunch" "brew tap"'
+t "N6.11" "Xcode present with the licence unaccepted: accepted before brew, no mas install" '
+  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"; printf "mas \"Xcode\", id: 497799835\n" >> "$W/repo/Brewfile"
+  _pk_run "$W" >/dev/null 2>&1
+  [ "$(grep -c "^mas install" "$W/log")" -eq 0 ] && _xc_ordered "$W/log" "sudo xcodebuild -license accept" "brew tap"'
+t "N6.12" "Xcode present and licence already accepted: sudo is not touched before the bundle" '
+  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"; : > "$W/licensed"
+  _pk_run "$W" >/dev/null 2>&1
+  [ "$(sed -n "1,/^brew bundle install/p" "$W/log" | grep -c "^sudo")" -eq 0 ]'
+t "N6.13" "no Xcode declared and none installed: no mas, no xcodebuild, no sudo" '
+  W=$(sandbox); _pk_setup "$W"; _pk_run "$W" >/dev/null 2>&1
+  [ "$(grep -cE "^(mas|xcodebuild|sudo)" "$W/log")" -eq 0 ]'
+t "N6.14" "the licence is accepted again after the bundle, before brew cleanup" '
+  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"
+  _pk_run "$W" >/dev/null 2>&1
+  b=$(_first_line "brew bundle install" "$W/log"); c=$(_first_line "brew cleanup" "$W/log")
+  l=$(awk "/sudo xcodebuild -license accept/ { n = NR } END { print n + 0 }" "$W/log")
+  [ "$b" -gt 0 ] && [ "$l" -gt "$b" ] && [ "$l" -lt "$c" ]'
+t "N6.15" "a failed licence accept warns and the step carries on to the bundle" '
+  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"
+  printf "#!/bin/bash\necho \"sudo \$*\" >> \"\$SW/log\"\nexit 1\n" > "$W/bin/sudo"
+  _pk_run "$W" >/dev/null 2>&1; grep -q "bundle install" "$W/log"'
 t "N6.10" "packages/code.local.list extensions are installed too" '
   W=$(sandbox); _pk_setup "$W"; printf "d.four\n" > "$W/repo/packages/code.local.list"
   _pk_run "$W" >/dev/null 2>&1; grep -q "code --install-extension d.four" "$W/log"'

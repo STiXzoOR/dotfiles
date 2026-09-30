@@ -537,6 +537,14 @@ sub_install_packages() {
     return 1
   fi
 
+  # Xcode and its licence before the first brew command, so no later brew
+  # call can hit "You have not agreed to the Xcode license".
+  source "$ROOT_DIR/scripts/lib/xcode.sh" || {
+    error "cannot read $ROOT_DIR/scripts/lib/xcode.sh"
+    popd >/dev/null 2>&1 || true
+    return 1
+  }
+
   # Nothing below may end the step early. A failure is recorded in rc and the
   # next part still runs, so one bad cask cannot skip the VS Code extensions
   # and the summary always says what actually happened.
@@ -544,6 +552,8 @@ sub_install_packages() {
   # Brewfile.local is the gitignored companion for packages that should not
   # be in a public repo; it is bundled after the public one.
   [[ -f Brewfile.local ]] && brewfiles="Brewfile Brewfile.local"
+  # shellcheck disable=SC2086
+  dotfiles_xcode_prepare $brewfiles
 
   # Homebrew 7 refuses to load formulae, casks or commands from an
   # untrusted third-party tap, with no environment-variable escape hatch,
@@ -644,6 +654,8 @@ sub_install_packages() {
   # nothing; and the recursive quarantine strip of ~/Library/QuickLook
   # removed Gatekeeper from every QuickLook plugin, which run on a
   # spacebar press.
+  # A bundle that installed Xcode leaves its licence unaccepted.
+  dotfiles_xcode_accept_license
   running "cleanup homebrew"
   if brew cleanup --force >/dev/null 2>&1; then
     ok
