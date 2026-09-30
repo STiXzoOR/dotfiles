@@ -944,16 +944,16 @@ t "K9" "an unknown kind is a usage error and asks nothing" '
   W=$(sandbox); mkenv "$W"
   out=$(JENV="TYPESAFE_API_KEY=k1" drift bogus "$DRIFT3" 2>&1); rc=$?
   [ "$rc" -eq 2 ] && [ "$(calls)" -eq 0 ]'
-t "K10" "off, and no key: no request, no output, exit 0 (fail open)" '
+t "K10" "off is exit 0, no key is exit 3 (a failed request); neither asks nor prints" '
   W=$(sandbox); mkenv "$W"; setmode drift=off
   o1=$(JENV="TYPESAFE_API_KEY=k1" drift pkg "$DRIFT3" 2>&1); r1=$?
   setmode drift=on
   o2=$(drift pkg "$DRIFT3" 2>&1); r2=$?
-  [ "$r1" -eq 0 ] && [ -z "$o1" ] && [ "$r2" -eq 0 ] && [ -z "$o2" ] && [ "$(calls)" -eq 0 ]'
-t "K11" "a failed request (timeout) is not an error: no output, exit 0" '
+  [ "$r1" -eq 0 ] && [ -z "$o1" ] && [ "$r2" -eq 3 ] && [ -z "$o2" ] && [ "$(calls)" -eq 0 ]'
+t "K11" "a failed request (timeout) prints nothing and exits 3, which sync reads as stop asking" '
   W=$(sandbox); mkenv "$W"; setmode drift=on
   out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_TIMEOUT=1" drift pkg "$DRIFT3" 2>&1); rc=$?
-  [ "$rc" -eq 0 ] && [ -z "$out" ]'
+  [ "$rc" -eq 3 ] && [ -z "$out" ]'
 t "K12" "nothing leaves the Mac that is on the never-send list: a private host name in the facts is a placeholder" '
   W=$(sandbox); mkenv "$W"; setmode drift=on; printf "Zorblax-Depot\n" >"$W/priv/jev/never-send.list"
   JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift.json" drift pkg "$(printf "brew:jq\tdesc=tap of Zorblax-Depot\n")" >/dev/null 2>&1
@@ -974,5 +974,18 @@ t "K16" "an empty facts feed asks nothing" '
   W=$(sandbox); mkenv "$W"; setmode drift=on
   out=$(JENV="TYPESAFE_API_KEY=k1" jtool drift pkg </dev/null 2>&1); rc=$?
   [ "$rc" -eq 0 ] && [ -z "$out" ] && [ "$(calls)" -eq 0 ]'
+t "K17" "shadow mode does not make the second remove call: nothing is acted on" '
+  W=$(sandbox); mkenv "$W"
+  JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-remove.json" drift pkg "$DRIFT3" >/dev/null 2>&1
+  [ "$(calls)" -eq 1 ]'
+t "K18" "a choice that is not one of the offered options is ignored" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on
+  out=$(JENV="TYPESAFE_API_KEY=k1 FAKE_CURL_ANSWER=answer-drift-bogus.json" drift pkg "$DRIFT3" 2>&1)
+  [ "$(printf "%s\n" "$out" | grep -c "frobnicate")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "^SUGGEST")" -eq 1 ]'
+t "K19" "a run dir shared by the caller survives: two drift calls, one request cap and fatal marker" '
+  W=$(sandbox); mkenv "$W"; setmode drift=on; d=$(mktemp -d "$W/jev.XXXXXX"); printf 0 >"$d/count"
+  JENV="TYPESAFE_API_KEY=k1 JEV_RUN_DIR=$d FAKE_CURL_SEQ=401" drift pkg "$DRIFT3" >/dev/null 2>&1; r1=$?
+  JENV="TYPESAFE_API_KEY=k1 JEV_RUN_DIR=$d FAKE_CURL_SEQ=401" drift config "x	y" >/dev/null 2>&1; r2=$?
+  [ -d "$d" ] && [ "$(calls)" -eq 1 ] && [ "$r1" -eq 3 ] && [ "$r2" -eq 3 ]'
 
 finish

@@ -777,29 +777,36 @@ drift_rows() {
 # by the caller in shell. One batched request. In `on` mode prints
 # "SUGGEST<TAB>key<TAB>choice<TAB>p<TAB>confidence" per offered item; in
 # `shadow` mode prints nothing and logs what it would have suggested. It never
-# writes anything and never fails the caller: every Jev error is a quiet no-op.
+# writes anything. Exit 0: asked (or switched off). Exit 3: the request failed
+# (no key, timeout, HTTP error, request cap, an earlier 401): the caller should
+# stop asking for the other kinds. A JEV_RUN_DIR the caller set is shared, so
+# the request cap and the 401 marker span all kinds of one sync run, and it is
+# left in place.
 cmd_drift() {
-  local kind="${1:-}" mode tmp max total n id choice p c v key first sugg removed=0 desc
+  local kind="${1:-}" mode tmp max total n id choice p c v key first sugg removed=0 desc own=0 valid
   case "$kind" in pkg | defaults | config) ;; *) err "drift <pkg|defaults|config>"; return 2 ;; esac
   command -v jq >/dev/null 2>&1 || return 0
   mode=$(jev_mode drift)
   [ "$mode" = off ] && return 0
   max="${JEV_DRIFT_MAX_ITEMS:-40}"
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/jev-drift.XXXXXX") || return 0
+  [ -n "${JEV_RUN_DIR:-}" ] && [ -d "$JEV_RUN_DIR" ] || own=1
   # shellcheck disable=SC2064
-  trap "jev_cleanup; rm -rf '$tmp'" EXIT
+  trap "[ $own -eq 1 ] && jev_cleanup; rm -rf '$tmp'" EXIT
   awk -F'\t' -v max="$max" '$1 != "" && n < max { n++; print }' >"$tmp/items"
   total=$(grep -c . "$tmp/items")
   [ "$total" -gt 0 ] || return 0
   jev_init || return 0
 
-  drift_ask "$kind" "$tmp/items" "Undeclared items on a developer's Mac." || return 0
+  drift_ask "$kind" "$tmp/items" "Undeclared items on a developer's Mac." || return 3
   first="$DRIFT_ANS"
+  valid=$(drift_criteria "$kind" | jq -r 'keys[]')
 
   # Offered: anything but "pass" at the drift thresholds.
   : >"$tmp/out"
   while IFS=$'\t' read -r id choice p c v; do
     [ "$v" = pass ] && continue
+    printf '%s\n' "$valid" | grep -qxF -- "$choice" || continue
     n=${id#i}
     key=$(sed -n "${n}p" "$tmp/items" | cut -f1)
     printf '%s\t%s\t%s\t%s\t%s\n' "$n" "$key" "$choice" "$p" "$c" >>"$tmp/out"
@@ -810,7 +817,8 @@ EOF
   # remove: a second call on the removes alone must say remove too. A
   # disagreement, or a failed call, drops the suggestion.
   awk -F'\t' '$3 == "remove"' "$tmp/out" >"$tmp/rm"
-  if [ -s "$tmp/rm" ]; then
+  # Only `on` acts on a suggestion, so only `on` pays for the second call.
+  if [ -s "$tmp/rm" ] && [ "$mode" = on ]; then
     awk -F'\t' '$3 != "remove"' "$tmp/out" >"$tmp/kept"
     cut -f1 "$tmp/rm" | while IFS= read -r n; do sed -n "${n}p" "$tmp/items"; done >"$tmp/rm-items"
     cp "$tmp/kept" "$tmp/out"
@@ -829,6 +837,7 @@ EOF
 
   sugg=$(grep -c . "$tmp/out")
   desc="suggested $sugg of $total $kind item(s), $removed to remove after a second call"
+  [ "$mode" = on ] || desc="suggested $sugg of $total $kind item(s), remove candidates not double-checked in shadow"
   if [ "$mode" = on ]; then
     jev_log drift "$mode" "$desc" "$first"
     awk -F'\t' '{ printf "SUGGEST\t%s\t%s\t%s\t%s\n", $2, $3, $4, $5 }' "$tmp/out"
