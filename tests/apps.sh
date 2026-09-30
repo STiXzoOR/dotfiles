@@ -727,5 +727,25 @@ t "J7" "master switch off: the gate is never asked" '
   W=$(newenv); jev_gate_stub "$W"; run_apps backup >/dev/null 2>&1
   APPS_ENV="DOTFILES_APPS_JEV=$W/jev-stub STUB_GATE=SKIP DOTFILES_JEV=off" run_apps backup --scheduled >/dev/null 2>&1
   [ "$(jlog | grep -c .)" -eq 0 ] && [ "$(nsnaps)" -eq 2 ]'
+t "J8" "a failing mackup in the gate is a fact of work (could not read app prefs), so the job runs" '
+  W=$(newenv); jev_gate_stub "$W"; run_apps backup >/dev/null 2>&1
+  printf "#!/bin/sh\nexit 1\n" >"$W/failing-mackup"; chmod +x "$W/failing-mackup"; ln -sf "$W/failing-mackup" "$W/stubs/mackup"
+  jgate SKIP_low >/dev/null 2>&1
+  [ "$(jlog | grep -c -- "--work could not read app prefs")" -eq 1 ]'
+t "J9" "a prefs directory that cannot be searched (TCC denial) is a fact of work, not no change" '
+  W=$(newenv); jev_gate_stub "$W"; run_apps backup >/dev/null 2>&1
+  d="$W/home/Library/Application Support/Beta"; chmod 000 "$d"
+  jgate SKIP_low >/dev/null 2>&1; chmod 755 "$d"
+  [ "$(jlog | grep -c -- "--work could not read app prefs")" -eq 1 ]'
+t "J10" "with readable prefs and nothing newer the gate does not claim work" '
+  W=$(newenv); jev_gate_stub "$W"; run_apps backup >/dev/null 2>&1
+  jgate SKIP_low >/dev/null 2>&1
+  [ "$(jlog | grep -c -- "--work")" -eq 0 ] && [ "$(jlog | grep -c "^skip apps$")" -eq 1 ]'
+t "J11" "candidates matches a name near the top of a mackup list larger than the pipe buffer" '
+  W=$(newenv); mkapps "$W"
+  { printf "#!/bin/sh\ncase \"\$*\" in *\" list\"*) echo \" - gamma\"; i=0; while [ \$i -lt 6000 ]; do echo \" - padding-app-name-\$i\"; i=\$((i + 1)); done ;; *) exec \"%s/mackup\" \"\$@\" ;; esac\n" "$SHARED_STUBS"; } >"$W/big-mackup"
+  chmod +x "$W/big-mackup"; ln -sf "$W/big-mackup" "$W/stubs/mackup"
+  out=$(cands 2>&1)
+  [ "$(printf "%s\n" "$out" | cut -f1 | grep -c "^gamma$")" -eq 1 ]'
 
 finish

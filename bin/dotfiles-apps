@@ -593,28 +593,35 @@ publish() {
 # passed as --work and always runs. Otherwise `dotfiles-jev skip apps` asks one
 # question; only its literal SKIP skips, and a failure runs the backup.
 skip_gate() { # skip_gate <machine>
-  local jev="${DOTFILES_APPS_JEV:-$SELF_DIR/dotfiles-jev}" latest app p full changed="" facts="" work="" out n=0
+  local jev="${DOTFILES_APPS_JEV:-$SELF_DIR/dotfiles-jev}" latest app p full changed="" facts="" work="" out n=0 unreadable=0 paths found
   [ -x "$jev" ] || return 0
   [ "${DOTFILES_JEV:-}" = off ] && return 0
   latest="$STORE/$1/latest"
   if [ ! -f "$latest" ]; then
     work="no snapshot has been published yet"
   else
+    # Anything that stops the check from reading the prefs (mackup failing, no
+    # run config, a find that is denied) must not look like "nothing changed":
+    # it is a fact of work, so the job runs.
+    write_run_cfg >/dev/null 2>&1 || unreadable=1
     for app in $(allowlist); do
+      paths=$(app_paths "$app") || { unreadable=1; continue; }
       while IFS= read -r p; do
         [ -n "$p" ] || continue
         full="$HOME/${p%/}"
         [ -e "$full" ] || continue
-        if [ -n "$(find "$full" -newer "$latest" 2>/dev/null | sed -n 1p)" ]; then
+        found=$(find "$full" -newer "$latest" 2>/dev/null) || unreadable=1
+        if [ -n "$(printf '%s\n' "$found" | sed -n 1p)" ]; then
           n=$((n + 1))
           [ "$n" -le 20 ] && changed="${changed:+$changed, }$app"
           break
         fi
-      done <<EOF
-$(app_paths "$app")
-EOF
+      done <<EOF2
+$paths
+EOF2
     done
     [ "$n" -gt 0 ] && work="app prefs changed since the last snapshot: $changed"
+    if [ "$unreadable" -eq 1 ]; then work="${work:+$work; }could not read app prefs"; fi
   fi
   facts="allowlisted apps with prefs changed since the last snapshot: $n"
   if [ -n "$work" ]; then
@@ -754,8 +761,10 @@ cmd_candidates() {
     [ "$n" -lt "$max" ] || break
     name=$(slug "$(basename "$bundle")")
     [ -n "$name" ] || continue
-    printf '%s\n' "$supported" | grep -qxF -- "$name" || continue
-    printf '%s\n' "$skip" | grep -qxF -- "$name" && continue
+    # grep -c reads all of its input: -q would exit early and SIGPIPE the
+    # printf of a list past the pipe buffer, which pipefail reports as "no match".
+    [ "$(printf '%s\n' "$supported" | grep -cxF -- "$name")" -gt 0 ] || continue
+    [ "$(printf '%s\n' "$skip" | grep -cxF -- "$name")" -eq 0 ] || continue
     paths=$(app_paths "$name") || continue
     np=$(printf '%s\n' "$paths" | grep -c .)
     first=$(printf '%s\n' "$paths" | awk 'NR <= 3 { gsub(/\t/, " "); printf "%s%s", (NR > 1 ? "; " : ""), $0 }' | cut -c 1-200)
