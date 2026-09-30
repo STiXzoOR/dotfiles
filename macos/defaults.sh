@@ -98,12 +98,17 @@ if [ "$DOTFILES_ROLE" = desktop ]; then
   print_result $?
 
   # Like the firewall, systemsetup can print success and change nothing without
-  # Full Disk Access, so read the state back.
+  # Full Disk Access, and `-getremotelogin` itself needs it too: without it the
+  # read-back says Off while sshd is running. So the state is also read from
+  # launchd's disabled list and from sshd listening on port 22, neither of which
+  # needs Full Disk Access.
   running "Verify Remote Login is really on"
-  if sudo systemsetup -getremotelogin 2>/dev/null | grep -q "On"; then
+  if sudo systemsetup -getremotelogin 2>/dev/null | grep -q "On" ||
+    sudo launchctl print-disabled system 2>/dev/null | grep -q '"com.openssh.sshd" => enabled' ||
+    nc -z 127.0.0.1 22 >/dev/null 2>&1; then
     ok
   else
-    error "Remote Login is still off: grant Full Disk Access to this terminal and run again"
+    error "Remote Login is off: turn it on in System Settings, General, Sharing, Remote Login (or grant Full Disk Access to this terminal), then run \`dotfiles configure --defaults\` again"
     DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
   fi
 
@@ -428,6 +433,7 @@ ok
 DOTFILES_LAUNCHER=$(dotfiles_launcher "$DOTFILES_DIR")
 TINYCAST_HOTKEY='{"combo":{"_0":{"carbonKeyCode":49,"carbonModifiers":256}}}'
 RAYCAST_APP="${DOTFILES_RAYCAST_APP:-/Applications/Raycast.app}"
+TINYCAST_APP="${DOTFILES_TINYCAST_APP:-/Applications/Tinycast.app}"
 # _tinycast_get <key> -- the raw stored value, or nothing. `defaults read`
 # prints a string quoted and escaped, so the domain is exported to a plist and
 # read with PlistBuddy (":" is its path separator, so a dotted key is one key).
@@ -439,7 +445,9 @@ _tinycast_get() {
   rm -f "$tmp"
   printf '%s' "$v"
 }
-if [ "$DOTFILES_LAUNCHER" = tinycast ]; then
+if [ "$DOTFILES_LAUNCHER" = tinycast ] && [ ! -d "$TINYCAST_APP" ]; then
+  skip "Tinycast is not installed yet; run \`dotfiles configure --defaults\` after \`dotfiles install --packages\`"
+elif [ "$DOTFILES_LAUNCHER" = tinycast ]; then
   running "Tinycast: Cmd-Space as the summon hotkey, settings file on"
   if [ "$(_tinycast_get hotkey.togglePalette)" = "$TINYCAST_HOTKEY" ] &&
     [ "$(_tinycast_get settingsFileEnabled)" = true ]; then
@@ -495,13 +503,6 @@ bot "Trackpad, mouse, Bluetooth accessories"
 #running "Increase sound quality for Bluetooth headphones/headsets"
 #defaults write com.apple.BluetoothAudioAgent "Apple Bitpool Min (editable)" -int 40
 #ok
-
-# macOS 26 Tahoe's Liquid Glass redesign makes translucent chrome hard to read
-# over busy backgrounds. reduceTransparency is unset by default rather than
-# removed, so writing it is still the supported way to tone it down.
-running "Reduce transparency"
-defaults write com.apple.universalaccess reduceTransparency -bool true
-ok
 
 # These three closeView keys read back ABSENT on both macOS 15.6.1 and 26.6.1
 # on the audited machine: the accessibility daemon rewrites the plist and the

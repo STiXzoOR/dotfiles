@@ -55,7 +55,7 @@ section "B3 -- Dock robustness"
 # fix. What the audit actually asked for is the existence guard, so that is
 # what is asserted here.
 t "B3.1" "each app is checked for existence before it is added" \
-  'grep -q -- "-d \"\$icon\"" macos/dock.sh'
+  'grep -q -- "-d \"\$DOCK_ROOT\$icon\"" macos/dock.sh'
 t "B3.2" "missing apps are reported, not silently skipped" \
   'grep -q "warn" macos/dock.sh'
 t "B3.3" "dock.sh has a shebang line for shellcheck" \
@@ -116,8 +116,11 @@ t "B5.6" "WindowManager tiling keys declared" \
 # so they are declared at that value rather than at one nobody chose.
 t "B5.11" "drag-tiling keys are declared at the audited value, not an invented one" \
   'grep -q "EnableTilingByEdgeDrag -bool false" macos/defaults.sh && grep -q "EnableTopTilingByEdgeDrag -bool false" macos/defaults.sh'
-t "B5.7" "reduceTransparency declared" \
-  'grep -q "reduceTransparency" macos/defaults.sh'
+# Liquid Glass came out fully tinted on the Mac mini; the owner wants the system look.
+t "B5.7" "reduceTransparency, increaseContrast and reduceMotion are not set in any defaults file" \
+  '[ "$(cat macos/defaults*.sh | grep -ci "reduceTransparency\|increaseContrast\|reduceMotion")" -eq 0 ]'
+t "B5.7b" "the dark appearance is still declared" \
+  'grep -q "AppleInterfaceStyle -string Dark" macos/defaults.sh'
 t "B5.8" "no AdminHostInfo without a comment explaining it" \
   '[ "$(grep -B1 AdminHostInfo macos/defaults.sh | grep -c "#")" -ge 1 ]'
 # code_of, so the comment recording why the blocklist was removed does not
@@ -322,6 +325,15 @@ case "$1" in
     exit 0 ;;
 esac
 exit ${SYSTEMSETUP_RC:-0}'
+  # Remote Login fallbacks that work without Full Disk Access: launchd's
+  # disabled list and sshd listening. RL_LAUNCHD / RL_PORT turn them on.
+  _stub "$W/bin" launchctl '
+if [ "$1" = print-disabled ]; then
+  if [ -n "${RL_LAUNCHD:-}" ]; then echo "	\"com.openssh.sshd\" => enabled"; else echo "	\"com.openssh.sshd\" => disabled"; fi
+fi
+exit 0'
+  _stub "$W/bin" nc '[ -n "${RL_PORT:-}" ]'
+  mkdir -p "$W/Tinycast.app"
   _stub "$W/bin" xattr 'exit 1'
   _stub "$W/bin" sleep ''
   _stub "$W/bin" sysctl 'echo 8'
@@ -359,7 +371,7 @@ _g_run() {
     DOTFILES_SOCKETFILTERFW="$W/bin/socketfilterfw" \
     DOTFILES_ACTIVATE_SETTINGS="$W/bin/activateSettings" \
     DOTFILES_LSREGISTER="$W/bin/lsregister" \
-    HK_STATE="$W/hk" SFE_STATE="$W/sfe" W_STATE="$W" DOTFILES_RAYCAST_APP="$W/Raycast.app" \
+    HK_STATE="$W/hk" SFE_STATE="$W/sfe" W_STATE="$W" DOTFILES_RAYCAST_APP="$W/Raycast.app" DOTFILES_TINYCAST_APP="$W/Tinycast.app" \
     "$@" /bin/bash "$W/df/macos/$f" </dev/null >"$W/out" 2>&1
 }
 
@@ -474,7 +486,7 @@ t "G2.5" "Transmission no longer asks before downloading or opening magnets" '
   _logged "$W" "defaults write org.m0k.transmission MagnetOpenAsk -bool false"'
 t "G2.6" "the Dock lists Spark Mail after the other apps, behind the existence guard" '
   [ "$(_first_line "/Applications/Setapp/Spark Mail.app" macos/dock.sh)" -gt "$(_first_line "System Settings.app" macos/dock.sh)" ] &&
-  grep -q -- "-d \"\$icon\"" macos/dock.sh'
+  grep -q -- "-d \"\$DOCK_ROOT\$icon\"" macos/dock.sh'
 
 # Symbolic hotkeys: 64 Spotlight, 65 Finder search (Raycast), 28-31 screenshots
 # (Shottr). id, ascii, keycode, modifiers.
@@ -833,5 +845,117 @@ t "K4" "changed only reads: the stub defaults saw no write" '
   W=$(kenv); printf "#!/bin/sh\necho \"\$*\" >>\"%s/calls\"\nexec \"%s/defaults.real\" \"\$@\"\n" "$W" "$W/bin" >"$W/wrap"
   command mv "$W/bin/defaults" "$W/bin/defaults.real"; command cp "$W/wrap" "$W/bin/defaults"; chmod +x "$W/bin/defaults"
   kchanged t >/dev/null 2>&1; [ "$(grep -vc "^read " "$W/calls")" -eq 0 ] && [ "$(grep -c "^read " "$W/calls")" -ge 1 ]'
+
+#############################################################################
+section "G9 -- Remote Login read-back works without Full Disk Access"
+#############################################################################
+# Without Full Disk Access `systemsetup -getremotelogin` says Off while sshd is
+# really running. launchd's disabled list or port 22 tell the truth.
+t "G9.1" "systemsetup blind, launchd says sshd is enabled: no error, tally 0" '
+  W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1 RL_LAUNCHD=1)" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
+t "G9.2" "systemsetup blind, sshd listening on port 22: no error, tally 0" '
+  W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1 RL_PORT=1)" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
+t "G9.3" "really off (systemsetup, launchd and port 22 all say off): one failure" '
+  W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1)" -eq 1 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 1 ]'
+t "G9.4" "the Remote Login failure says exactly what to do" \
+  'W=$(_g_env) && _g_run "$W" defaults.sh FW_TAKES=1 && grep -qE "error.*Remote Login.*System Settings.*Sharing" "$W/out"'
+t "G9.5" "launchd is asked through sudo about the system domain" \
+  'W=$(_g_env) && _g_run "$W" defaults.sh FW_TAKES=1 && _logged "$W" "sudo launchctl print-disabled system"'
+
+#############################################################################
+section "G10 -- the Tinycast block says what happened when the app is absent"
+#############################################################################
+t "G10.1" "Tinycast.app absent: an info line naming the exact commands, no error" '
+  W=$(_g_env); rmdir "$W/Tinycast.app"; _g_run "$W" defaults.sh FW_TAKES=1 RL_TAKES=1
+  grep -qF "Tinycast is not installed yet; run \`dotfiles configure --defaults\` after \`dotfiles install --packages\`" "$W/out" &&
+  [ "$(grep -c "error.*Tinycast" "$W/out")" -eq 0 ]'
+t "G10.2" "Tinycast.app absent: nothing is written and the tally stays zero" '
+  W=$(_g_env); rmdir "$W/Tinycast.app"
+  [ "$(_tally "$W" FW_TAKES=1 RL_TAKES=1)" -eq 0 ] && [ "$(_logcount "$W" "com.tinycast.app")" -eq 0 ]'
+t "G10.3" "Tinycast.app present and not running: written, read back, no info line" '
+  W=$(_g_env); _g_run "$W" defaults.sh
+  _logged "$W" "defaults write com.tinycast.app hotkey.togglePalette $HK" &&
+  [ "$(sed -n "/defaults write com.tinycast.app hotkey.togglePalette/,\$p" "$W/log" | grep -c "defaults export")" -ge 1 ] &&
+  [ "$(grep -c "not installed yet" "$W/out")" -eq 0 ]'
+t "G10.4" "launcher=raycast: no Tinycast info line" '
+  W=$(_g_env); rmdir "$W/Tinycast.app"; _g_run "$W" defaults.sh DOTFILES_LAUNCHER=raycast; [ "$(grep -c "Tinycast is not installed" "$W/out")" -eq 0 ]'
+
+#############################################################################
+section "G11 -- dock.sh survives the Dock relaunching over its edits"
+#############################################################################
+# A virtual clock ticks on every stub call. The Dock is "down" until the clock
+# reaches down_until; when it comes back it writes its OLD state over whatever
+# dockutil did meanwhile (the revert marker). `killall Dock` takes it down again
+# and, DOCK_LOSE_KILLS times, makes that relaunch revert as well.
+_d_env() {
+  local W n tick
+  W=$(sandbox) || return 1
+  mkdir -p "$W/bin" "$W/root/Applications" "$W/root/System/Applications" "$W/home/Downloads"
+  : >"$W/log"; printf 0 >"$W/clock"; printf 3 >"$W/down_until"; : >"$W/revert"
+  printf 'Safari\nMail\n' >"$W/old"; cp "$W/old" "$W/state"
+  for n in "Brave Browser" "Google Chrome" Slack Figma WebStorm Warp; do mkdir -p "$W/root/Applications/$n.app"; done
+  for n in Apps Calendar Notes "System Settings"; do mkdir -p "$W/root/System/Applications/$n.app"; done
+  tick='
+c=$(($(cat "$W_STATE/clock") + 1)); printf %s "$c" >"$W_STATE/clock"
+if [ -e "$W_STATE/down_until" ] && [ "$c" -ge "$(cat "$W_STATE/down_until")" ] && [ -z "${DOCK_NEVER:-}" ]; then
+  rm -f "$W_STATE/down_until"
+  if [ -e "$W_STATE/revert" ]; then rm -f "$W_STATE/revert"; cp "$W_STATE/old" "$W_STATE/state"; fi
+fi'
+  _stub "$W/bin" sleep "$tick"
+  _stub "$W/bin" pgrep "$tick"'
+[ ! -e "$W_STATE/down_until" ]'
+  _stub "$W/bin" killall "$tick"'
+if [ "$1" = Dock ]; then
+  printf "%s" "$(($(cat "$W_STATE/clock") + 3))" >"$W_STATE/down_until"
+  n=$(cat "$W_STATE/kills" 2>/dev/null || echo "${DOCK_LOSE_KILLS:-0}")
+  if [ "$n" -gt 0 ]; then : >"$W_STATE/revert"; printf %s "$((n - 1))" >"$W_STATE/kills"; fi
+fi'
+  _stub "$W/bin" dockutil "$tick"'
+case "$1" in
+  --list) while IFS= read -r l; do printf "%s\tfile:///x/%s.app/\tpersistent-apps\n" "$l" "$l"; done <"$W_STATE/state" ;;
+  *)
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --remove) : >"$W_STATE/state"; break ;;
+        --add) b=$(basename "$2" .app); grep -qxF "$b" "$W_STATE/state" || printf "%s\n" "$b" >>"$W_STATE/state"; break ;;
+      esac
+      shift
+    done ;;
+esac
+exit 0'
+  printf '%s' "$W"
+}
+# _d_run <W> [VAR=val ...] -- source the real dock.sh, then print FAILED=<n>.
+_d_run() {
+  local W=$1
+  shift
+  env -i HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" DOTFILES_DIR="$ROOT_DIR" STUB_LOG="$W/log" W_STATE="$W" \
+    DOTFILES_DOCK_ROOT="$W/root" DOTFILES_DOCK_SETTLE_TIMEOUT=10 "$@" \
+    /bin/bash -c '. "$DOTFILES_DIR/macos/dock.sh"; echo "FAILED=${DOTFILES_DOCK_FAILED:-0}"' >"$W/out" 2>&1
+}
+_d_has() { grep -qxF "$2" "$1/state"; }
+_d_failed() { sed -n 's/^FAILED=//p' "$1/out"; }
+
+t "G11.1" "a Dock that relaunches over the first edits still ends with every installed app" '
+  W=$(_d_env); _d_run "$W"
+  for a in Apps "Brave Browser" "Google Chrome" Slack Calendar Notes Figma WebStorm Warp "System Settings"; do
+    _d_has "$W" "$a" || exit 1
+  done; [ "$(_d_failed "$W")" = 0 ]'
+t "G11.2" "an app that is not installed is a quiet skipped line with the exact follow-up command" '
+  W=$(_d_env); _d_run "$W"
+  grep -qF "skipped" "$W/out" && grep -qF "not installed yet" "$W/out" && grep -q "Spark Mail" "$W/out" && grep -qF "dotfiles configure --dock" "$W/out"'
+t "G11.3" "a missing app is never a warning or an error, and never a failure" '
+  W=$(_d_env); _d_run "$W"; [ "$(grep -c "warning\|error" "$W/out")" -eq 0 ] && [ "$(_d_failed "$W")" = 0 ]'
+t "G11.4" "the final restart losing the edits once: the Dock is rebuilt and ends right" '
+  W=$(_d_env); _d_run "$W" DOCK_LOSE_KILLS=1
+  _d_has "$W" Slack && _d_has "$W" Warp && [ "$(_d_failed "$W")" = 0 ] &&
+  [ "$(grep -c "^dockutil --no-restart --remove all" "$W/log")" -eq 2 ]'
+t "G11.5" "a Dock that keeps losing the edits: an error naming the missing entries, and a failure" '
+  W=$(_d_env); _d_run "$W" DOCK_LOSE_KILLS=9
+  [ "$(grep "error" "$W/out" | grep -c Slack)" -ge 1 ] && [ "$(_d_failed "$W")" = 1 ]'
+t "G11.6" "a Dock that never comes back: the wait is bounded, the run ends, and it says the Dock did not settle" '
+  W=$(_d_env); _d_run "$W" DOCK_NEVER=1 DOTFILES_DOCK_SETTLE_TIMEOUT=3; [ -n "$(_d_failed "$W")" ] && [ "$(_logcount "$W" "sleep 1")" -le 12 ] && grep -q "did not settle" "$W/out"'
+t "G11.7" "the Dock process is waited for before the first edit" '
+  W=$(_d_env); _d_run "$W"; a=$(_first_line "pgrep -x Dock" "$W/log"); b=$(_first_line "dockutil --no-restart --remove all" "$W/log"); [ "$a" -gt 0 ] && [ "$a" -lt "$b" ]'
 
 finish
