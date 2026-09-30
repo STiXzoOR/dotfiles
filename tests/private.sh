@@ -187,7 +187,7 @@ section "P4 -- status"
 t "P4.1" "a clean, pushed private repo reports up to date" \
   'W=$(penv); seeded; priv link >/dev/null 2>&1; said "up to date" status'
 t "P4.2" "an unpushed commit is reported as ahead" \
-  'W=$(penv); seeded; printf "n\n" >"$W/priv/Brewfile.local"; git -C "$W/priv" commit -q --no-verify -am more; said "ahead" status'
+  'W=$(penv); seeded; printf "n\n" >"$W/priv/Brewfile.local"; git -C "$W/priv" -c user.name=t -c user.email=t@example.invalid commit -q --no-verify -am more; said "ahead" status'
 t "P4.3" "a commit on the remote is reported as behind" '
   W=$(penv); seeded; c=$(sandbox); git clone -q "$W/remote.git" "$c/x"
   ( cd "$c/x" && printf "n\n" >>Brewfile.local && git -c user.name=t -c user.email=t@example.invalid commit -qam up && git push -q origin main )
