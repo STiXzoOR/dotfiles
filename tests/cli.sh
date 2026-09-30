@@ -1203,6 +1203,17 @@ t "N7.4" "a submodule that cannot be initialised warns and the defaults still ru
   out=$(FAIL_SM=apps/a/one _sm_run "$W" sub_configure_defaults 2>&1); rc=$?
   [ "$rc" -eq 0 ] && grep -q "^defaults$" "$W/log" && grep -q "^ensure apps/b/two$" "$W/log" &&
   case "$out" in *warning*"apps/a/one"*) true ;; *) false ;; esac'
+t "N7.5b" "configure --defaults exits non-zero and names the count when a read-back failed" '
+  W=$(sandbox); mkdir -p "$W/df/macos" "$W/h"; : > "$W/df/.gitmodules"
+  printf "DOTFILES_DEFAULTS_FAILURES=2\n" > "$W/df/macos/defaults-x.sh"
+  out=$(_sm_run "$W" sub_configure_defaults 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && case "$out" in *error*"2 "*) true ;; *) false ;; esac'
+t "N7.5c" "configure --defaults still exits zero when every read-back held" '
+  W=$(sandbox); mkdir -p "$W/df/macos" "$W/h"; : > "$W/df/.gitmodules"
+  printf "DOTFILES_DEFAULTS_FAILURES=0\n" > "$W/df/macos/defaults-x.sh"
+  _sm_run "$W" sub_configure_defaults >/dev/null 2>&1'
+t "N7.5d" "configure returns the status of configure --defaults" \
+  '[ "$(sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -c "sub_configure_defaults ||")" -ge 1 ]'
 t "N7.5" "no apps/* path is hardcoded in bin/dotfiles" \
   '[ "$(code_of bin/dotfiles | grep -c "ensure_submodule apps/")" -eq 0 ]'
 

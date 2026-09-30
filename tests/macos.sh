@@ -333,7 +333,8 @@ case "$1" in
   --setstealthmode) [ -n "${FW_TAKES:-}" ] && echo "$2" >"$FW_STATE/stealth" ;;
   --getglobalstate)
     if [ "$(cat "$FW_STATE/global" 2>/dev/null)" = on ]; then
-      echo "Firewall is enabled. (State = 1)"; else echo "Firewall is disabled. (State = 0)"; fi ;;
+      if [ -n "${FW_BLOCKALL:-}" ]; then echo "Firewall is enabled. (State = 2)"; else echo "Firewall is enabled. (State = 1)"; fi
+    else echo "Firewall is disabled. (State = 0)"; fi ;;
   --getstealthmode)
     if [ "$(cat "$FW_STATE/stealth" 2>/dev/null)" = on ]; then
       echo "Stealth mode enabled"; else echo "Stealth mode disabled"; fi ;;
@@ -351,6 +352,8 @@ _g_run() {
   awk '/^# Ask for the administrator password upfront/ { skip = 1 }
        !skip { print }
        skip && /^done 2>\/dev\/null &/ { skip = 0 }' "$ROOT_DIR/macos/$f" >"$W/df/macos/$f"
+  # G_TAIL: a line appended to the copy, to read variables the script leaves set.
+  [ -z "${G_TAIL:-}" ] || printf '\n%s\n' "$G_TAIL" >>"$W/df/macos/$f"
   env -i HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" DOTFILES_DIR="$W/df" \
     STUB_LOG="$W/log" FW_STATE="$W/fw" TMPDIR="$W" \
     DOTFILES_SOCKETFILTERFW="$W/bin/socketfilterfw" \
@@ -503,8 +506,21 @@ t "G3.3" "a firewall that took effect prints no error naming Full Disk Access" \
   '[ "$(grep -c "error.*Full Disk Access" "$FWOK/out")" -eq 0 ]'
 t "G3.4" "an unchanged firewall state is an error naming Full Disk Access" \
   '[ "$(grep -c "error.*Full Disk Access" "$DEF/out")" -ge 1 ]'
-t "G3.5" "stealth and global state are checked separately" \
-  '[ "$(grep -c "error.*Full Disk Access" "$DEF/out")" -ge 2 ]'
+t "G3.5" "stealth and global state are each reported by name" \
+  '[ "$(grep -c "error.*application firewall is still off" "$DEF/out")" -ge 1 ] &&
+   [ "$(grep -c "error.*stealth mode is still off" "$DEF/out")" -ge 1 ]'
+# State = 2 is "block all incoming connections": the firewall is on, more so.
+BLK=$(_g_env); _g_run "$BLK" defaults.sh FW_TAKES=1 FW_BLOCKALL=1
+t "G3.5b" "a firewall reading back State = 2 (block all) is on, not an error" \
+  '[ "$(grep -c "error.*application firewall" "$BLK/out")" -eq 0 ]'
+# The failed read-backs are tallied in DOTFILES_DEFAULTS_FAILURES, which
+# `configure --defaults` turns into a non-zero status.
+_tally() { G_TAIL='echo "TALLY=${DOTFILES_DEFAULTS_FAILURES:-0}"' _g_run "$1" defaults.sh "${@:2}"; sed -n 's/^TALLY=//p' "$1/out"; }
+t "G3.5c" "unchanged firewall and stealth read-backs are tallied as failures" \
+  'W=$(_g_env) && [ "$(_tally "$W")" -ge 2 ]'
+t "G3.5d" "a firewall that took effect leaves the failure tally at zero" \
+  'W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1 RL_TAKES=1)" -eq 0 ]'
+
 t "G3.6" "the Full Disk Access notice comes first in the security block" '
   a=$(grep -n "Full Disk Access" "$FWOK/out" | head -1 | cut -d: -f1)
   b=$(grep -n "remote apple events" "$FWOK/out" | head -1 | cut -d: -f1)

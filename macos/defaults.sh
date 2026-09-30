@@ -36,6 +36,10 @@ source "$DOTFILES_DIR/scripts/lib/machine.sh"
 # neither turns them on nor off there.
 DOTFILES_ROLE=$(dotfiles_machine_role)
 
+# Failed read-backs (firewall, stealth mode, Remote Login) are counted here;
+# `dotfiles configure --defaults` turns a non-zero count into a non-zero status.
+DOTFILES_DEFAULTS_FAILURES=0
+
 # `ok` is an unconditional echo, so every step used to report success whether
 # or not it did anything. print_result takes the command's exit status instead.
 # It lives in scripts/echos.sh; this fallback keeps the file honest when it is
@@ -100,6 +104,7 @@ if [ "$DOTFILES_ROLE" = desktop ]; then
     ok
   else
     error "Remote Login is still off: grant Full Disk Access to this terminal and run again"
+    DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
   fi
 
   # Power. Apple silicon ignores `standbydelay` (it reads back absent), so it is
@@ -162,11 +167,14 @@ running "Do not auto-allow downloaded signed software"
 sudo "$FIREWALL_CTL" --setallowsignedapp off >/dev/null 2>&1
 print_result $?
 
+# State = 1 is on and State = 2 is "block all incoming connections", which is
+# on with a stricter filter; only State = 0 (or no answer) is a failure.
 running "Verify the firewall is really on"
-if "$FIREWALL_CTL" --getglobalstate 2>/dev/null | grep -q "State = 1"; then
+if "$FIREWALL_CTL" --getglobalstate 2>/dev/null | grep -qE "State = [12]"; then
   ok
 else
   error "the application firewall is still off: grant Full Disk Access to this terminal and run again"
+  DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
 fi
 
 running "Verify stealth mode is really on"
@@ -174,6 +182,7 @@ if "$FIREWALL_CTL" --getstealthmode 2>/dev/null | grep -q "enabled"; then
   ok
 else
   error "stealth mode is still off: grant Full Disk Access to this terminal and run again"
+  DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
 fi
 
 # Lock the screen with a password immediately after sleep or the screensaver.

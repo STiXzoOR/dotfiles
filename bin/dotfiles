@@ -749,13 +749,15 @@ sub_configure() {
     echo
     local _prev_yes="${DOTFILES_YES:-}"
     export DOTFILES_YES=1
-    sub_configure_defaults
+    local _rc=0
+    sub_configure_defaults || _rc=1
     sub_configure_dock
     if [[ -n "$_prev_yes" ]]; then
       export DOTFILES_YES="$_prev_yes"
     else
       unset DOTFILES_YES
     fi
+    return "$_rc"
   else
     skip
   fi
@@ -777,11 +779,19 @@ sub_configure_defaults() {
         warn "could not initialise $_sm_path; its settings will be skipped"
     done < <(sed -n -E 's/^[[:space:]]*path[[:space:]]*=[[:space:]]*(apps\/.*)$/\1/p' "$DOTFILES_DIR/.gitmodules" 2>/dev/null)
 
+    DOTFILES_DEFAULTS_FAILURES=0
     for DEFAULTS_FILE in "$DOTFILES_DIR"/macos/defaults*.sh; do
       . "$DEFAULTS_FILE"
     done
 
     bot "Note: that some of these changes require a logout/restart to take effect."
+
+    # The defaults scripts are sourced and keep going after a failed read-back;
+    # the tally they leave decides the exit status.
+    if [[ "${DOTFILES_DEFAULTS_FAILURES:-0}" -gt 0 ]]; then
+      error "${DOTFILES_DEFAULTS_FAILURES} system setting(s) did not take effect (see the errors above)"
+      return 1
+    fi
   else
     skip
   fi

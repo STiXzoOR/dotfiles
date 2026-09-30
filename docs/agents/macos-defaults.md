@@ -43,7 +43,11 @@ install (System Settings, Privacy & Security, Full Disk Access): without it
 `systemsetup` and `socketfilterfw` change nothing, and the firewall setters
 still exit 0. A notice is printed at the start of the block, and the firewall
 state is read back afterwards; an unchanged state is an `error` naming Full Disk
-Access. Revoke the grant when the install is done.
+Access. `State = 1` (on) and `State = 2` (block all incoming) both count as on.
+Each failed read-back (firewall, stealth mode, Remote Login) is added to
+`DOTFILES_DEFAULTS_FAILURES`, and `dotfiles configure --defaults` then exits
+non-zero instead of ending in a success banner. Revoke the grant when the
+install is done.
 
 Declared here: firewall on with stealth mode, Remote Login on, restart after a
 power failure, no Power Nap, no disk sleep, no wake-on-LAN, password required
