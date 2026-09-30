@@ -165,6 +165,7 @@ _stubs() { # _stubs <W>
 echo "qmd $*" >> "$STUBLOG"
 [ -n "${STUB_FAIL_qmd:-}" ] && exit 1
 case "$1 $2" in
+  "embed "*) [ -z "${STUB_EMBED_SLEEP:-}" ] || sleep "$STUB_EMBED_SLEEP" ;;
   "collection add")
     [ -d "$3" ] || { echo "Collection path does not exist. Received: $3" >&2; exit 1; }
     [ "$4" = "--name" ] && [ -n "$5" ] || { echo "missing --name" >&2; exit 1; }
@@ -254,9 +255,13 @@ t "N1.3" "~/.local/bin is put on PATH exactly once" '
   n=$(export HOME="$W/home" PATH="$W/bin:/usr/bin:/bin"; source scripts/install_claude.sh --lib; source scripts/install_claude.sh --lib; printf "%s" "$PATH" | tr ":" "\n" | grep -cx "$W/home/.local/bin")
   [ "$n" -eq 1 ]'
 
+_wait_log() { # _wait_log <W> <pattern> -- the embed runs detached, so its log line may land a moment later
+  local i; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q "$2" "$1/log" && return 0; sleep 0.25; done; return 1
+}
 section "N2 — a timeout that exists (item 2.2)"
 t "N2.1" "qmd update and embed run when only gtimeout is on PATH (no bare timeout)" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W"
+  _wait_log "$W" "^qmd embed"
   [ "$(grep -c "^qmd update" "$W/log")" -eq 1 ] && [ "$(grep -c "^qmd embed" "$W/log")" -eq 1 ]'
 t "N2.2" "the qmd calls go through the resolved timeout" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W"
@@ -296,6 +301,18 @@ t "N3c.3" "a re-run with the collections already registered warns about nothing"
 t "N3c.4" "a genuine collection failure still warns" '
   W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; _full_run "$W" STUB_FAIL_qmd=1
   [ "$(grep -c "QMD collection .notes. setup failed" "$W/out")" -eq 1 ]'
+
+section "N3d — qmd embed runs detached"
+t "N3d.1" "a slow embed does not hold the installer: it returns while the embed is still running" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"; s=$(date +%s)
+  _full_run "$W" STUB_EMBED_SLEEP=20; e=$(date +%s)
+  [ $((e - s)) -lt 15 ] && _wait_log "$W" "^qmd embed" &&
+  [ "$(grep -c "qmd status" "$W/out")" -ge 1 ]'
+t "N3d.2" "an embed that is already running is not started again" '
+  W=$(sandbox); _stubs "$W"; mkdir -p "$W/home/Vault"
+  bash -c "exec -a \"qmd embed\" sleep 20" & p=$!
+  sleep 0.5; _full_run "$W"; kill "$p" 2>/dev/null
+  [ "$(grep -c "^qmd embed" "$W/log")" -eq 0 ]'
 
 section "N3b — the vault in iCloud Drive (Task 7)"
 # A fake iCloud Drive lives under the sandbox; DOTFILES_VAULT_ICLOUD points at

@@ -332,7 +332,7 @@ dotfiles_ensure_submodule() {
   # status marks one that is not initialised; a status that cannot be read
   # (nothing to repair) counts as fine.
   if [ -e "$_dfe_root/$_dfe_path/.git" ]; then
-    _dfe_missing=$(git -C "$_dfe_root/$_dfe_path" submodule status --recursive 2>/dev/null | grep -c '^-')
+    _dfe_missing=$(git -C "$_dfe_root/$_dfe_path" submodule status --recursive 2>/dev/null | grep -c '^-' || true)
     if [ "${_dfe_missing:-0}" -eq 0 ]; then
       unset _dfe_root _dfe_path _dfe_missing
       return 0

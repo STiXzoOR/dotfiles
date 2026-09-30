@@ -865,14 +865,15 @@ setup_qmd_index() {
     warn "QMD update timed out or failed (run 'qmd update' manually)"
   fi
 
-  # Run embedding if models are available (first run downloads ~2GB)
-  action "Building QMD embeddings (may take a moment on first run)"
-  if run_bounded 120 qmd embed 2>>"$CLAUDE_INSTALL_LOG"; then
-    ok "QMD embeddings ready"
+  # Embeddings: the first run downloads ~2 GB of models and outlasts any sane
+  # timeout, so it runs detached with all three streams redirected (nothing
+  # holds this script or a parent pipe open). One already running is left be.
+  if pgrep -f 'qmd embed' >/dev/null 2>&1; then
+    ok "QMD embeddings already building (see 'qmd status')"
   else
-    warn "QMD embed timed out or failed (run 'qmd embed' manually)"
+    nohup qmd embed >>"$CLAUDE_INSTALL_LOG" 2>&1 </dev/null &
+    ok "QMD embeddings building in the background, log: $CLAUDE_INSTALL_LOG ('qmd status' shows progress)"
   fi
-
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────────────

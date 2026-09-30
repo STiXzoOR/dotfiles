@@ -99,6 +99,9 @@ t "A3.6" "ensure_submodule repairs an initialised module whose nested submodules
   git -C "$W/repo" submodule update -q --init mod
   [ ! -e "$W/repo/mod/inner/f" ] &&
   DOTFILES_DIR="$W/repo"; source scripts/lib/fs.sh; dotfiles_ensure_submodule mod && [ -e "$W/repo/mod/inner/f" ])'
+t "A3.7" "ensure_submodule survives set -e on an initialised module with nothing to repair" '
+  W=$(sandbox); mkdir -p "$W/repo/mod"; touch "$W/repo/mod/.git"
+  (set -e; DOTFILES_DIR="$W/repo"; source scripts/lib/fs.sh; dotfiles_ensure_submodule mod; true)'
 t "A3.3" "install_prezto.zsh fails when prezto is absent" '
   W=$(sandbox); mkdir -p "$W/df/modules"; ! (DOTFILES_DIR="$W/df" HOME="$W/h" zsh scripts/install_prezto.zsh)'
 t "A3.4" "sub_install_prezto calls the helper" \
@@ -1094,7 +1097,8 @@ _pk_setup() { # _pk_setup <W> -- repo with a Brewfile, code.list and stub brew/c
   cat > "$W/bin/brew" <<'STUB'
 #!/bin/bash
 echo "brew $*" >> "$SW/log"
-[ "$1" = bundle ] && { rm -f "$SW/licensed"; exit "${BUNDLE_RC:-0}"; }
+[ "$1 $2" = "install mas" ] && cp "$SW/mas-stub" "$SW/bin/mas"
+[ "$1" = bundle ] && { rm -f "$SW/licensed"; [ -n "${BUNDLE_INSTALLS_XCODE:-}" ] && mkdir -p "$SW/Xcode.app"; exit "${BUNDLE_RC:-0}"; }
 [ "$1" = tap ] && [ -n "${TAP_EATS_STDIN:-}" ] && cat >/dev/null
 if [ "$1" = trust ] && [ -n "${TRUST_FAIL:-}" ]; then echo "Error: trust nope" >&2; exit 1; fi
 exit 0
@@ -1108,19 +1112,25 @@ noise() {
   echo "(Use \`Code --trace-deprecation ...\` to show where the warning was created)"
 }
 case "$1" in
-  --list-extensions) printf 'a.one\nB.Two\n' ;;
+  --list-extensions) noise >&2; [ -n "${LISTFAIL:-}" ] && { echo "real list error: nope" >&2; exit 1; }; printf 'a.one\nB.Two\n' ;;
   --install-extension) noise >&2; [ "$2" = "${FAILEXT:-}" ] && { echo "real error: boom $2" >&2; exit 1; }; exit 0 ;;
 esac
 STUB
-  # Xcode stand-ins: the app is a directory, the licence a flag file, and a
-  # brew bundle revokes the flag (what mas installing Xcode mid-bundle did).
-  printf '#!/bin/bash\necho "mas $*" >> "$SW/log"\n[ "$1" = install ] && mkdir -p "$SW/Xcode.app"\nexit 0\n' > "$W/bin/mas"
+  # Xcode stand-ins: the app is a directory, the licence and first launch are
+  # flag files, and a brew bundle revokes the licence (what mas installing Xcode
+  # mid-bundle did). Like xcodebuild under the Command Line Tools, the stub
+  # refuses every verb unless DEVELOPER_DIR names the app.
+  printf '#!/bin/bash\necho "mas $*" >> "$SW/log"\n[ "$1" = install ] && [ -n "${STUB_MAS_FAIL:-}" ] && { echo "mas: not signed in" >&2; exit 1; }\n[ "$1" = install ] && mkdir -p "$SW/Xcode.app"\nexit 0\n' > "$W/mas-stub"
+  chmod +x "$W/mas-stub"; cp "$W/mas-stub" "$W/bin/mas"
   cat > "$W/bin/xcodebuild" <<'STUB'
 #!/bin/bash
-echo "xcodebuild $*" >> "$SW/log"
+echo "xcodebuild $* [DEVELOPER_DIR=${DEVELOPER_DIR:-}]" >> "$SW/log"
+[ "${DEVELOPER_DIR:-}" = "$SW/Xcode.app/Contents/Developer" ] || { echo "xcode-select: error: tool 'xcodebuild' requires Xcode" >&2; exit 1; }
 case "$*" in
   "-license check") [ -e "$SW/licensed" ] ;;
   "-license accept") : > "$SW/licensed" ;;
+  "-checkFirstLaunchStatus") [ -e "$SW/firstlaunch" ] ;;
+  "-runFirstLaunch") : > "$SW/firstlaunch" ;;
 esac
 STUB
   printf '#!/bin/bash\necho "sudo $*" >> "$SW/log"\nexec "$@"\n' > "$W/bin/sudo"
@@ -1169,47 +1179,72 @@ t "N6.9" "a Brewfile.local tap is trusted too" '
   W=$(sandbox); _pk_setup "$W"; printf "tap \"private/tap\"\n" > "$W/repo/Brewfile.local"
   _pk_run "$W" >/dev/null 2>&1; grep -q "brew trust --tap private/tap" "$W/log"'
 
-t "N6.16" "the code CLI's url.parse deprecation noise is filtered out of the extension output" '
+t "N7f.1" "the code CLI's url.parse deprecation noise is filtered out of the extension output" '
   W=$(sandbox); _pk_setup "$W"; out=$(_pk_run "$W" 2>&1)
   [ "$(printf "%s\n" "$out" | grep -c "DEP0169")" -eq 0 ] && [ "$(printf "%s\n" "$out" | grep -c "trace-deprecation")" -eq 0 ] &&
   grep -q "code --install-extension c.three" "$W/log"'
-t "N6.17" "a real extension error still shows and still fails the step" '
+t "N7f.2" "a real extension error still shows and still fails the step" '
   W=$(sandbox); _pk_setup "$W"; out=$(_pk_run "$W" FAILEXT=c.three 2>&1); rc=$?
   [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "real error: boom c.three")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "DEP0169")" -eq 0 ]'
+t "N7f.3" "a failed extension listing shows its real cause, without the deprecation noise" '
+  W=$(sandbox); _pk_setup "$W"; out=$(_pk_run "$W" LISTFAIL=1 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(printf "%s\n" "$out" | grep -c "real list error: nope")" -eq 1 ] && [ "$(printf "%s\n" "$out" | grep -c "DEP0169")" -eq 0 ]'
 
 # A fresh Mac: the Brewfile's mas "Xcode" installs Xcode mid-bundle, xcode-select
 # switches to it, and from then on every brew command fails until the licence is
-# accepted. Xcode goes first, licence accepted, before brew runs anything.
+# accepted. Xcode goes first, licence accepted, before brew runs anything. Every
+# xcodebuild call names the app through DEVELOPER_DIR, so it is right whichever
+# developer directory xcode-select has selected.
 _xc_ordered() { # _xc_ordered <log> <a> <b> -- first line of a precedes first line of b
   local a b; a=$(_first_line "$2" "$1"); b=$(_first_line "$3" "$1"); [ "$a" -gt 0 ] && [ "$a" -lt "$b" ]
 }
-t "N6.10" "Xcode declared via mas and absent: installed first, licence accepted and first launch run, all before brew" '
-  W=$(sandbox); _pk_setup "$W"; printf "mas \"Xcode\", id: 497799835\n" >> "$W/repo/Brewfile"
+_xc_env() { printf 'sudo env DEVELOPER_DIR=%s/Xcode.app/Contents/Developer xcodebuild' "$1"; }
+_xc_declare() { printf "mas \"Xcode\", id: 497799835\n" >> "$1/repo/Brewfile"; }
+t "N7.1" "Xcode declared via mas and absent: installed first, licence accepted and first launch run, all before brew" '
+  W=$(sandbox); _pk_setup "$W"; _xc_declare "$W"; x=$(_xc_env "$W")
   _pk_run "$W" >/dev/null 2>&1
-  _xc_ordered "$W/log" "mas install 497799835" "sudo xcodebuild -license accept" &&
-  _xc_ordered "$W/log" "sudo xcodebuild -license accept" "sudo xcodebuild -runFirstLaunch" &&
-  _xc_ordered "$W/log" "sudo xcodebuild -runFirstLaunch" "brew tap"'
-t "N6.11" "Xcode present with the licence unaccepted: accepted before brew, no mas install" '
-  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"; printf "mas \"Xcode\", id: 497799835\n" >> "$W/repo/Brewfile"
+  _xc_ordered "$W/log" "mas install 497799835" "$x -license accept" &&
+  _xc_ordered "$W/log" "$x -license accept" "$x -runFirstLaunch" &&
+  _xc_ordered "$W/log" "$x -runFirstLaunch" "brew tap"'
+t "N7.2" "Xcode present with the licence unaccepted: accepted before brew, no mas install" '
+  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"; _xc_declare "$W"; x=$(_xc_env "$W")
   _pk_run "$W" >/dev/null 2>&1
-  [ "$(grep -c "^mas install" "$W/log")" -eq 0 ] && _xc_ordered "$W/log" "sudo xcodebuild -license accept" "brew tap"'
-t "N6.12" "Xcode present and licence already accepted: sudo is not touched before the bundle" '
-  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"; : > "$W/licensed"
+  [ "$(grep -c "^mas install" "$W/log")" -eq 0 ] && _xc_ordered "$W/log" "$x -license accept" "brew tap"'
+t "N7.3" "Xcode present, licence accepted and first launch done: sudo is not touched before the bundle" '
+  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"; : > "$W/licensed"; : > "$W/firstlaunch"
   _pk_run "$W" >/dev/null 2>&1
   [ "$(sed -n "1,/^brew bundle install/p" "$W/log" | grep -c "^sudo")" -eq 0 ]'
-t "N6.13" "no Xcode declared and none installed: no mas, no xcodebuild, no sudo" '
+t "N7.4" "no Xcode declared and none installed: no mas, no xcodebuild, no sudo" '
   W=$(sandbox); _pk_setup "$W"; _pk_run "$W" >/dev/null 2>&1
   [ "$(grep -cE "^(mas|xcodebuild|sudo)" "$W/log")" -eq 0 ]'
-t "N6.14" "the licence is accepted again after the bundle, before brew cleanup" '
-  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"
+t "N7.5" "the licence is accepted again after the bundle, before brew cleanup" '
+  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"; : > "$W/firstlaunch"; x=$(_xc_env "$W")
   _pk_run "$W" >/dev/null 2>&1
   b=$(_first_line "brew bundle install" "$W/log"); c=$(_first_line "brew cleanup" "$W/log")
-  l=$(awk "/sudo xcodebuild -license accept/ { n = NR } END { print n + 0 }" "$W/log")
+  l=$(awk -v p="$x -license accept" "index(\$0, p) { n = NR } END { print n + 0 }" "$W/log")
   [ "$b" -gt 0 ] && [ "$l" -gt "$b" ] && [ "$l" -lt "$c" ]'
-t "N6.15" "a failed licence accept warns and the step carries on to the bundle" '
+t "N7.6" "a failed licence accept warns, skips first launch and the step carries on to the bundle" '
   W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"
   printf "#!/bin/bash\necho \"sudo \$*\" >> \"\$SW/log\"\nexit 1\n" > "$W/bin/sudo"
-  _pk_run "$W" >/dev/null 2>&1; grep -q "bundle install" "$W/log"'
+  _pk_run "$W" >/dev/null 2>&1; grep -q "bundle install" "$W/log" && [ "$(grep -c "runFirstLaunch" "$W/log")" -eq 0 ]'
+t "N7.7" "a fresh Mac without mas: brew installs mas first, then mas installs Xcode, all before the bundle" '
+  W=$(sandbox); _pk_setup "$W"; _xc_declare "$W"; command rm -f "$W/bin/mas"
+  _pk_run "$W" >/dev/null 2>&1
+  _xc_ordered "$W/log" "brew install mas" "mas install 497799835" && _xc_ordered "$W/log" "mas install 497799835" "brew bundle install"'
+t "N7.8" "mas cannot install Xcode: the warning says the licence step is deferred and the bundle licence check still runs" '
+  W=$(sandbox); _pk_setup "$W"; _xc_declare "$W"; x=$(_xc_env "$W")
+  out=$(_pk_run "$W" STUB_MAS_FAIL=1 BUNDLE_INSTALLS_XCODE=1 2>&1)
+  case "$out" in *deferred*) true ;; *) false ;; esac &&
+  [ "$(_first_line "$x -license accept" "$W/log")" -gt "$(_first_line "brew bundle install" "$W/log")" ]'
+t "N7.9" "Command Line Tools selected, licence already accepted: no sudo prompt (DEVELOPER_DIR names the app)" '
+  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"; : > "$W/licensed"; : > "$W/firstlaunch"
+  _pk_run "$W" >/dev/null 2>&1
+  grep -qF "xcodebuild -license check [DEVELOPER_DIR=$W/Xcode.app/Contents/Developer]" "$W/log" &&
+  [ "$(sed -n "1,/^brew bundle install/p" "$W/log" | grep -c "^sudo")" -eq 0 ]'
+t "N7.10" "Xcode present but first launch never run: run with the same DEVELOPER_DIR, after the licence" '
+  W=$(sandbox); _pk_setup "$W"; mkdir -p "$W/Xcode.app"; : > "$W/licensed"; x=$(_xc_env "$W")
+  _pk_run "$W" >/dev/null 2>&1
+  _xc_ordered "$W/log" "xcodebuild -checkFirstLaunchStatus" "$x -runFirstLaunch" && _xc_ordered "$W/log" "$x -runFirstLaunch" "brew tap"'
 t "N6.10" "packages/code.local.list extensions are installed too" '
   W=$(sandbox); _pk_setup "$W"; printf "d.four\n" > "$W/repo/packages/code.local.list"
   _pk_run "$W" >/dev/null 2>&1; grep -q "code --install-extension d.four" "$W/log"'

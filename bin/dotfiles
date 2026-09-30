@@ -614,6 +614,8 @@ sub_install_packages() {
   if confirm "Install VS Code extensions?"; then
     action "Installing VS Code extensions..."
     local code_bin wanted installed ext have=0 added=0 failed=""
+    local code_err
+    code_err=$(mktemp "${TMPDIR:-/tmp}/dotfiles-code.XXXXXX")
     code_bin=$(command -v code || true)
     [[ -n "$code_bin" ]] ||
       code_bin="${DOTFILES_CODE_BIN_FALLBACK:-/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code}"
@@ -621,8 +623,9 @@ sub_install_packages() {
     if [[ ! -x "$code_bin" ]]; then
       error "no VS Code CLI found at $code_bin; no extensions were installed"
       rc=1
-    elif ! installed=$("$code_bin" --list-extensions </dev/null 2>/dev/null); then
+    elif ! installed=$("$code_bin" --list-extensions </dev/null 2>"$code_err"); then
       error "the VS Code CLI could not list its extensions; none were installed"
+      filter_code_noise <"$code_err"
       rc=1
     else
       # One --list-extensions call, not one per extension: each launches
@@ -651,6 +654,7 @@ sub_install_packages() {
         ok "VS Code extensions: $added installed, $have already present"
       fi
     fi
+    rm -f "$code_err"
   fi
 
   # `brew cleanup --force` already clears the cache. The unguarded
@@ -660,7 +664,7 @@ sub_install_packages() {
   # removed Gatekeeper from every QuickLook plugin, which run on a
   # spacebar press.
   # A bundle that installed Xcode leaves its licence unaccepted.
-  dotfiles_xcode_accept_license
+  dotfiles_xcode_accept_license && dotfiles_xcode_first_launch
   running "cleanup homebrew"
   if brew cleanup --force >/dev/null 2>&1; then
     ok
