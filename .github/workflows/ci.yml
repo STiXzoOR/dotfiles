@@ -141,7 +141,7 @@ jobs:
         # Third-party action, pinned by commit SHA. A tag is a mutable
         # pointer: in March 2025 every tag of tj-actions/changed-files was
         # repointed at a commit that dumped runner credentials into the logs.
-        uses: Homebrew/actions/setup-homebrew@cced187498280712e078aaba62dc13a3e9cd80bf
+        uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478
 
       - name: Install dependencies
         run: |
@@ -202,7 +202,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Homebrew
-        uses: Homebrew/actions/setup-homebrew@cced187498280712e078aaba62dc13a3e9cd80bf
+        uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478
 
       - name: Validate Brewfile syntax
         run: |
