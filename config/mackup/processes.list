@@ -1,11 +1,50 @@
 # app|process name (pgrep -x). dotfiles-apps restore refuses while any of
 # these run. Every allowlisted app needs at least one line (check enforces it).
+# `app|-` is only for CLI-only apps (aws-settings, fish, mkcert, ngrok,
+# opencode, quicklook, zoxide); a GUI app needs its real process name.
+adobe-camera-raw|Adobe Photoshop 2025
+apple-music|Music
+aws-settings|-
+bambu-studio|BambuStudio
 bartender|Bartender 6 Setapp
+blender|Blender
+claude-usage|Claude Usage
+cleanmymac-setapp|CleanMyMac_5_Setapp
 cleanshot|CleanShot X Setapp
+codexbar|CodexBar
+daisydisk|DaisyDisk
+fish|-
 flux|Flux
+gitkraken-settings|GitKraken
+iina|IINA
+illustrator-settings|Adobe Illustrator
 istat-menus-setapp|iStat Menus
+keka|Keka
 magnet|Magnet
+mail|Mail
+microsoft-remote-desktop|Windows App
+mkcert|-
+ngrok|-
+opencode|-
 openemu-settings|OpenEmu
+opera|Opera
+paste-setapp|Paste
+photoshop-settings|Adobe Photoshop 2025
 pixelsnap2-setapp|PixelSnap 2 Setapp
+playcover|PlayCover
 proxyman-setapp|Proxyman
+quicklook|-
+shottr|Shottr
 spark-setapp|Spark Mail
+supercharge-setapp|Supercharge
+telegram_macos|Telegram
+terminal|Terminal
+transmission-settings|Transmission
+tunnelblick|Tunnelblick
+vectormagic|Vector Magic
+vlc|VLC
+# The process name is generic (Warp's executable is "stable").
+warp|stable
+xcode-settings|Xcode
+zoom|zoom.us
+zoxide|-

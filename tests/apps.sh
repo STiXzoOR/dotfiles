@@ -152,22 +152,65 @@ t "G2.5" "an app covering a claude/ target fails" \
 t "G2.6" "an app covering a codex/ target fails" \
   'W=$(newenv); add_app "$W" codexapp ".codex/config.toml"; set_allow "$W" alpha codexapp
    refused OVERLAP check'
-t "G2.7" "an app covering an apps/ target (warp, vlc, vscode, gitkraken, xcode) fails" \
+t "G2.7" "an app covering a vscode, claude/ or codex/ target fails (no defaults script re-applies them)" \
   'W=$(newenv); rc=0
-   for p in ".warp/settings.toml" "Library/Preferences/org.videolan.vlc/vlcrc" "Library/Application Support/Code/User/settings.json" ".gitkraken/profiles" "Library/Developer/Xcode/UserData/FontAndColorThemes/Nord.xccolortheme"; do
+   for p in "Library/Application Support/Code/User/settings.json" ".claude/settings.json" ".codex/config.toml"; do
      add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
      refused OVERLAP check || rc=1
    done; [ "$rc" -eq 0 ]'
-t "G2.8" "an app whose plist is a domain macos/defaults*.sh writes fails" \
-  'W=$(newenv); add_app "$W" domapp "Library/Preferences/com.apple.dock.plist"; set_allow "$W" alpha domapp
+t "G2.7b" "an apps/ target that macos/defaults-<app>.sh COPIES (warp, vlc, terminal) passes with an info line" \
+  'W=$(newenv); rc=0
+   for p in ".warp/settings.toml" "Library/Preferences/org.videolan.vlc/vlcrc" "Library/Preferences/com.apple.Terminal.plist"; do
+     add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
+     out=$(run_apps check 2>&1) && ! printf "%s\n" "$out" | grep -q OVERLAP && printf "%s\n" "$out" | grep -q "^info: appsapp" || rc=1
+   done; [ "$rc" -eq 0 ]'
+t "G2.7c" "an apps/ target that macos/defaults-<app>.sh SYMLINKS into the repo (gitkraken, xcode, vscode) is a hard failure" \
+  'W=$(newenv); rc=0
+   for p in ".gitkraken/profiles" ".gitkraken/themes/nord-dark.jsonc" "Library/Developer/Xcode/UserData/FontAndColorThemes/Nord.xccolortheme" "Library/Application Support/Code/User/settings.json"; do
+     add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
+     refused OVERLAP check || rc=1
+   done; [ "$rc" -eq 0 ]'
+# mkdf <W> <empty>: a DOTFILES_DIR fixture whose runcom/config/macos are the
+# real ones except the named one, which is an empty directory.
+mkdf() {
+  local w="$1" x d
+  mkdir -p "$w/df/apps"
+  for d in gitkraken terminal vlc vscode warp xcode; do mkdir -p "$w/df/apps/$d"; done
+  for x in runcom config macos claude codex; do
+    if [ "$x" = "$2" ]; then mkdir -p "$w/df/$x"; else ln -s "$ROOT_DIR/$x" "$w/df/$x"; fi
+  done
+}
+mkdf_macos() { mkdf "$1" macos; cp -R "$ROOT_DIR/macos/." "$1/df/macos/"; }
+t "G2.7d" "an apps/ target whose defaults script has no copy marker is hard, even if it links through a variable" \
+  'W=$(newenv); mkdf_macos "$W"; printf "%s\n" "LN=ln" "\$LN -sf src dst" >>"$W/df/macos/defaults-vlc.sh"
+   sed -i.bak "/dotfiles-apps: copies/d" "$W/df/macos/defaults-vlc.sh"
+   add_app "$W" vapp "Library/Preferences/org.videolan.vlc/vlcrc"; set_allow "$W" alpha vapp
+   APPS_DF="$W/df" refused OVERLAP check'
+t "G2.7e" "a copy marker plus an ln anywhere in the script fails the check" \
+  'W=$(newenv); mkdf_macos "$W"; printf "%s\n" "/bin/ln -sf src dst" >>"$W/df/macos/defaults-vlc.sh"
+   grep -q "dotfiles-apps: copies" "$W/df/macos/defaults-vlc.sh" &&
+   add_app "$W" vapp "Library/Preferences/org.videolan.vlc/vlcrc"; set_allow "$W" alpha vapp
+   APPS_DF="$W/df" refused "marker" check'
+t "G2.7f" "only terminal, vlc and warp carry the copy marker" \
+  '[ "$(grep -l "dotfiles-apps: copies" macos/defaults-*.sh | tr "\n" " ")" = "macos/defaults-terminal.sh macos/defaults-vlc.sh macos/defaults-warp.sh " ]'
+t "G2.8" "an app whose plist is a domain macos/defaults*.sh writes passes, with one info line naming app and domain" \
+  'W=$(newenv); add_app "$W" domapp "Library/Preferences/com.apple.dock.plist" "Library/Preferences/com.apple.dock.extra.plist"; set_allow "$W" alpha domapp
    out=$(run_apps check 2>&1); rc=$?
-   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "domapp" && printf "%s\n" "$out" | grep -q "com.apple.dock"'
-t "G2.9" "domain matching is case-insensitive (COM.APPLE.TERMINAL.plist vs com.apple.terminal)" \
-  'W=$(newenv); add_app "$W" termapp "Library/Preferences/COM.APPLE.TERMINAL.plist"; set_allow "$W" alpha termapp
-   refused OVERLAP check'
-t "G2.10" "the global domain plist is protected" \
+   [ "$rc" -eq 0 ] && ! printf "%s\n" "$out" | grep -q OVERLAP &&
+   [ "$(printf "%s\n" "$out" | grep -c "domapp")" -eq 1 ] && printf "%s\n" "$out" | grep "domapp" | grep -q "com.apple.dock"'
+t "G2.9" "domain matching is case-insensitive (COM.APPLE.DOCK.plist vs com.apple.dock)" \
+  'W=$(newenv); add_app "$W" termapp "Library/Preferences/COM.APPLE.DOCK.plist"; set_allow "$W" alpha termapp
+   out=$(run_apps check 2>&1); rc=$?
+       [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -q "termapp"'
+t "G2.10" "the global domain plist overlap is allowed and reported" \
   'W=$(newenv); add_app "$W" globapp "Library/Preferences/.GlobalPreferences.plist"; set_allow "$W" alpha globapp
+   out=$(run_apps check 2>&1); rc=$?
+   [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -q "globapp"'
+t "G2.8b" "a stowed-path overlap still fails when the same app also overlaps a domain" \
+  'W=$(newenv); add_app "$W" mixapp "Library/Preferences/com.apple.dock.plist" ".zshrc"; set_allow "$W" alpha mixapp
    refused OVERLAP check'
+t "G2.8c" "an app with no domain overlap prints no info line" \
+  'W=$(newenv); out=$(run_apps check 2>&1); ! printf "%s\n" "$out" | grep -q "configure --defaults"'
 t "G2.11" "an apps/ directory with no entry in the maintained target list fails" \
   'W=$(newenv); mkdir -p "$W/df/apps/newthing"
    for d in runcom config macos claude codex bin; do ln -s "$ROOT_DIR/$d" "$W/df/$d"; done
@@ -184,6 +227,20 @@ t "G2.15" "an allowlisted app without a process mapping is refused" \
   'W=$(newenv); grep -v "^beta|" "$W/cfg/processes.list" >"$W/cfg/p2" && mv "$W/cfg/p2" "$W/cfg/processes.list"
    out=$(run_apps check 2>&1); rc=$?
    [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q beta'
+t "G2.15b" "a CLI-only app marked app|- passes check and restore never asks pgrep about it" \
+  'W=$(newenv); add_app "$W" cliapp "Library/Application Support/cliapp"; set_allow "$W" alpha cliapp
+   printf "cliapp|-\n" >|"$W/cfg/processes.list"; printf "alpha|alphaProc\n" >>"$W/cfg/processes.list"
+   run_apps check && run_apps backup && run_apps restore && ! grep -q "pgrep -x -" "$W/log"'
+t "G1.8" "app|- is used only by the CLI-only apps" \
+  '[ "$(grep "|-$" config/mackup/processes.list | cut -d"|" -f1 | sort | tr "\n" " ")" = "aws-settings fish mkcert ngrok opencode quicklook zoxide " ]'
+t "G1.9" "brave is not allowlisted (Secure Preferences HMAC resets a partial restore)" \
+  '! allow_of | grep -qx brave'
+t "G1.10" "definitions list no OOBE, no aws sso or cache, no transmission blocklists or stats" \
+  'paths_of() { awk "/^\\[/ { s = (\$0 == \"[configuration_files]\"); next } s && NF && \$0 !~ /^#/ { print }" "$@"; }
+   [ "$(paths_of config/mackup/applications/*.cfg | grep -ci OOBE)" -eq 0 ] &&
+   [ "$(paths_of config/mackup/applications/aws-settings.cfg | grep -Eci "sso|cache")" -eq 0 ] &&
+   [ "$(paths_of config/mackup/applications/transmission-settings.cfg | grep -Eci "blocklist|stats")" -eq 0 ] &&
+   ! allow_of | grep -Eqx "illustrator|photoshop|aws|transmission"'
 t "G2.16" "the shipped allowlist passes against real mackup (skipped, visibly, when not installed)" \
   '[ "$HAVE_MACKUP" -eq 0 ] || {
    W=$(sandbox); mkdir -p "$W/home/.config/mackup" "$W/stubs"
@@ -379,9 +436,78 @@ t "R16" "a restored path that ends up a symlink is reported, pointing at undo" \
 t "R17" "restore refuses on an overlap" \
   'W=$(newenv); run_apps backup && add_app "$W" zshapp ".zshrc" && set_allow "$W" alpha zshapp &&
    refused OVERLAP restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R17b" "restore of an app that overlaps a defaults domain ends by printing the configure --defaults instruction" \
+  'W=$(newenv); add_app "$W" domapp "Library/Preferences/com.apple.dock.plist"; set_allow "$W" alpha domapp
+   mkdir -p "$W/home/Library/Preferences"; printf "%s" "$PLIST_OK" >"$W/home/Library/Preferences/com.apple.dock.plist"
+   run_apps backup && out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -eq 0 ] && [ "$(printf "%s\n" "$out" | tail -n 1 | grep -c "dotfiles configure --defaults")" -eq 1 ]'
+t "R17c" "restore with no defaults-domain overlap does not print the instruction" \
+  'W=$(newenv); run_apps backup && out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -eq 0 ] && ! printf "%s\n" "$out" | grep -q "configure --defaults"'
 t "R18" "restore refuses when a covered path is a symlink into the storage folder" \
   'W=$(newenv); run_apps backup && ln -sf "$W/icloud/Mackup/x" "$W/home/Library/Preferences/com.example.alpha.plist.new" &&
    mv "$W/home/Library/Preferences/com.example.alpha.plist.new" "$(alpha_plist)" && refused symlink restore && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18b" "restore refuses when a covered path is a symlink into the dotfiles repo, naming it" \
+  'W=$(newenv); run_apps backup && ln -sf "$ROOT_DIR/bin/dotfiles-apps" "$W/home/Library/Preferences/x.new" &&
+   mv "$W/home/Library/Preferences/x.new" "$(alpha_plist)" && out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "dotfiles repo" && printf "%s\n" "$out" | grep -q "alpha.plist" && [ "$(mackup_calls restore)" -eq 0 ]'
+rlink() { # rlink <W> <target> <linkpath>: replace the path with a symlink
+  ln -sfn "$2" "$3.new" && mv "$3.new" "$3"
+}
+repo_refused() { out=$(run_apps restore 2>&1); rc=$?; [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "dotfiles repo" && printf "%s\n" "$out" | grep -q "$1" && [ "$(mackup_calls restore)" -eq 0 ]; }
+t "R18c" "a relative link (..) into the repo is refused" \
+  'W=$(newenv); run_apps backup || exit 1
+   rel=$(perl -MFile::Spec -MCwd=realpath -e "print File::Spec->abs2rel(realpath(shift), realpath(shift))" "$ROOT_DIR/bin/dotfiles-apps" "$W/home/Library/Preferences")
+   rlink "$W" "$rel" "$(alpha_plist)"; repo_refused alpha.plist'
+t "R18d" "a link chain ending in the repo is refused" \
+  'W=$(newenv); run_apps backup || exit 1
+   mkdir -p "$W/other"; ln -s "$ROOT_DIR/bin/dotfiles-apps" "$W/other/hop2"; ln -s "$W/other/hop2" "$W/other/hop1"
+   rlink "$W" "$W/other/hop1" "$(alpha_plist)"; repo_refused alpha.plist'
+t "R18e" "a link nested inside a covered directory is refused" \
+  'W=$(newenv); add_app "$W" dirapp "Library/Application Support/dirapp"; set_allow "$W" alpha dirapp
+   run_apps backup || exit 1
+   mkdir -p "$W/home/Library/Application Support/dirapp/sub"; ln -s "$ROOT_DIR/bin" "$W/home/Library/Application Support/dirapp/sub/inner"
+   repo_refused "sub/inner"'
+t "R18f" "a covered path under a symlinked parent that resolves into the repo is refused" \
+  'W=$(newenv); add_app "$W" dirapp "Library/Application Support/dirapp/dotfiles-apps"; set_allow "$W" alpha dirapp
+   run_apps backup || exit 1
+   ln -s "$ROOT_DIR/bin" "$W/home/Library/Application Support/dirapp"
+   repo_refused "dirapp"'
+t "R18g" "DOTFILES_DIR reached through a symlinked directory still matches a physical link target" \
+  'W=$(newenv); ln -s "$ROOT_DIR" "$W/dflink"; run_apps backup || exit 1
+   rlink "$W" "$ROOT_DIR/bin/dotfiles-apps" "$(alpha_plist)"; APPS_DF="$W/dflink" repo_refused alpha.plist'
+t "R18h" "restore refuses when perl is missing (the symlink guard cannot run)" \
+  'W=$(newenv); run_apps backup || exit 1
+   out=$(APPS_ENV="DOTFILES_APPS_PERL=$W/no-such-perl" run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -qi "perl" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18i" "restore refuses when the private repo dir exists but cannot be resolved" \
+  'W=$(newenv); run_apps backup || exit 1; ln -s "$W/privloop" "$W/privloop"
+   out=$(APPS_ENV="DOTFILES_PRIVATE_DIR=$W/privloop" run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "privloop" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18j" "restore still runs when the private repo dir does not exist" \
+  'W=$(newenv); run_apps backup || exit 1
+   APPS_ENV="DOTFILES_PRIVATE_DIR=$W/no-private" run_apps restore'
+t "R18k" "a link loop under a covered path is refused, naming it" \
+  'W=$(newenv); add_app "$W" dirapp "Library/Application Support/dirapp"; set_allow "$W" alpha dirapp
+   run_apps backup || exit 1
+   mkdir -p "$W/home/Library/Application Support/dirapp"; ln -s loop "$W/home/Library/Application Support/dirapp/loop"
+   out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "dirapp/loop" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18l" "a link whose NAME contains a newline and points into the repo is refused, not split into records" \
+  'W=$(newenv); add_app "$W" dirapp "Library/Application Support/dirapp"; set_allow "$W" alpha dirapp
+   run_apps backup || exit 1
+   mkdir -p "$W/home/Library/Application Support/dirapp"
+   ln -s "$ROOT_DIR/bin" "$W/home/Library/Application Support/dirapp/a
+b"
+   out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "dotfiles repo" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18m" "a regular file whose name contains a newline is refused (the manifest cannot list it), never silently passed" \
+  'W=$(newenv); add_app "$W" dirapp "Library/Application Support/dirapp"; set_allow "$W" alpha dirapp
+   run_apps backup || exit 1
+   mkdir -p "$W/home/Library/Application Support/dirapp"; printf x >"$W/home/Library/Application Support/dirapp/a
+b"
+   run_apps restore >/dev/null 2>&1; rc=$?
+   [ "$rc" -ne 0 ] && [ "$(mackup_calls restore)" -eq 0 ]'
 t "R19" "restore takes the lock too" \
   'W=$(newenv); run_apps backup && mkdir -p "$(lock_dir)" && refused "lock" restore'
 t "R20" "on a fresh Mac (nothing local yet) restore works and needs no rescue copy" \
@@ -411,16 +537,6 @@ t "R24" "restore never calls mackup link and passes -c" \
 #############################################################################
 section "F -- fix round 1: guard fails closed, legacy store, manifest, flush"
 #############################################################################
-# mkdf <W> <empty>: a DOTFILES_DIR fixture whose runcom/config/macos are the
-# real ones except the named one, which is an empty directory.
-mkdf() {
-  local w="$1" x d
-  mkdir -p "$w/df/apps"
-  for d in gitkraken terminal vlc vscode warp xcode; do mkdir -p "$w/df/apps/$d"; done
-  for x in runcom config macos claude codex; do
-    if [ "$x" = "$2" ]; then mkdir -p "$w/df/$x"; else ln -s "$ROOT_DIR/$x" "$w/df/$x"; fi
-  done
-}
 t "F1" "check fails when dotfiles-baseline exits non-zero" \
   'W=$(newenv); printf "#!/bin/sh\necho boom >&2\nexit 1\n" >"$W/badbase"; chmod +x "$W/badbase"
    APPS_ENV="DOTFILES_APPS_BASELINE=$W/badbase" refused "baseline failed" check'
