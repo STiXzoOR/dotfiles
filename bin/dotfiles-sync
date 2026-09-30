@@ -611,8 +611,8 @@ strict_answer() {
     return 2
   fi
   case "$a" in
-    y | Y | yes | YES | Yes) return 0 ;;
-    n | N | no | NO | No) return 1 ;;
+    [yY] | [yY]es | YES) return 0 ;;
+    [nN] | [nN]o | NO) return 1 ;;
   esac
   return 2
 }
