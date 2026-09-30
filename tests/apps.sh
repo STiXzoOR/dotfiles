@@ -852,4 +852,32 @@ t "J11" "candidates matches a name near the top of a mackup list larger than the
   out=$(cands 2>&1)
   [ "$(printf "%s\n" "$out" | cut -f1 | grep -c "^gamma$")" -eq 1 ]'
 
+#############################################################################
+section "K -- iCloud never syncs .DS_Store; mackup show runs once per app"
+#############################################################################
+# reseal <snapshot dir>: rewrite the MANIFEST header for the current body, so a
+# hand-edited body still has a valid header (only the listed files differ).
+reseal() {
+  local m="$1/MANIFEST" body n
+  body=$(tail -n +2 "$m"); n=$(printf '%s\n' "$body" | grep -c .)
+  { printf '# dotfiles-apps manifest v1 files=%s sha256=%s\n' "$n" "$(printf '%s\n' "$body" | shasum -a 256 | cut -d" " -f1)"; printf '%s\n' "$body"; } >"$m.new" && mv "$m.new" "$m"
+}
+t "K1" "backup drops .DS_Store files in nested dirs from the snapshot and its manifest" \
+  'W=$(newenv); d="$W/home/Library/Application Support/Beta"; mkdir -p "$d/Save States/GBA"; printf x >"$d/.DS_Store"; printf y >"$d/Save States/GBA/.DS_Store"
+   run_apps backup && m="$(snapdir)/MANIFEST" && [ "$(grep -c "DS_Store" "$m")" -eq 0 ] && [ "$(grep -vc "^#" "$m")" -eq 2 ] &&
+   [ "$(find "$(snapdir)" -name .DS_Store | wc -l | tr -d " ")" -eq 0 ] && run_apps restore'
+t "K2" "a snapshot whose MANIFEST lists a .DS_Store absent from the tree still verifies" \
+  'W=$(newenv); run_apps backup && s=$(snapdir) && printf "%s\t1\t%s\n" "$(printf x | shasum -a 256 | cut -d" " -f1)" "Mackup/Library/Application Support/Beta/Save States/.DS_Store" >>"$s/MANIFEST" && reseal "$s" &&
+   run_apps restore'
+t "K3" "a .DS_Store in the tree that the manifest does not list is ignored" \
+  'W=$(newenv); run_apps backup && printf x >"$(snapdir)/Mackup/Library/Application Support/Beta/.DS_Store" && run_apps restore'
+t "K4" "a real missing file is still refused when a .DS_Store is also listed" \
+  'W=$(newenv); run_apps backup && s=$(snapdir) && printf "%s\t1\t%s\n" "$(printf x | shasum -a 256 | cut -d" " -f1)" "Mackup/Library/Application Support/Beta/.DS_Store" >>"$s/MANIFEST" && reseal "$s" &&
+   wipe "$s/Mackup/Library/Application Support/Beta/settings.json" && refused "is missing from the snapshot" restore'
+t "K5" "each of check and restore calls mackup show at most once per allowlisted app" \
+  'W=$(newenv); run_apps backup && : >"$W/log" && run_apps check &&
+   [ "$(grep -c " show alpha\$" "$W/log")" -eq 1 ] && [ "$(grep -c " show beta\$" "$W/log")" -eq 1 ] &&
+   : >"$W/log" && run_apps restore &&
+   [ "$(grep -c " show alpha\$" "$W/log")" -eq 1 ] && [ "$(grep -c " show beta\$" "$W/log")" -eq 1 ]'
+
 finish
