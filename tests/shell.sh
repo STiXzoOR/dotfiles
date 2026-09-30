@@ -685,14 +685,19 @@ _hosts_sandbox() {
   local h
   h=$(_zsh_sandbox) || return 1
   mkdir -p "$h/.ssh"
-  printf '%s\n' 'alpha.example,10.0.0.1 ssh-rsa AAAA' '[bravo.example]:2222 ssh-ed25519 BBBB' >"$h/.ssh/known_hosts"
+  printf '%s\n' 'alpha.example,192.0.2.1 ssh-rsa AAAA' '[bravo.example]:2222 ssh-ed25519 BBBB' >"$h/.ssh/known_hosts"
   printf '%s\n' 'Host charlie delta' '  HostName ignored.example' 'Host *' 'Host wild*' >"$h/.ssh/config"
   printf '%s' "$h"
 }
 _HOSTS_PROBE='zstyle -a ":completion:*:hosts" hosts _h; _w=(${=_h}); _w=(${(o)_w}); print -r -- "HOSTS=${(j:,:)_w}"'
+# The style also reads /etc/ssh/ssh_known_hosts, which is the machine's, not
+# the sandbox's. A sandbox with no ~/.ssh shows what /etc contributes; the
+# expected list is that plus the sandbox's own entries.
 t "P6.1" "the hosts style is exactly known_hosts plus ssh config, and never /etc/hosts" \
-  'H=$(_hosts_sandbox) &&
-   [ "$(ZSHRUN_HOME="$H" zshrun "$_HOSTS_PROBE")" = "HOSTS=10.0.0.1,alpha.example,bravo.example,charlie,delta" ]'
+  'H=$(_hosts_sandbox) && E=$(_zsh_sandbox) &&
+   base=$(ZSHRUN_HOME="$E" zshrun "$_HOSTS_PROBE") && base=${base#HOSTS=} &&
+   want=$(printf "%s\n" 192.0.2.1 alpha.example bravo.example charlie delta $(printf "%s" "$base" | tr "," " ") | LC_ALL=C sort -u | paste -sd, -) &&
+   [ "$(ZSHRUN_HOME="$H" zshrun "$_HOSTS_PROBE")" = "HOSTS=$want" ]'
 t "P6.2" "the style runs the real cat, whatever cat is aliased to" \
   '[ "$(code_of system/.completion | grep -c "command cat")" -ge 2 ]'
 
@@ -713,7 +718,9 @@ _dump_sandbox() {
   local h
   h=$(_zsh_sandbox) || return 1
   ZSHRUN_HOME="$h" zshrun true || return 1
-  sleep 2  # the first shell's own background zcompile
+  # The first shell's own background zcompile: wait for it, do not guess.
+  local i=0
+  while [ "$i" -lt 40 ] && [ ! -s "$h/.cache/prezto/zcompdump.zwc" ]; do sleep 0.5; i=$((i + 1)); done
   [ -s "$h/.cache/prezto/zcompdump" ] || return 1
   _age_dump "$h/.cache/prezto/zcompdump" "$1"
   printf '%s' "$h"
@@ -726,9 +733,24 @@ t "P8.1" "a dump 12 h old is rebuilt in the background, compiled, and leaves no 
    ZSHRUN_HOME="$H" zshrun true && _wait_newer "$D" "$H/marker" &&
    [ "$(grep -c "^#files:" "$D")" -eq 1 ] && _wait_newer "$D.zwc" "$H/marker" &&
    [ "$(ls "$H/.cache/prezto" | grep -c "zcompdump[.].*tmp")" -eq 0 ]'
+# The stale check runs before the zcompile at the end of the same background
+# block, so a fresh .zwc proves the block has run to the end: only then can
+# "the dump was left alone" be asserted without a fixed sleep. _zwc_done
+# removes the .zwc, runs a login shell and waits for the new one.
+_zwc_done() { # _zwc_done <H> <marker>
+  rm -f "$1/.cache/prezto/zcompdump.zwc"
+  ZSHRUN_HOME="$1" zshrun true && _wait_newer "$1/.cache/prezto/zcompdump.zwc" "$2"
+}
 t "P8.2" "a dump 2 h old is left alone" \
   'H=$(_dump_sandbox 2) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 1 &&
-   ZSHRUN_HOME="$H" zshrun true && sleep 4 && [ ! "$D" -nt "$H/marker" ]'
+   _zwc_done "$H" "$H/marker" && [ ! "$D" -nt "$H/marker" ]'
+t "P8.6" "a live rebuild lock keeps a second login shell from rebuilding" \
+  'H=$(_dump_sandbox 12) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 11 &&
+   mkdir "$D.lock" && _zwc_done "$H" "$H/marker" && [ ! "$D" -nt "$H/marker" ] && [ -d "$D.lock" ]'
+t "P8.7" "a rebuild lock left by a killed shell (10 min old) is taken over, then released" \
+  'H=$(_dump_sandbox 12) && D="$H/.cache/prezto/zcompdump" && : >"$H/marker" && _age_dump "$H/marker" 11 &&
+   mkdir "$D.lock" && perl -e "utime time-600, time-600, q($D.lock)" &&
+   _zwc_done "$H" "$H/marker" && [ "$D" -nt "$H/marker" ] && [ ! -e "$D.lock" ]'
 t "P8.3" "the rebuild is a detached zsh -f, and never a bare compinit -C" \
   '[ "$(code_of runcom/.zlogin | grep -c "zsh -f")" -ge 1 ] &&
    [ "$(code_of runcom/.zlogin | grep -cE "compinit -C|zsh-defer")" -eq 0 ]'

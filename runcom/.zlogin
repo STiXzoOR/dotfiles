@@ -26,14 +26,23 @@
   # only Prezto's modules set: without it the test is a plain string test and
   # the dump is rebuilt on every login. Set it here, local to this function.
   _zcompdump_stale() { setopt localoptions extendedglob; [[ -n "$zcompdump"(#qN.mh+8) ]]; }
-  if [[ -s "$zcompdump" ]] && _zcompdump_stale; then
+  # Two logins opening together would both rebuild; a mkdir lock lets one do it.
+  # A lock older than 5 minutes belongs to a shell that was killed mid-rebuild
+  # (the rebuild takes about a second), so it is taken over.
+  _zcompdump_lock() {
+    setopt localoptions extendedglob
+    [[ -d "$zcompdump.lock"(#qN/mm+5) ]] && command rmdir "$zcompdump.lock" 2>/dev/null
+    command mkdir "$zcompdump.lock" 2>/dev/null
+  }
+  if [[ -s "$zcompdump" ]] && _zcompdump_stale && _zcompdump_lock; then
     _zcompdump_tmp="$zcompdump.$$.tmp"
     FPATH="${(j.:.)fpath}" zsh -f -c 'autoload -Uz compinit && compinit -i -d "$1"' _ "$_zcompdump_tmp" &>/dev/null
     [[ -s "$_zcompdump_tmp" ]] && command mv -f "$_zcompdump_tmp" "$zcompdump"
     command rm -f "$_zcompdump_tmp"
+    command rmdir "$zcompdump.lock" 2>/dev/null
     unset _zcompdump_tmp
   fi
-  unfunction _zcompdump_stale
+  unfunction _zcompdump_stale _zcompdump_lock
 
   if [[ -s "$zcompdump" && (! -s "${zcompdump}.zwc" || "$zcompdump" -nt "${zcompdump}.zwc") ]]; then
     zcompile "$zcompdump"
