@@ -19,6 +19,10 @@ SCREENSHOTS_FOLDER="${HOME}/Desktop/Screenshots"
 _launcher_env="${DOTFILES_LAUNCHER:-}"
 # shellcheck disable=SC1091
 [ -f "$DOTFILES_DIR/macos/local.sh" ] && source "$DOTFILES_DIR/macos/local.sh"
+# Per-Mac values (a computer name of its own, the launcher) come after the
+# shared file and win over it.
+# shellcheck disable=SC1091
+[ -f "$DOTFILES_DIR/macos/machine.local.sh" ] && source "$DOTFILES_DIR/macos/machine.local.sh"
 unset DOTFILES_LAUNCHER
 [ -z "$_launcher_env" ] || DOTFILES_LAUNCHER="$_launcher_env"
 
@@ -62,9 +66,13 @@ DOTFILES_DEFAULTS_FAILURES=0
 # Ask for the administrator password upfront
 sudo -v
 
-# Keep-alive: update existing `sudo` time stamp until this script has finished
+# Keep-alive: refresh the `sudo` time stamp until this script has finished.
+# `sudo -n -v` runs no command, so sudo never puts the terminal in raw mode for
+# a relayed command; a background `sudo -n true` racing the foreground sudo
+# calls left the tty raw, and every later line printed as a staircase. All three
+# streams are redirected so nothing in the background touches the terminal.
 while true; do
-  sudo -n true
+  sudo -n -v </dev/null >/dev/null 2>&1
   sleep 60
   kill -0 "$$" || exit
 done 2>/dev/null &
@@ -91,7 +99,11 @@ bot "Security"
 # while changing nothing. Grant it in System Settings, Privacy & Security,
 # Full Disk Access, and revoke it afterwards: a standing grant lets every
 # script run from that terminal bypass TCC.
-warn "systemsetup and the firewall need Full Disk Access for the terminal running this install (System Settings, Privacy & Security, Full Disk Access). Without it they fail or silently change nothing."
+# Only warn when the terminal really lacks it: reading the TCC database
+# directory succeeds only with Full Disk Access.
+if ! /bin/ls "${DOTFILES_FDA_PROBE:-$HOME/Library/Application Support/com.apple.TCC}" >/dev/null 2>&1; then
+  warn "systemsetup and the firewall need Full Disk Access for the terminal running this install (System Settings, Privacy & Security, Full Disk Access). Without it they fail or silently change nothing."
+fi
 
 running "Disable remote apple events"
 sudo systemsetup -setremoteappleevents off >/dev/null 2>&1
@@ -217,7 +229,10 @@ defaults write com.apple.screensaver askForPassword -int 1
 defaults write com.apple.screensaver askForPasswordDelay -int 0
 ok
 
-if [ -t 0 ] && [ "${DOTFILES_YES:-0}" != "1" ]; then
+# DOTFILES_YES_INTERNAL is set by sub_configure for its own prompts only; an
+# owner's unattended DOTFILES_YES still skips, a terminal with the internal one
+# does not.
+if [ -t 0 ] && { [ "${DOTFILES_YES:-0}" != "1" ] || [ "${DOTFILES_YES_INTERNAL:-0}" = "1" ]; }; then
   running "Set the screen lock delay to immediate (sysadminctl asks for your account password)"
   sysadminctl -screenLock immediate -password -
   print_result $?
@@ -237,7 +252,7 @@ if [ -n "${DOTFILES_COMPUTER_NAME:-}" ]; then
     sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "$DOTFILES_COMPUTER_NAME"
   print_result $?
 else
-  skip "computer name: DOTFILES_COMPUTER_NAME is not set (macos/local.sh)"
+  skip "computer name: DOTFILES_COMPUTER_NAME is not set (set it in macos/local.sh, or per Mac in macos/machine.local.sh)"
 fi
 
 if [ -n "${DOTFILES_LANGUAGES:-}" ]; then

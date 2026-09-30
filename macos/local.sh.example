@@ -13,6 +13,7 @@
 # With two Macs sharing this file through the private repo (dotfiles private),
 # delete this line: each Mac has its own name, so set it per Mac instead with
 #   DOTFILES_COMPUTER_NAME=<name> dotfiles configure --defaults
+# or put it in macos/machine.local.sh (see macos/machine.local.sh.example).
 DOTFILES_COMPUTER_NAME="my-mac"
 
 # Preferred languages, space-separated, most preferred first.

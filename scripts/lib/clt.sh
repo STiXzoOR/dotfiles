@@ -126,7 +126,7 @@ dotfiles_install_clt() {
       nap=$!
       wait "$nap"
       kill -0 "$parent" 2>/dev/null || exit 0
-      sudo -n true 2>/dev/null || exit 0
+      sudo -n -v </dev/null >/dev/null 2>&1 || exit 0
     done
   ) >/dev/null 2>&1 </dev/null &
   _DOTFILES_CLT_KEEPALIVE_PID=$!

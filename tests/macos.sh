@@ -1095,4 +1095,47 @@ t "G14.9" "a failed dockutil --remove all is a Dock failure" '
 t "G14.10" "an empty but stable Dock list settles at once, without burning the timeout" '
   W=$(_d_env); : >"$W/old"; : >"$W/state"; _d_run "$W"; [ "$(grep -c "did not settle" "$W/out")" -eq 0 ]'
 
+#############################################################################
+section "G15 -- real-run fixes: tty-safe keep-alive, FDA probe, screen lock, per-Mac file"
+#############################################################################
+t "G15.1" "no background keep-alive runs a command under sudo (sudo -n true leaves the tty raw)" '
+  [ "$(code_of macos/defaults.sh bin/dotfiles scripts/lib/clt.sh | grep -cE "sudo -n true|sudo .*[[:space:]]true([[:space:]]|\$)")" -eq 0 ]'
+t "G15.2" "the keep-alives only refresh the ticket: sudo -n -v with stdin, stdout and stderr redirected" '
+  [ "$(code_of macos/defaults.sh bin/dotfiles scripts/lib/clt.sh | grep -c "sudo -n -v </dev/null >/dev/null 2>&1")" -eq 3 ]'
+t "G15.3" "the keep-alive in a real pty leaves onlcr on (runs without a password: no ticket just fails)" '
+  command -v script >/dev/null || exit 0
+  o=$(script -q /dev/null /bin/bash -c "sudo -n -v </dev/null >/dev/null 2>&1; stty -a" </dev/null 2>&1 | grep -c "[^-]onlcr")
+  [ "$o" -ge 1 ]'
+
+FDA=$(_g_env); mkdir -p "$FDA/tcc"
+t "G15.4" "Full Disk Access present (probe succeeds): no Full Disk Access warning" '
+  _g_run "$FDA" defaults.sh FW_TAKES=1 RL_TAKES=1 DOTFILES_FDA_PROBE="$FDA/tcc"; [ "$(grep -c "warning.*Full Disk Access" "$FDA/out")" -eq 0 ]'
+t "G15.5" "Full Disk Access absent (probe fails): the warning is printed" '
+  W=$(_g_env); _g_run "$W" defaults.sh DOTFILES_FDA_PROBE="$W/nope"; [ "$(grep -c "warning.*Full Disk Access" "$W/out")" -ge 1 ]'
+t "G15.6" "the probe reads a TCC directory" \
+  '[ "$(code_of macos/defaults.sh | grep -c "com.apple.TCC")" -ge 1 ]'
+
+if command -v script >/dev/null 2>&1; then
+  t "G15.7" "on a terminal, the DOTFILES_YES that configure sets for itself does not stop the screen lock" '
+    W=$(_g_env) && _g_run_tty "$W" DOTFILES_YES=1 DOTFILES_YES_INTERNAL=1 && _logged "$W" "sysadminctl -screenLock immediate -password -"'
+fi
+t "G15.8" "sub_configure marks its own DOTFILES_YES as internal, only when the owner had not set one" '
+  b=$(sed -n "/^sub_configure() {/,/^}/p" bin/dotfiles)
+  printf "%s\n" "$b" | grep -q "DOTFILES_YES_INTERNAL" && printf "%s\n" "$b" | grep -q "unset DOTFILES_YES_INTERNAL"'
+
+t "G15.9" "macos/machine.local.sh is sourced: a per-Mac computer name reaches scutil" '
+  W=$(_g_env); printf "DOTFILES_COMPUTER_NAME=per-mac\n" >"$W/df/macos/machine.local.sh"; _g_run "$W" defaults.sh
+  _logged "$W" "scutil --set ComputerName per-mac"'
+t "G15.10" "machine.local.sh wins over local.sh for the computer name" '
+  W=$(_g_env); printf "DOTFILES_COMPUTER_NAME=shared\n" >"$W/df/macos/local.sh"; printf "DOTFILES_COMPUTER_NAME=per-mac\n" >"$W/df/macos/machine.local.sh"; _g_run "$W" defaults.sh
+  _logged "$W" "scutil --set ComputerName per-mac" && [ "$(_logcount "$W" "ComputerName shared")" -eq 0 ]'
+t "G15.11" "the unset-name skip line mentions machine.local.sh" '
+  W=$(_g_env); _g_run "$W" defaults.sh; grep "computer name" "$W/out" | grep -q "machine.local.sh"'
+t "G15.12" "machine.local.sh.example documents DOTFILES_COMPUTER_NAME" \
+  'grep -q DOTFILES_COMPUTER_NAME macos/machine.local.sh.example'
+t "G15.13" "a launcher in machine.local.sh still behaves (raycast: Tinycast untouched)" '
+  W=$(_g_env); printf "DOTFILES_LAUNCHER=raycast\n" >"$W/df/macos/machine.local.sh"; _g_run "$W" defaults.sh; [ "$(_logcount "$W" "com.tinycast.app")" -eq 0 ]'
+t "G15.14" "the environment launcher still beats machine.local.sh" '
+  W=$(_g_env); printf "DOTFILES_LAUNCHER=raycast\n" >"$W/df/macos/machine.local.sh"; _g_run "$W" defaults.sh DOTFILES_LAUNCHER=tinycast; [ "$(_logcount "$W" "com.tinycast.app")" -ge 1 ]'
+
 finish

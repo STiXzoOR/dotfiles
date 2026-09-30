@@ -14,3 +14,7 @@
 # to set Tinycast's Cmd-Space). The environment wins over this file, which wins
 # over macos/local.sh.
 DOTFILES_LAUNCHER="raycast"
+
+# This Mac's name; also sets LocalHostName, HostName and the SMB NetBIOS name.
+# Set it here rather than in macos/local.sh, which both Macs share.
+# DOTFILES_COMPUTER_NAME="my-mac"

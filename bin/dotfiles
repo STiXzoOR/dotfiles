@@ -110,7 +110,7 @@ dotfiles_sudo_keepalive() {
   sudo -v || return 1
 
   while true; do
-    sudo -n true
+    sudo -n -v </dev/null >/dev/null 2>&1
     sleep 60
     kill -0 "$$" || exit
   done 2>/dev/null &
@@ -813,6 +813,9 @@ sub_configure() {
     echo
     local _prev_yes="${DOTFILES_YES:-}"
     export DOTFILES_YES=1
+    # Tell the defaults scripts this DOTFILES_YES is ours, not the owner's
+    # unattended one, so the screen-lock step can still prompt on a terminal.
+    [[ -n "$_prev_yes" ]] || export DOTFILES_YES_INTERNAL=1
     local _rc=0
     sub_configure_defaults || _rc=1
     sub_configure_dock || _rc=1
@@ -821,6 +824,7 @@ sub_configure() {
     else
       unset DOTFILES_YES
     fi
+    unset DOTFILES_YES_INTERNAL
     return "$_rc"
   else
     skip
