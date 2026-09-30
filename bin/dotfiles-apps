@@ -174,11 +174,13 @@ has_copy_marker() {
 
 # A marked script that could link (any ln, LN or --symbolic on a code line).
 marker_liars() {
-  local name target
+  local name target code
   app_targets | while IFS=$'\t' read -r name target; do
     has_copy_marker "$name" || continue
-    if sed 's/#.*$//' "$DOTFILES_DIR/macos/defaults-$name.sh" |
-      grep -Eq '(^|[^[:alnum:]_])(ln|LN)([^[:alnum:]_]|$)|symbolic'; then
+    # The script and the files every defaults script sources. A variable, not
+    # a pipe into grep -q: pipefail would turn grep's early exit into a miss.
+    code=$(sed 's/#.*$//' "$DOTFILES_DIR/macos/defaults-$name.sh" "$DOTFILES_DIR/scripts/echos.sh" "$DOTFILES_DIR/scripts/requirers.sh" 2>/dev/null)
+    if printf '%s\n' "$code" | grep -Eq '(^|[^[:alnum:]_])(ln|LN)([^[:alnum:]_]|$)|symbolic'; then
       printf '%s\n' "$name"
     fi
   done
@@ -445,40 +447,70 @@ validate_tree() {
 # physically (relative links, chains, /var vs /private/var, symlinked parents)
 # by one perl (it ships with macOS) and compared with the resolved repo roots.
 guard_repo_links() {
-  local app p full d hits rc=0 priv="${DOTFILES_PRIVATE_DIR:-$HOME/.dotfiles-private}"
-  hits=$(
+  local app p full d rc=0 prc kind root real perl_bin="${DOTFILES_APPS_PERL:-perl}"
+  local priv="${DOTFILES_PRIVATE_DIR:-$HOME/.dotfiles-private}"
+  local cands="$STATE/repo-links.in" out="$STATE/repo-links.out"
+  set -- "$DOTFILES_DIR"
+  # The private repo is optional only when it does not exist at all.
+  if [ -e "$priv" ] || [ -L "$priv" ]; then set -- "$@" "$priv"; fi
+  if ! command -v "$perl_bin" >/dev/null 2>&1; then
+    err "perl is missing, so the symlink guard cannot resolve paths; refusing"
+    return 1
+  fi
+  # NUL-separated app, path pairs: a newline in a path cannot split a record.
+  {
     for app in $(allowlist); do
       while IFS= read -r p; do
         [ -n "$p" ] || continue
         full="$HOME/${p%/}"
         { [ -L "$full" ] || [ -e "$full" ]; } || continue
-        printf '%s\t%s\n' "$app" "$full"
+        printf '%s\0%s\0' "$app" "$full"
         d=$(dirname "$full")
         while [ "$d" != "$HOME" ] && [ "$d" != / ] && [ "$d" != . ]; do
-          printf '%s\t%s\n' "$app" "$d"
+          printf '%s\0%s\0' "$app" "$d"
           d=$(dirname "$d")
         done
-        find "$full" -type l 2>/dev/null | sed "s|^|$app$(printf '\t')|"
+        find "$full" -type l -print0 2>/dev/null | while IFS= read -r -d '' l; do
+          printf '%s\0%s\0' "$app" "$l"
+        done
       done <<EOF
 $(app_paths "$app")
 EOF
-    done | perl -MCwd=realpath -e '
-      my @roots = grep { defined } map { realpath($_) } @ARGV; @ARGV = ();
-      while (my $l = <STDIN>) {
-        chomp $l; my ($app, $c) = split /\t/, $l, 2;
-        my $r = realpath($c); next unless defined $r;
-        for my $root (@roots) {
-          if ($r eq $root || index($r, "$root/") == 0) { print "$app\t$c\t$r\n"; last }
-        }
-      }' "$DOTFILES_DIR" "$priv"
-  )
-  while IFS=$'\t' read -r app p d; do
-    [ -n "$p" ] || continue
-    err "SYMLINK: '$p' ($app) resolves into the dotfiles repo ($d); a copy would replace the link, so this app cannot cover it"
+    done
+  } >"$cands" || { err "could not list the paths to check for repo symlinks; refusing"; return 1; }
+  # shellcheck disable=SC2016
+  "$perl_bin" -MCwd=realpath -e '
+    $/ = "\0"; $\ = "";
+    my @roots;
+    for my $r (@ARGV) {
+      my $x = realpath($r);
+      if (!defined $x) { print "R\0$r\0\0\0"; exit 3 }
+      push @roots, $x;
+    }
+    @ARGV = ();
+    while (defined(my $app = <STDIN>)) {
+      my $c = <STDIN>;
+      if (!defined $c) { print "M\0\0\0\0"; exit 4 }
+      chomp $app; chomp $c;
+      my $r = realpath($c);
+      if (!defined $r) { print "U\0$app\0$c\0\0"; next }
+      for my $root (@roots) {
+        if ($r eq $root || index($r, "$root/") == 0) { print "H\0$app\0$c\0$r\0"; last }
+      }
+    }' "$@" <"$cands" >"$out"
+  prc=$?
+  while IFS= read -r -d '' kind && IFS= read -r -d '' app && IFS= read -r -d '' p && IFS= read -r -d '' real; do
+    case "$kind" in
+      R) err "cannot resolve the repo directory '$app'; refusing"; rc=1 ;;
+      H) err "SYMLINK: '$p' ($app) resolves into the dotfiles repo ($real); a copy would replace the link, so this app cannot cover it"; rc=1 ;;
+      U) err "SYMLINK: '$p' ($app) cannot be resolved (a link loop or a missing target); refusing"; rc=1 ;;
+      *) err "symlink guard: malformed record; refusing"; rc=1 ;;
+    esac
+  done <"$out"
+  if [ "$prc" -ne 0 ]; then
+    err "the symlink guard failed (perl exit $prc); refusing"
     rc=1
-  done <<EOF
-$hits
-EOF
+  fi
   return "$rc"
 }
 

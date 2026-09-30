@@ -476,6 +476,38 @@ t "R18f" "a covered path under a symlinked parent that resolves into the repo is
 t "R18g" "DOTFILES_DIR reached through a symlinked directory still matches a physical link target" \
   'W=$(newenv); ln -s "$ROOT_DIR" "$W/dflink"; run_apps backup || exit 1
    rlink "$W" "$ROOT_DIR/bin/dotfiles-apps" "$(alpha_plist)"; APPS_DF="$W/dflink" repo_refused alpha.plist'
+t "R18h" "restore refuses when perl is missing (the symlink guard cannot run)" \
+  'W=$(newenv); run_apps backup || exit 1
+   out=$(APPS_ENV="DOTFILES_APPS_PERL=$W/no-such-perl" run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -qi "perl" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18i" "restore refuses when the private repo dir exists but cannot be resolved" \
+  'W=$(newenv); run_apps backup || exit 1; ln -s "$W/privloop" "$W/privloop"
+   out=$(APPS_ENV="DOTFILES_PRIVATE_DIR=$W/privloop" run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "privloop" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18j" "restore still runs when the private repo dir does not exist" \
+  'W=$(newenv); run_apps backup || exit 1
+   APPS_ENV="DOTFILES_PRIVATE_DIR=$W/no-private" run_apps restore'
+t "R18k" "a link loop under a covered path is refused, naming it" \
+  'W=$(newenv); add_app "$W" dirapp "Library/Application Support/dirapp"; set_allow "$W" alpha dirapp
+   run_apps backup || exit 1
+   mkdir -p "$W/home/Library/Application Support/dirapp"; ln -s loop "$W/home/Library/Application Support/dirapp/loop"
+   out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "dirapp/loop" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18l" "a link whose NAME contains a newline and points into the repo is refused, not split into records" \
+  'W=$(newenv); add_app "$W" dirapp "Library/Application Support/dirapp"; set_allow "$W" alpha dirapp
+   run_apps backup || exit 1
+   mkdir -p "$W/home/Library/Application Support/dirapp"
+   ln -s "$ROOT_DIR/bin" "$W/home/Library/Application Support/dirapp/a
+b"
+   out=$(run_apps restore 2>&1); rc=$?
+   [ "$rc" -ne 0 ] && printf "%s\n" "$out" | grep -q "dotfiles repo" && [ "$(mackup_calls restore)" -eq 0 ]'
+t "R18m" "a regular file whose name contains a newline is refused (the manifest cannot list it), never silently passed" \
+  'W=$(newenv); add_app "$W" dirapp "Library/Application Support/dirapp"; set_allow "$W" alpha dirapp
+   run_apps backup || exit 1
+   mkdir -p "$W/home/Library/Application Support/dirapp"; printf x >"$W/home/Library/Application Support/dirapp/a
+b"
+   run_apps restore >/dev/null 2>&1; rc=$?
+   [ "$rc" -ne 0 ] && [ "$(mackup_calls restore)" -eq 0 ]'
 t "R19" "restore takes the lock too" \
   'W=$(newenv); run_apps backup && mkdir -p "$(lock_dir)" && refused "lock" restore'
 t "R20" "on a fresh Mac (nothing local yet) restore works and needs no rescue copy" \
