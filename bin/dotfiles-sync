@@ -849,25 +849,37 @@ scan_vault_daily() {
 # skips in a row) skips; a failure, a timeout or shadow mode runs the job.
 
 SKIP_MAX_PATHS=30
+SKIP_HASH=""
 
 skip_upstream_facts() { # skip_upstream_facts <label> <dir>: appends to SKIP_FACTS / SKIP_WORK
-  local label="$1" dir="$2" behind ahead paths p
+  local label="$1" dir="$2" behind ahead all paths p fetch_ssh
   [ -d "$dir/.git" ] || return 0
-  git -C "$dir" fetch --quiet 2>/dev/null || true
+  # A hung network must not stall the scheduled job: bound the connect and
+  # abort a transfer that has all but stopped. A failed fetch is work: the
+  # counts below would be stale, so the gate must not judge on them.
+  fetch_ssh="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes} -o ConnectTimeout=10"
+  if ! GIT_SSH_COMMAND="$fetch_ssh" git -C "$dir" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 fetch --quiet 2>/dev/null; then
+    SKIP_WORK="${SKIP_WORK}${label} fetch failed"$'\n'
+    SKIP_FACTS="${SKIP_FACTS}${label} repo: fetch failed"$'\n'
+  fi
   behind=$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null) || behind=0
   ahead=$(git -C "$dir" rev-list --count '@{u}..HEAD' 2>/dev/null) || ahead=0
-  paths=$(git -C "$dir" diff --name-only 'HEAD..@{u}' 2>/dev/null | sed -n "1,${SKIP_MAX_PATHS}p" | paste -sd' ' -)
+  # The work scan sees the whole diff; only the copy sent as a fact is capped.
+  all=$(git -C "$dir" diff --name-only 'HEAD..@{u}' 2>/dev/null)
+  paths=$(printf '%s\n' "$all" | sed -n "1,${SKIP_MAX_PATHS}p" | paste -sd' ' -)
   SKIP_FACTS="${SKIP_FACTS}${label} repo: upstream commits since last run: ${behind}; unpushed commits: ${ahead}"$'\n'
   [ -n "$paths" ] && SKIP_FACTS="${SKIP_FACTS}${label} repo: paths touched upstream: ${paths}"$'\n'
   [ "$ahead" -gt 0 ] && SKIP_WORK="${SKIP_WORK}${label} repo has unpushed commits"$'\n'
-  for p in $paths; do
+  while IFS= read -r p; do
     case "$p" in
       Brewfile* | config/mise/* | *.lock | *lock*.json | packages/* | claude/* | codex/* | secrets.age)
         SKIP_WORK="${SKIP_WORK}upstream ${label} commits touch ${p}"$'\n'
         break
         ;;
     esac
-  done
+  done <<EOF
+$all
+EOF
 }
 
 skip_lock_hash() {
@@ -886,7 +898,7 @@ skip_gate() {
   SKIP_FACTS="${SKIP_FACTS}lockfile hash changed since last run: $([ "$hash" = "$prev" ] && echo no || echo yes)"$'\n'
   [ "$hash" = "$prev" ] || SKIP_WORK="${SKIP_WORK}lockfiles changed or first run"$'\n'
   [ -s "$PENDING_FILE" ] && SKIP_WORK="${SKIP_WORK}pending actions from an earlier run"$'\n'
-  mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "$hash" >"$STATE_DIR/skip-sync.lockhash" 2>/dev/null
+  SKIP_HASH="$hash" # stamped by main, and only after a run that succeeded
   w=$(printf '%s' "$SKIP_WORK" | sed -n 1p)
   if [ -n "$w" ]; then
     out=$(printf '%s' "$SKIP_FACTS" | JEV_SCHEDULED=1 "$JEV_BIN" skip sync --work "$w" 2>/dev/null) || return 0
@@ -948,15 +960,17 @@ main() {
       return 2
       ;;
   esac
+  # setup_scheduled sets the scheduled GIT_SSH_COMMAND (BatchMode); either way
+  # it is exported before the gate, whose fetch needs it too. A first-seen
+  # GitHub host key must not stop a fetch at a prompt.
+  [ "$SCHEDULED" -eq 1 ] && setup_scheduled
+  export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}"
   if [ "$SCHEDULED" -eq 1 ]; then
-    setup_scheduled
     skip_gate || {
       say "=== skipped (Jev gate)"
       return 0
     }
   fi
-  # A first-seen GitHub host key must not stop a fetch at a prompt.
-  export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}"
 
   if [ -d "$DOTFILES_DIR/.git" ]; then
     repo_sync public "$DOTFILES_DIR"
@@ -978,6 +992,9 @@ main() {
 
   if [ "$SCHEDULED" -eq 1 ]; then
     [ -n "$ATTN" ] && notify
+    if [ "$FAILED" -eq 0 ] && [ -n "$SKIP_HASH" ]; then
+      mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "$SKIP_HASH" >"$STATE_DIR/skip-sync.lockhash" 2>/dev/null
+    fi
     say "=== done"
     return 0
   fi
