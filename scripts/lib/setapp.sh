@@ -51,28 +51,46 @@ setapp_restart_agent() {
   sleep "${SETAPP_SETTLE:-4}"
 }
 
-# How many busy rejections the Setapp logs hold right now.
-_setapp_busy_count() {
-  local f n=0 c
+# Remember how long each Setapp log is, so only what is written after this
+# point is read. Output: one "<path>|<bytes>" line per log (names hold spaces).
+_setapp_log_snapshot() {
+  local f
   for f in "$(setapp_log_dir)"/*.log; do
     [ -f "$f" ] || continue
-    c=$(grep -c "Rejected install request.*another installation is in progress" "$f" 2>/dev/null || true)
-    n=$((n + ${c:-0}))
+    printf '%s|%s\n' "$f" "$(wc -c <"$f" | tr -d ' ')"
   done
-  printf '%s' "$n"
 }
 
-# Install one app. Returns 0 installed, 1 unknown, 2 timed out or rejected.
+# Did any log gain, since <snapshot>, a rejection for this app id? A log file
+# that is not in the snapshot (the agent restart started a new one) is read
+# from byte 0. The log prints the id in upper case.
+# Usage: _setapp_rejected <snapshot> <uuid>
+_setapp_rejected() {
+  local f off upper
+  upper=$(printf '%s' "$2" | tr 'a-f' 'A-F')
+  for f in "$(setapp_log_dir)"/*.log; do
+    [ -f "$f" ] || continue
+    off=$(printf '%s\n' "$1" | awk -F'|' -v p="$f" '$1 == p { print $2; exit }')
+    if tail -c +$((${off:-0} + 1)) "$f" 2>/dev/null |
+      grep -F "Rejected install request for appID=$upper" | grep -qF "another installation is in progress"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Install one app. Returns 0 installed, 1 unknown, 2 timed out or rejected, 3 malformed id.
 # Usage: _setapp_install_one <name>
 _setapp_install_one() {
   local name="$1" id attempt=0 base waited result
   local timeout="${SETAPP_TIMEOUT:-300}" poll="${SETAPP_POLL:-3}" app
   app="$(setapp_apps_dir)/$name.app"
   id=$(setapp_uuid "$name") || return 1
+  printf '%s' "$id" | grep -qE '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' || return 3
   while [ "$attempt" -lt 3 ]; do
     attempt=$((attempt + 1))
     setapp_restart_agent
-    base=$(_setapp_busy_count)
+    base=$(_setapp_log_snapshot)
     open "setapp://install?app_id=$id"
     action "Setapp: click Install in the alert for $name"
     # Seconds are counted in whole poll steps; awk does the float arithmetic
@@ -84,7 +102,7 @@ _setapp_install_one() {
         result=ok
         break
       fi
-      if [ "$(_setapp_busy_count)" -gt "$base" ]; then
+      if _setapp_rejected "$base" "$id"; then
         result=busy
         break
       fi
@@ -109,12 +127,19 @@ _setapp_install_one() {
 # (newline separated), for the caller.
 # Usage: setapp_install_list <name>...
 setapp_install_list() {
-  local name rc=0 r
+  local name rc=0 r stopped=0
   SETAPP_INSTALLED=""
   for name in "$@"; do
     [ -n "$name" ] || continue
     if [ -d "$(setapp_apps_dir)/$name.app" ]; then
       ok "Setapp: $name already installed, skipped"
+      continue
+    fi
+    # Nobody clicking (unattended, or signed out) would otherwise cost the full
+    # SETAPP_TIMEOUT for every remaining app.
+    if [ "$stopped" = 1 ]; then
+      warn "Setapp: $name skipped: previous install was not confirmed; run \`dotfiles install --setapp\` when you can click"
+      rc=1
       continue
     fi
     r=0
@@ -129,8 +154,13 @@ setapp_install_list() {
         warn "Setapp: $name is unknown (not in the Setapp catalogue)"
         rc=1
         ;;
+      3)
+        warn "Setapp: $name has a malformed id in the catalogue, skipped"
+        rc=1
+        ;;
       *)
-        warn "Setapp: $name timed out (no install seen; run dotfiles install --setapp again)"
+        warn "Setapp: $name timed out (no install seen: nobody clicked Install, Setapp is signed out, or the app's folder name differs from its catalogue name)"
+        stopped=1
         rc=1
         ;;
     esac

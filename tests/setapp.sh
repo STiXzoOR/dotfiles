@@ -18,22 +18,20 @@ insert into ZAPP (ZNAME, ZPUBLICID) values ('Paste', x'a0a1a2a3a4a5a6a7a8a9aaaba
 insert into ZAPP (ZNAME, ZPUBLICID) values ('Spark Mail', x'10111213141516171819101112131415');
 insert into ZAPP (ZNAME, ZPUBLICID) values ('Bob''s Tool', x'20212223242526272829202122232425');
 insert into ZAPP (ZNAME, ZPUBLICID) values ('NoId', null);
+insert into ZAPP (ZNAME, ZPUBLICID) values ('Short', x'0011');
 SQL
   # open: records the link; "installs" by creating the .app unless told not to.
   cat >"$W/bin/open" <<STUB
 #!/bin/bash
 echo "open \$*" >>"$W/log"
 [ -e "$W/noinstall" ] && exit 0
-if [ -e "$W/busy-always" ]; then
-  echo "Rejected install request: another installation is in progress" >>"$W/logs/Setapp.log"
-  exit 0
-fi
-if [ -e "$W/busy-once" ]; then
-  rm -f "$W/busy-once"
-  echo "Rejected install request: another installation is in progress" >>"$W/logs/Setapp.log"
-  exit 0
-fi
 id=\${1#*app_id=}
+reject() {
+  rid=\$(cat "$W/rid" 2>/dev/null); [ -n "\$rid" ] || rid=\$(echo "\$id" | tr a-f A-F)
+  echo "2026/09/30 09:31:05:085     [com.setapp.agent.InstallAppFromURLCoordinator] Rejected install request for appID=\$rid — another installation is in progress" >>"$W/logs/com.setapp 2026-09-30--08-50-47-035.log"
+}
+if [ -e "$W/busy-always" ]; then reject; exit 0; fi
+if [ -e "$W/busy-once" ]; then rm -f "$W/busy-once"; reject; exit 0; fi
 name=\$(sqlite3 -readonly "$W/db/Apps.sqlite" "select ZNAME from ZAPP where lower(hex(ZPUBLICID)) = lower(replace('\$id','-',''))")
 [ -n "\$name" ] && mkdir -p "$W/apps/\$name.app"
 exit 0
@@ -99,7 +97,7 @@ t "S2.7" "a busy rejection in the log restarts the agent and retries the link" '
   [ "$rc" -eq 0 ] && [ -d "$W/apps/Bartender.app" ] &&
   [ "$(_count "$W/log" "^open")" -eq 2 ] && [ "$(_count "$W/log" "^launchctl")" -eq 2 ]'
 t "S2.8" "an old rejection already in the log is not mistaken for a new one" '
-  W=$(sandbox); _sa_env "$W"; echo "Rejected install request: another installation is in progress" >"$W/logs/Setapp.log"
+  W=$(sandbox); _sa_env "$W"; echo "2026/09/30 09:00:00:000     [x] Rejected install request for appID=00112233-4455-6677-8899-AABBCCDDEEFF — another installation is in progress" >"$W/logs/com.setapp 2026-09-30--08-50-47-035.log"
   _sa_run "$W" Bartender >/dev/null 2>&1; rc=$?
   [ "$rc" -eq 0 ] && [ "$(_count "$W/log" "^open")" -eq 1 ]'
 t "S2.9" "retries stop after 3 tries and the app is reported failed" '
@@ -119,6 +117,28 @@ t "S2.12" "installed apps are remembered for the caller (SETAPP_INSTALLED)" '
   env PATH="$W/bin:$PATH" HOME="$W/h" DOTFILES_SETAPP_APPS_DIR="$W/apps" DOTFILES_SETAPP_DB="$W/db/Apps.sqlite" \
     DOTFILES_SETAPP_LOG_DIR="$W/logs" SETAPP_POLL=0.1 SETAPP_SETTLE=0 \
     bash -c "source scripts/echos.sh; source scripts/lib/setapp.sh; setapp_install_list Bartender Paste >/dev/null 2>&1; [ \"\$SETAPP_INSTALLED\" = Bartender ]"'
+
+t "S2.13" "a new rejection for a different appID does not trip this app" '
+  W=$(sandbox); _sa_env "$W"; : >"$W/busy-once"; echo "0A9BA0CB-EE07-422B-B9C7-7626A5D15152" >"$W/rid"
+  out=$(SETAPP_TIMEOUT=1 _sa_run "$W" Bartender 2>&1); rc=$?
+  [ "$(_count "$W/log" "^open")" -eq 1 ] && [ "$(_count "$W/log" "^launchctl")" -eq 1 ]'
+t "S2.14" "a rejection written to a log file created after the restart is seen" '
+  W=$(sandbox); _sa_env "$W"; : >"$W/busy-once"; echo old >"$W/logs/com.setapp 2026-09-29--01-00-00-000.log"
+  _sa_run "$W" Bartender >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && [ "$(_count "$W/log" "^open")" -eq 2 ]'
+t "S2.15" "after the first timeout the remaining apps are skipped, not waited on, and the status is non-zero" '
+  W=$(sandbox); _sa_env "$W"; : >"$W/noinstall"
+  out=$(SETAPP_TIMEOUT=1 _sa_run "$W" Bartender Paste 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_count "$W/log" "^open")" -eq 1 ] &&
+  printf "%s\n" "$out" | grep -F Paste | grep -qF "previous install was not confirmed; run \`dotfiles install --setapp\` when you can click"'
+t "S2.16" "the timeout message names the folder-name mismatch" '
+  W=$(sandbox); _sa_env "$W"; : >"$W/noinstall"
+  out=$(SETAPP_TIMEOUT=1 _sa_run "$W" Bartender 2>&1)
+  printf "%s\n" "$out" | grep -qF "the app'"'"'s folder name differs from its catalogue name"'
+t "S2.17" "a malformed id in the catalogue is reported and never opened" '
+  W=$(sandbox); _sa_env "$W"
+  out=$(_sa_run "$W" Short Bartender 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_count "$W/log" "^open")" -eq 1 ] && printf "%s\n" "$out" | grep -qi "malformed.*Short\|Short.*malformed"'
 
 section "S3 -- readiness and the install step"
 _sa_list() { # _sa_list <W> <names...> -- a repo copy with its own packages/setapp.list
