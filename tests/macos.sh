@@ -718,10 +718,16 @@ t "G5.11" "the VS Code installer links keybindings.json beside settings.json" '
   W=$(_g_env) && mkdir -p "$W/df/apps/vscode" && echo "{}" >"$W/df/apps/vscode/settings.json" && echo "[]" >"$W/df/apps/vscode/keybindings.json" &&
   _g_run "$W" defaults-vscode.sh &&
   [ -L "$W/home/Library/Application Support/Code/User/keybindings.json" ] && [ -L "$W/home/Library/Application Support/Code/User/settings.json" ]'
+# Stowed from a copy of the tracked files only: on a Mac logged in to gh, the
+# gitignored config/gh/hosts.yml sits in the checkout (~/.config/gh is folded
+# into it), and it would be stowed from there although the repo never ships it.
 t "G5.12" "config/atuin and config/gh stow into a sandbox ~/.config, and hosts.yml is not part of it" \
   '! command -v stow >/dev/null 2>&1 || {
-     W=$(sandbox) && mkdir -p "$W/xdg" &&
-     stow -d "$ROOT_DIR" -t "$W/xdg" config >/dev/null 2>&1 &&
+     W=$(sandbox) && mkdir -p "$W/xdg" "$W/repo" &&
+     (cd "$ROOT_DIR" && git ls-files config | while IFS= read -r f; do
+        mkdir -p "$W/repo/$(dirname "$f")" && cp "$f" "$W/repo/$f" || exit 1
+      done) &&
+     stow -d "$W/repo" -t "$W/xdg" config >/dev/null 2>&1 &&
      [ -f "$W/xdg/atuin/config.toml" ] && [ -f "$W/xdg/gh/config.yml" ] && [ ! -e "$W/xdg/gh/hosts.yml" ]
    }'
 
