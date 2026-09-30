@@ -666,4 +666,54 @@ t "A1.5" "no StandardOutPath or StandardErrorPath (the script logs itself under 
 t "A1.6" "the plist carries no absolute home path" \
   '[ "$(grep -c "/Users/" "$PLIST")" -eq 0 ]'
 
+
+#############################################################################
+section "G -- Jev skip gate in the scheduled run (Task 15)"
+#############################################################################
+# gate_env <W> <answer line>: a stub dotfiles-jev that logs its argv and
+# answers the gate; the lock hash is primed so only a real fact counts as work.
+gate_env() {
+  local w="$1"
+  printf '#!/bin/bash\nprintf "%%s\\n" "$*" >>"$STUB_LOG.jev"\nprintf "%%s\\n" "$STUB_GATE"\n' >"$w/bin/jev-stub"; chmod +x "$w/bin/jev-stub"
+  mkdir -p "$w/home/.local/state/dotfiles"
+  printf '' | shasum | cut -d' ' -f1 >"$w/home/.local/state/dotfiles/skip-sync.lockhash"
+}
+gsyn() { SYNENV="DOTFILES_JEV=shadow DOTFILES_JEV_BIN=$W/bin/jev-stub STUB_GATE=$1" syn --scheduled; }
+jevlog() { command cat "$W/log.jev" 2>/dev/null; }
+
+t "G1" "SKIP from the gate ends the scheduled run before any git work" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub README.md new
+  gsyn SKIP_low >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && [ "$(_head pub)" != "$(_remote pub)" ] && [ "$(_calls "^stow")" -eq 0 ] &&
+  [ "$(jevlog | grep -c "^skip sync$")" -eq 1 ] &&
+  [ "$(grep -c "skipped (Jev gate)" "$W/home/Library/Logs/dotfiles-sync.log")" -eq 1 ]'
+t "G2" "RUN from the gate does the work as before" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub README.md new
+  gsyn RUN_shadow >/dev/null 2>&1; [ "$(_head pub)" = "$(_remote pub)" ]'
+t "G3" "upstream touching a package list is a deterministic fact, passed as --work" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub Brewfile "brew \"jq\""
+  gsyn RUN_x >/dev/null 2>&1
+  [ "$(jevlog | grep -c -- "--work upstream public commits touch Brewfile")" -eq 1 ]'
+t "G4" "unpushed commits are deterministic work too" '
+  W=$(senv); gate_env "$W"; git -C "$W/pub" commit -q --allow-empty -m local
+  gsyn RUN_x >/dev/null 2>&1; [ "$(jevlog | grep -c -- "--work public repo has unpushed commits")" -eq 1 ]'
+t "G5" "a first run (no lock hash yet) is work" '
+  W=$(senv); gate_env "$W"; command rm -f "$W/home/.local/state/dotfiles/skip-sync.lockhash"
+  gsyn RUN_x >/dev/null 2>&1; [ "$(jevlog | grep -c -- "--work lockfiles changed or first run")" -eq 1 ]'
+t "G6" "quiet upstream, primed hash: no --work; the facts carry the upstream counts" '
+  W=$(senv); gate_env "$W"; gsyn RUN_x >/dev/null 2>&1
+  [ "$(jevlog | grep -c -- "--work")" -eq 0 ] && [ "$(jevlog | grep -c "^skip sync$")" -eq 1 ]'
+t "G7" "an interactive run never asks the gate" '
+  W=$(senv); gate_env "$W"; SYNENV="DOTFILES_JEV=shadow DOTFILES_JEV_BIN=$W/bin/jev-stub STUB_GATE=SKIP" syn >/dev/null 2>&1
+  [ "$(jevlog | grep -c .)" -eq 0 ]'
+t "G8" "master switch off: the gate is never asked, the run proceeds" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub README.md new
+  SYNENV="DOTFILES_JEV=off DOTFILES_JEV_BIN=$W/bin/jev-stub STUB_GATE=SKIP" syn --scheduled >/dev/null 2>&1
+  [ "$(jevlog | grep -c .)" -eq 0 ] && [ "$(_head pub)" = "$(_remote pub)" ]'
+t "G9" "a gate that fails runs the job (fail open)" '
+  W=$(senv); gate_env "$W"; push_change "$W" pub README.md new
+  printf "#!/bin/bash\nexit 3\n" >"$W/bin/jev-stub"
+  SYNENV="DOTFILES_JEV=shadow DOTFILES_JEV_BIN=$W/bin/jev-stub" syn --scheduled >/dev/null 2>&1
+  [ "$(_head pub)" = "$(_remote pub)" ]'
+
 finish

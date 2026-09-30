@@ -1,0 +1,1 @@
+{"model":"jev-1.13.0","answers":{"i1":{"type":"choice","choice":"backup","confidence":0.9,"probabilities":{"backup":0.9,"own-sync":0.06,"not-worth-it":0.04}}},"usage":{"input_tokens":120,"output_tokens":4}}

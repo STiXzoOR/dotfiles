@@ -1,0 +1,9 @@
+{"id": "a01", "label": "backup", "state": "app: Example Editor\nmackup supports it: yes\nprefs paths: Library/Application Support/Example Editor/settings.json, keybindings.json\nbuild: direct download\nprefs in sandbox container: no\nnote: hand-tuned keybindings"}
+{"id": "a02", "label": "backup", "state": "app: Example Terminal\nmackup supports it: yes\nprefs paths: Library/Preferences/com.example.terminal.plist\nbuild: direct download\nprefs in sandbox container: no"}
+{"id": "a03", "label": "backup", "state": "app: Example Notes Pro\nmackup supports it: yes\nprefs paths: .examplenotes/config.json\nbuild: direct download\nprefs in sandbox container: no"}
+{"id": "a04", "label": "own-sync", "state": "app: Example Password Vault\nmackup supports it: yes\nprefs paths: Library/Preferences/com.example.vault.plist\nbuild: direct download\nnote: the app syncs its own settings through its own account"}
+{"id": "a05", "label": "own-sync", "state": "app: Example Browser\nmackup supports it: yes\nprefs paths: Library/Application Support/Example Browser\nbuild: direct download\nnote: signed-in profile sync built in"}
+{"id": "a06", "label": "own-sync", "state": "app: Example Clipboard\nmackup supports it: yes\nprefs paths: Library/Preferences/com.example.clipboard.plist\nbuild: Mac App Store\nnote: syncs through iCloud itself"}
+{"id": "a07", "label": "not-worth-it", "state": "app: Example Calculator\nmackup supports it: yes\nprefs paths: Library/Preferences/com.example.calc.plist\nbuild: Mac App Store\nnote: no settings worth keeping"}
+{"id": "a08", "label": "not-worth-it", "state": "app: Example Trial Game\nmackup supports it: yes\nprefs paths: Library/Preferences/com.example.game.plist\nbuild: Setapp\nprefs in sandbox container: yes\nnote: opened once"}
+{"id": "a09", "label": "not-worth-it", "state": "app: Example Updater\nmackup supports it: yes\nprefs paths: Library/Caches/com.example.updater\nbuild: direct download\nnote: only caches"}
