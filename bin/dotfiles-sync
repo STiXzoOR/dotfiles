@@ -477,6 +477,7 @@ DRIFT_PKG=""   # "key<TAB>facts" per undeclared package
 DRIFT_LINES="" # "key<TAB>line<TAB>display" per package; line is "-" when unsafe to write
 DRIFT_PKG_N=0
 DRIFT_MAX="${JEV_DRIFT_MAX_ITEMS:-40}"
+SHADOW_MAX=10
 DRIFT_HEADER=0
 DRIFT_SUGGESTED=0
 DRIFT_ABORT=0
@@ -489,6 +490,10 @@ drift_jev_setup() {
   DRIFT_MODE=$(jev_mode drift)
   [ "$DRIFT_MODE" = off ] && return 0
   [ -x "$JEV_BIN" ] || return 0
+  # No key: every request would fail, so gather nothing.
+  jev_key >/dev/null 2>&1 || return 0
+  # Shadow results are never shown: keep the fact gathering small.
+  if [ "$DRIFT_MODE" = shadow ] && [ "$DRIFT_MAX" -gt "$SHADOW_MAX" ]; then DRIFT_MAX=$SHADOW_MAX; fi
   DRIFT_JEV=1
 }
 
@@ -600,8 +605,8 @@ strict_answer() {
       STRICT_FD_OPEN=1
     fi
     read -r a <&4 || return 2
-  elif [ -t 0 ]; then
-    read -r -p "$1 [y|N] " a || return 2
+  elif have_terminal; then
+    read -r -p "$1 [y|N] " a <&5 || return 2
   else
     return 2
   fi
@@ -611,6 +616,11 @@ strict_answer() {
   esac
   return 2
 }
+
+# have_terminal: fd 5 is the terminal captured at the start of an interactive
+# run. The prompts sit inside `while read ... <<EOF` loops, where stdin is the
+# heredoc, so they must read the captured fd. A scheduled run never has one.
+have_terminal() { [ -t 5 ] 2>/dev/null; }
 
 scripted_answers_ok() {
   local root="${DOTFILES_TEST_SANDBOX:-}" f="${DOTFILES_STRICT_ANSWERS:-}"
@@ -921,7 +931,7 @@ apps_offer() {
   esac
   [ "$SCHEDULED" -eq 1 ] && return 0
   # No terminal and no seam means nobody answered: that is not a "no".
-  [ -t 0 ] || scripted_answers_ok || return 0
+  have_terminal || scripted_answers_ok || return 0
   case "$choice" in
     backup) strict_answer "Will you add $name to the mackup allowlist? (no: stop suggesting it)" ;;
     *) strict_answer "Agree? Stop suggesting $name" ;;
@@ -959,6 +969,8 @@ jev_apps() {
   APPS_MODE=$(jev_mode apps)
   [ "$APPS_MODE" = off ] && return 0
   [ -x "$JEV_BIN" ] && [ -x "$APPS_BIN" ] || return 0
+  jev_key >/dev/null 2>&1 || return 0
+  if [ "$APPS_MODE" = shadow ] && [ "$APPS_MAX" -gt "$SHADOW_MAX" ]; then APPS_MAX=$SHADOW_MAX; fi
   apps_gather || return 0
   jev_init || return 0
   apps_ask
@@ -986,7 +998,7 @@ EOF
 # scan_vault_daily: scheduled runs only, once per calendar day (the stamp is
 # written only when the scan actually ran, so a failed one is retried).
 scan_vault_daily() {
-  local dir today out rc hits n first
+  local dir today out rc hits n first outf pid waited limit timedout=0
   dir="${DOTFILES_VAULT_DIR:-$HOME/Vault}/Claude-Sessions"
   say "== vault scan: $dir"
   if [ ! -d "$dir" ]; then
@@ -998,9 +1010,32 @@ scan_vault_daily() {
     say "  already scanned today"
     return 0
   fi
-  out=$(JEV_SCHEDULED=1 "$JEV_BIN" scan-vault "$dir" 2>&1)
+  # Dataless iCloud files can block a listing under launchd: bound the scan.
+  # A background job and a kill of its recorded pid (no `timeout` on macOS).
+  limit="${DOTFILES_VAULT_SCAN_TIMEOUT:-300}"
+  outf=$(mktemp "${TMPDIR:-/tmp}/sync-vault.XXXXXX") || { attn "vault scan could not run (no temp file)"; return 0; }
+  JEV_SCHEDULED=1 "$JEV_BIN" scan-vault "$dir" >"$outf" 2>&1 &
+  pid=$!
+  waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$limit" ]; then
+      pkill -P "$pid" 2>/dev/null
+      kill "$pid" 2>/dev/null
+      timedout=1
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$pid" 2>/dev/null
   rc=$?
+  out=$(cat "$outf")
+  rm -f "$outf"
   printf '%s\n' "$out" | sed 's/^/  /'
+  if [ "$timedout" -eq 1 ]; then
+    attn "vault scan timed out after ${limit}s (see the log)"
+    return 0
+  fi
   if [ "$rc" -gt 1 ]; then
     attn "vault scan could not run (exit $rc; see the log)"
     return 0
@@ -1042,7 +1077,7 @@ skip_upstream_facts() { # skip_upstream_facts <label> <dir>: appends to SKIP_FAC
   # A hung network must not stall the scheduled job: bound the connect and
   # abort a transfer that has all but stopped. A failed fetch is work: the
   # counts below would be stale, so the gate must not judge on them.
-  fetch_ssh="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes} -o ConnectTimeout=10"
+  fetch_ssh="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes} -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2"
   if ! GIT_SSH_COMMAND="$fetch_ssh" git -C "$dir" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 fetch --quiet 2>/dev/null; then
     SKIP_WORK="${SKIP_WORK}${label} fetch failed"$'\n'
     SKIP_FACTS="${SKIP_FACTS}${label} repo: fetch failed"$'\n'
@@ -1053,18 +1088,25 @@ skip_upstream_facts() { # skip_upstream_facts <label> <dir>: appends to SKIP_FAC
   all=$(git -C "$dir" diff --name-only 'HEAD..@{u}' 2>/dev/null)
   paths=$(printf '%s\n' "$all" | sed -n "1,${SKIP_MAX_PATHS}p" | paste -sd' ' -)
   SKIP_FACTS="${SKIP_FACTS}${label} repo: upstream commits since last run: ${behind}; unpushed commits: ${ahead}"$'\n'
-  [ -n "$paths" ] && SKIP_FACTS="${SKIP_FACTS}${label} repo: paths touched upstream: ${paths}"$'\n'
+  # Private file names can name clients or hosts: only the public repo's paths
+  # leave the machine.
+  [ -n "$paths" ] && [ "$label" = public ] && SKIP_FACTS="${SKIP_FACTS}${label} repo: paths touched upstream: ${paths}"$'\n'
   [ "$ahead" -gt 0 ] && SKIP_WORK="${SKIP_WORK}${label} repo has unpushed commits"$'\n'
   while IFS= read -r p; do
     case "$p" in
       Brewfile* | config/mise/* | *.lock | *lock*.json | packages/* | claude/* | codex/* | secrets.age)
-        SKIP_WORK="${SKIP_WORK}upstream ${label} commits touch ${p}"$'\n'
+        if [ "$label" = public ]; then
+          SKIP_WORK="${SKIP_WORK}upstream ${label} commits touch ${p}"$'\n'
+        else
+          SKIP_WORK="${SKIP_WORK}upstream ${label} commits touch a package list, lockfile, claude/, codex/ or secrets"$'\n'
+        fi
         break
         ;;
     esac
   done <<EOF
 $all
 EOF
+  [ "$behind" -gt 0 ] && SKIP_WORK="${SKIP_WORK}${label} repo is behind upstream"$'\n'
 }
 
 skip_lock_hash() {
@@ -1076,6 +1118,7 @@ skip_gate() {
   SKIP_FACTS="" SKIP_WORK=""
   [ -x "$JEV_BIN" ] || return 0
   [ "$(jev_mode skip)" = off ] && return 0
+  jev_key >/dev/null 2>&1 || return 0
   skip_upstream_facts public "$DOTFILES_DIR"
   skip_upstream_facts private "$PRIVATE_DIR"
   hash=$(skip_lock_hash)
@@ -1149,6 +1192,8 @@ main() {
   # it is exported before the gate, whose fetch needs it too. A first-seen
   # GitHub host key must not stop a fetch at a prompt.
   [ "$SCHEDULED" -eq 1 ] && setup_scheduled
+  # Interactive: keep the terminal for the strict prompts (see have_terminal).
+  if [ "$SCHEDULED" -eq 0 ] && [ -t 0 ]; then exec 5<&0; fi
   export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}"
   if [ "$SCHEDULED" -eq 1 ]; then
     skip_gate || {

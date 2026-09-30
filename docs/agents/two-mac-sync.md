@@ -100,7 +100,12 @@ sync only reports the change and never imports.
    snapshot and the unmanaged `~/.config` directories are also classified in one
    batched request per kind; `on` mode offers the pre-filled line behind a
    strict prompt (a terminal and a typed y), `shadow` only logs, and nothing is ever written or committed without
-   you (see [jev.md](jev.md)).
+   you (see [jev.md](jev.md)). The prompt reads the terminal captured when an
+   interactive run starts (the offers sit inside loops whose stdin is not the
+   terminal); a scheduled run has none and never prompts. With no API key the
+   Jev steps (drift, apps, the skip gate) do nothing at all: one Keychain probe,
+   no fact gathering, no fetch. In `shadow` mode at most 10 items are gathered
+   per request, since its answers are never shown.
 
 5. **Scheduled runs only**, once a day: `dotfiles jev scan-vault` over the vault's
    `Claude-Sessions/` notes, which sync through iCloud (a token pasted into a
@@ -109,7 +114,21 @@ sync only reports the change and never imports.
    It is report-only, so nothing in the vault is edited, moved or deleted. A day
    stamp (`~/.local/state/dotfiles/vault-scan-last`) keeps it to one scan a day; a
    scan that could not run is notified and retried the next run. No vault folder
-   means nothing to scan.
+   means nothing to scan. The scan is bounded: dataless iCloud files can block a
+   listing under launchd, so it runs as a background job that is killed after 300 s
+   (`DOTFILES_VAULT_SCAN_TIMEOUT` overrides). A timeout, or any exit other than 0
+   (clean) and 1 (hits), is notified and leaves no day stamp; the notification and
+   the lock-hash stamp still happen.
+6. **Scheduled runs only**, before the work: the skip gate (`dotfiles-jev skip
+   sync`, when the `skip` point is not `off` and a key exists). Facts are computed
+   here: upstream commit counts, the paths a **public** upstream commit touches
+   (the private repo contributes a count only, because private file names can name
+   clients or hosts), the lockfile hash. Work that is certain is passed as
+   `--work` and always runs, with no judgement call: a fetch that failed, unpushed
+   commits, either repo behind its upstream, upstream touching a package list, the
+   lockfiles, `claude/`, `codex/` or `secrets.age`, pending actions, a first run.
+   The gate's fetch uses `ConnectTimeout=10` and ssh keepalives
+   (`ServerAliveInterval=15`, `ServerAliveCountMax=2`).
 
 **Interactively**, step 3 asks (`confirm`) before each action. **Scheduled**
 (`--scheduled`) it logs to `~/Library/Logs/dotfiles-sync.log`, never prompts,
