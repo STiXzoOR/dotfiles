@@ -64,7 +64,7 @@ t "E2.6" "hook paths are not hardcoded to ~/.claude/skills" '! grep -q "\.claude
 t "E2.7" "qmd package name is scoped"                 '! grep -q "add .qmd. to packages" scripts/install_claude.sh && grep -q "@tobilu/qmd" scripts/install_claude.sh'
 t "E2.8" "plugins.list marketplace ids match marketplaces.list names" '(for m in $(grep -v "^#" claude/plugins.list | grep -v "^$" | sed "s/.*@//" | sort -u); do grep -q "$m" claude/marketplaces.list || exit 1; done)'
 t "E2.9" "install script has a --lib mode for tests" 'grep -q -- "--lib" scripts/install_claude.sh'
-t "E2.10" "channel pinned to stable with a version floor" 'jq -e ".autoUpdatesChannel == \"stable\" and (.minimumVersion|type) == \"string\"" claude/settings.template.json >/dev/null'
+t "E2.10" "channel pinned to latest with a version floor" 'jq -e ".autoUpdatesChannel == \"latest\" and (.minimumVersion|type) == \"string\"" claude/settings.template.json >/dev/null'
 t "E2.11" "binary is verified against the signed manifest" 'grep -q "manifest.json.sig" scripts/install_claude.sh && grep -q "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE" scripts/install_claude.sh'
 
 # main() used to call install_claude_binary, merge_settings and
