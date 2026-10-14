@@ -45,6 +45,9 @@ These affect nearly every task.
   `config/starship/`), sourced from `.zshrc` for rich terminals only; prezto's
   own theme is off. `system/.term_host` sorts shells into warp, rich and dumb,
   and Warp shells load no prompt and no line-editor plugins.
+- **Terminals**: Warp is the main terminal. Ghostty and cmux (Ghostty's engine
+  with an agent sidebar) both read the stowed `config/ghostty/config` and count
+  as rich. Claude Code draws inline images only in them, and never under tmux.
 - **mise, not NVM or FNM**: Node, Python-for-tooling, pnpm/yarn/uv and every
   CLI that used to be an `npm i -g` are declared in `config/mise/config.toml`
   and pinned in `config/mise/mise.lock`. Use `require_mise()` and

@@ -22,6 +22,7 @@ tap "goreleaser/tap"                # goreleaser
 tap "runpod/runpodctl"              # runpodctl
 tap "timescam/tap"                  # pay-respects
 tap "artginzburg/tap"               # sudo-touchid
+tap "manaflow-ai/cmux"              # cmux
 
 # ============================================================================
 # CLI Utilities
@@ -238,6 +239,10 @@ cask "apparency"
 
 # Terminal
 cask "warp"
+# Ghostty and cmux (a Ghostty-based terminal with an agent sidebar) share
+# config/ghostty/config. Both draw Claude Code's inline images as real pixels.
+cask "ghostty"
+cask "manaflow-ai/cmux/cmux"
 
 # Fonts
 cask "font-awesome-terminal-fonts"

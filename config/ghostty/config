@@ -1,0 +1,66 @@
+# Ghostty, stowed to ~/.config/ghostty/config.
+#
+# cmux renders with Ghostty's engine and reads this file too, so it sets the
+# terminal for both apps; keys one app has no use for are ignored there.
+# Only settings that differ from Ghostty's defaults are here:
+#   ghostty +show-config --default --docs   lists every key and its default.
+# Reload with cmd+shift+, in Ghostty, or `cmux reload-config`.
+
+# --- Look: follows Warp (apps/warp/settings.toml) --------------------------
+
+# Nord, as in Warp, Terminal.app, Starship and dir_colors.
+theme = Nord
+
+# Warp's cursor: a blinking bar, not Ghostty's block.
+cursor-style = bar
+cursor-style-blink = true
+
+# Hack is Warp's font; the Nerd Font build carries the prompt's icons.
+# Warp draws 13 pt at 90% zoom, about 12 pt here.
+font-family = Hack Nerd Font Mono
+font-size = 12
+adjust-cell-height = 10%
+
+# Room around the text (the default is 2 px), split evenly when the window
+# size is not a whole number of cells.
+window-padding-x = 10
+window-padding-y = 8
+window-padding-balance = true
+
+# Dim the panes you are not typing in a little, as Warp does (the default,
+# 0.7, dims them hard).
+unfocused-split-opacity = 0.85
+
+mouse-hide-while-typing = true
+
+# Tabs in the title bar (Ghostty only; cmux draws its own window).
+macos-titlebar-style = tabs
+
+# --- Behaviour ------------------------------------------------------------
+
+# On top of the default cursor, title and path integration: keep it in sudo
+# shells, and take TERM=xterm-ghostty and its terminfo along over ssh, so a
+# remote host that has never heard of Ghostty still draws properly.
+shell-integration-features = sudo,ssh-env,ssh-terminfo
+
+# Left Option is Alt (word jumps in the shell and in Claude Code's prompt);
+# right Option still types characters such as é and ∑.
+macos-option-as-alt = left
+
+# Bring every window, tab and split back after a quit, not only a crash.
+window-save-state = always
+
+# 100 MB of scrollback per terminal (counted in bytes; the default is 10 MB),
+# so a long agent transcript stays scrollable.
+scrollback-limit = 100000000
+
+# A desktop notification when a command that ran 30 s or more ends while you
+# look elsewhere (builds, tests), Warp's long-running threshold. Claude Code
+# sends its own after each turn.
+notify-on-command-finish = unfocused
+notify-on-command-finish-action = no-bell,notify
+notify-on-command-finish-after = 30s
+
+# Ghostty's drop-down quick terminal from any app, for a one-off agent task.
+# ctrl+` stays VS Code's terminal toggle. Ghostty asks for Accessibility once.
+keybind = global:ctrl+cmd+grave_accent=toggle_quick_terminal

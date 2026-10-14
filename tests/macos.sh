@@ -1146,4 +1146,33 @@ t "G15.13" "a launcher in machine.local.sh still behaves (raycast: Tinycast unto
 t "G15.14" "the environment launcher still beats machine.local.sh" '
   W=$(_g_env); printf "DOTFILES_LAUNCHER=raycast\n" >"$W/df/macos/machine.local.sh"; _g_run "$W" defaults.sh DOTFILES_LAUNCHER=tinycast; [ "$(_logcount "$W" "com.tinycast.app")" -ge 1 ]'
 
+#############################################################################
+section "G16 -- Ghostty and cmux share one terminal config"
+#############################################################################
+# cmux renders with libghostty and reads ~/.config/ghostty/config too, so the
+# one stowed file sets the terminal for both apps.
+t "G16.1" "the Ghostty config sets SSH terminfo, left Option as Alt and a quick terminal" \
+  'f=config/ghostty/config && grep -q "^shell-integration-features = .*ssh-terminfo" "$f" &&
+   grep -q "^macos-option-as-alt = left$" "$f" && grep -q "^keybind = global:.*=toggle_quick_terminal$" "$f"'
+# The look follows Warp's (apps/warp/settings.toml): Nord always, a blinking bar
+# cursor, Hack (Warp's font), and padding around the text.
+t "G16.5" "the Ghostty config matches Warp's look: Nord, a blinking bar cursor, Hack, padding" \
+  'f=config/ghostty/config && grep -q "^theme = Nord$" "$f" &&
+   grep -q "^cursor-style = bar$" "$f" && grep -q "^cursor-style-blink = true$" "$f" &&
+   grep -q "^font-family = Hack Nerd Font Mono$" "$f" && grep -q "^window-padding-x = " "$f"'
+# Ghostty's CLI lives inside the app bundle; the check skips where it is not installed (CI).
+t "G16.2" "the Ghostty config passes ghostty +validate-config where Ghostty is installed" \
+  'g=$(command -v ghostty || echo /Applications/Ghostty.app/Contents/MacOS/ghostty)
+   [ ! -x "$g" ] || "$g" +validate-config --config-file="$ROOT_DIR/config/ghostty/config" </dev/null >/dev/null 2>&1'
+t "G16.3" "config/ghostty stows into a sandbox ~/.config/ghostty" \
+  '! command -v stow >/dev/null 2>&1 || {
+     W=$(sandbox) && mkdir -p "$W/xdg" "$W/repo" &&
+     (cd "$ROOT_DIR" && git ls-files --cached --others --exclude-standard config/ghostty | while IFS= read -r f; do
+        mkdir -p "$W/repo/$(dirname "$f")" && cp "$f" "$W/repo/$f" || exit 1
+      done) &&
+     stow -d "$W/repo" -t "$W/xdg" config >/dev/null 2>&1 && [ -f "$W/xdg/ghostty/config" ]
+   }'
+t "G16.4" "dotfiles doctor checks that ~/.config/ghostty is linked" \
+  'grep -qE "config_dirs=\(.*\"ghostty\"" bin/dotfiles-doctor'
+
 finish
