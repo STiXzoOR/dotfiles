@@ -171,6 +171,9 @@ t "D6.14" ".idea (a directory) and .superpowers (a directory or a symlink) are i
   'W=$(sandbox) && git init -q "$W" && cp .gitignore "$W/.gitignore" && mkdir "$W/.idea" && ln -s "$W" "$W/.superpowers" &&
    git -C "$W" -c core.excludesFile=/dev/null check-ignore -q .idea/x && git -C "$W" -c core.excludesFile=/dev/null check-ignore -q .superpowers &&
    rm "$W/.superpowers" && mkdir "$W/.superpowers" && git -C "$W" -c core.excludesFile=/dev/null check-ignore -q .superpowers/x'
+t "D6.15" "Ghostty and cmux (its tap fully qualified) join Warp as terminals" \
+  'grep -q "^cask \"warp\"" Brewfile && grep -q "^cask \"ghostty\"" Brewfile &&
+   grep -q "^tap \"manaflow-ai/cmux\"" Brewfile && grep -q "^cask \"manaflow-ai/cmux/cmux\"" Brewfile'
 
 section "D4 — Neovim only"
 t "D4.1" "no setup_handlers" \

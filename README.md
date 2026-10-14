@@ -61,7 +61,7 @@ Don't you hate getting a new laptop or joining a new team and then spending a wh
 
 \\[^_^]/ - This started as [Adam Eivy](http://adameivy.com)'s MacOS shell configuration dotfiles but has grown to a multi-developer platform for machine configuration.
 
-When I finish with your machine, you will have a fully configured development environment with a modern terminal emulator (Warp) and a customizable shell prompt.
+When I finish with your machine, you will have a fully configured development environment with modern terminal emulators (Warp, plus Ghostty and cmux for agent work) and a customizable shell prompt.
 
 ![Terminal Screenshot](./resources/terminal.png)
 
@@ -81,6 +81,7 @@ Modern terminal features:
 
 - Warp: AI-powered terminal with native text editing
 - Full-screen mode: `Command + Enter`
+- Ghostty and cmux: both read `config/ghostty/config` (Nord, SSH terminfo, left Option as Alt, a `ctrl+cmd+\`` quick terminal). cmux adds a sidebar that shows which Claude Code session finished and which needs an answer, and both draw Claude Code's inline images as real pixels. Keep agent sessions out of tmux: Claude Code turns its images off there.
 
 \\[._.]/ - I'm so excited I just binaried in my pants!
 
@@ -655,6 +656,8 @@ The following is the software installed by default:
 **Terminals:**
 
 - Warp
+- Ghostty
+- cmux
 
 **Fonts:**
 
