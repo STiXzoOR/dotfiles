@@ -572,13 +572,23 @@ install_statusline() {
   # settings.template.json points statusLine at this script. It used to exist
   # only on the author's machine, so a fresh bootstrap wrote a settings file
   # referencing a file that was never installed.
-  local src="$CLAUDE_DIR/statusline.sh"
+  #
+  # A link, not a copy: `dotfiles sync` fast-forwards the repo unattended but
+  # never re-runs this bootstrap, so a copy kept the other Mac on the old
+  # status line until someone ran `install --claude` by hand.
+  local src="$CLAUDE_DIR/statusline.sh" dest="$CLAUDE_HOME/statusline.sh"
   [[ -f "$src" ]] || { warn "No statusline.sh in the repo, skipping"; return; }
 
   action "Installing status line"
-  install_file "$src" "$CLAUDE_HOME/statusline.sh"
-  chmod +x "$CLAUDE_HOME/statusline.sh"
-  ok "statusline.sh"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+    ok "statusline.sh (already linked)"
+    return 0
+  fi
+  if [[ -f "$dest" && ! -L "$dest" ]] && ! cmp -s "$src" "$dest"; then
+    cp "$dest" "$dest.bak.$(date +%s)" || return 1
+  fi
+  ln -sfn "$src" "$dest" || return 1
+  ok "statusline.sh -> $src"
 }
 
 verify_settings_refs() {

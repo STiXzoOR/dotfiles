@@ -1,0 +1,35 @@
+{
+  "defaults": {
+    "iCloudSyncEnabled": true,
+    "menuBarHidesCritters": false,
+    "menuBarLayoutV6": {
+      "lines": [
+        [
+          {
+            "icon": {}
+          },
+          {
+            "percent": {
+              "window": "weekly"
+            }
+          }
+        ]
+      ]
+    },
+    "menuBarShowsBrandIconWithPercent": true,
+    "mergeIcons": false,
+    "mergeIconsStacked": false,
+    "multiAccountMenuLayout": "stacked",
+    "terminalApp": "warp"
+  },
+  "providers": {
+    "claude": {
+      "claudeDesktopCookiesEnabled": true,
+      "cookieSource": "auto",
+      "source": "web"
+    },
+    "codex": {
+      "cookieSource": "off"
+    }
+  }
+}

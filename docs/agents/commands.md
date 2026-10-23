@@ -9,6 +9,7 @@ for the authoritative list; this page mirrors it.
 cheatsheet              # Show the aliases and functions cheatsheet
 claude                  # Inspect the installed Claude Code setup (see below)
 clean                   # Clean up caches (brew, npm, gem)
+codexbar <apply|diff|capture|check>  # CodexBar settings its iCloud sync leaves per Mac (see below)
 configure               # Configure the system (defaults, dock)
 doctor                  # Diagnose common issues
 edit                    # Open the dotfiles in $DOTFILES_IDE
@@ -107,6 +108,20 @@ how three separate P1 bugs reached `main`. `verify` executes each hook command
 under a restricted PATH with `CLAUDE_HOOK_DRY_RUN=1`, so it catches a missing
 interpreter or an unreachable binary without doing any work.
 
+## dotfiles codexbar
+
+```
+dotfiles codexbar apply     # Write apps/codexbar/settings.json into this Mac
+dotfiles codexbar diff      # Compare this Mac against it; exit 1 on drift, 2 before CodexBar's first run
+dotfiles codexbar capture   # Record this Mac into it (then review and commit)
+dotfiles codexbar check     # Validate the file against the allowlists
+```
+
+The file holds only what CodexBar's own iCloud sync leaves per Mac: provider
+data sources and menu-bar presentation. The allowlists in `bin/dotfiles-codexbar`
+are the only keys read or written, so no secret passes through. See
+[two-mac-sync.md](two-mac-sync.md#codexbar).
+
 ## Common Workflows
 
 **Add a brew, cask or MAS package**: add it to `Brewfile`, run `brew bundle install`.
@@ -127,4 +142,11 @@ line, then run `./bin/dotfiles install --hosts`.
 
 **Change a Claude Code hook, rule or the status line**: edit it under `claude/`,
 run `bash tests/claude.sh`, then `dotfiles claude diff` to see what a re-install
-would change, then `dotfiles install --claude`.
+would change, then `dotfiles install --claude`. The status line is a link into
+the repo, so an edit to it is live at once and needs no re-install.
+
+**Change a CodexBar setting on both Macs**: change it in CodexBar. If
+`dotfiles codexbar diff` then names it, it is one CodexBar keeps per Mac: run
+`dotfiles codexbar capture`, commit `apps/codexbar/settings.json`, and the other
+Mac's `dotfiles sync` offers the apply. Anything `diff` does not name travels
+through CodexBar's iCloud sync.

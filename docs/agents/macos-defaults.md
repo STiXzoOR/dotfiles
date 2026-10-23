@@ -159,6 +159,12 @@ installed) is a `skipped (not installed yet)` info line saying to re-run
   only when that file is absent or already identical (the `~` in the theme path
   is rendered to `$HOME`); an existing different file is left alone.
 - `apps/vscode/keybindings.json` is linked next to `settings.json`.
+- `defaults-codexbar.sh` runs `dotfiles codexbar apply`, which writes
+  `apps/codexbar/settings.json` (provider data sources, menu-bar layout, the
+  iCloud Sync switch) and quits and reopens CodexBar only when a preference
+  differs. Its exit 2, CodexBar never having run here, is not a failure. The
+  file carries no literal `defaults write`, so the baseline does not track it;
+  `dotfiles codexbar diff` is its drift check.
 - `config/atuin/config.toml` and `config/gh/config.yml` are stowed to
   `~/.config`. `gh`'s login lives in `hosts.yml`, which is gitignored: never
   commit it.

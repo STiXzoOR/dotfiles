@@ -28,6 +28,7 @@ any suite failed. Arguments are passed through to each suite.
 | `tests/packages.sh`        | `Brewfile`, `packages/`, `config/`                             |
 | `tests/claude.sh`          | The Claude Code bootstrap, hooks, status line, rules and docs  |
 | `tests/codex.sh`           | The Codex bootstrap (`scripts/install_codex.sh`, `codex/`)     |
+| `tests/codexbar.sh`        | `bin/dotfiles-codexbar` (sandbox config, a plist file as the defaults domain, stub app control) |
 | `tests/apps.sh`            | `dotfiles apps`, app-settings backup and restore (mackup, copy mode) |
 | `tests/mise.sh`            | mise config, the lockfile and `config/mise/locks/`             |
 | `tests/ci.sh`              | The workflows and git hooks                                    |

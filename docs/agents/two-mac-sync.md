@@ -14,6 +14,8 @@ cannot be synced safely are left manual on purpose.
 | The Obsidian vault                               | iCloud Drive; `~/Vault` is a symlink to the vault folder there               | iCloud; `dotfiles vault migrate` once |
 | App settings snapshots (mackup)                  | iCloud Drive, one folder per Mac (`dotfiles apps`, see [app-settings.md](app-settings.md)) | The daily backup agent; restore is deliberate |
 | VS Code, Warp, Paste, Brave, atuin, Raycast      | Each app's own sync                                                          | The apps                           |
+| CodexBar                                         | Its own iCloud sync for most settings; `apps/codexbar/settings.json` for what that leaves per Mac (see [CodexBar](#codexbar)) | CodexBar; `dotfiles codexbar apply`, offered by `dotfiles sync` |
+| The Claude Code status line                      | This repo: `~/.claude/statusline.sh` is a link to `claude/statusline.sh`      | `dotfiles sync` (the fast-forward is enough) |
 | Tinycast (the launcher on new Macs)              | No cloud sync: `config/tinycast/settings.json` travels through this repo; the launcher choice is per Mac in `macos/machine.local.sh`, which is never synced | `dotfiles link`; you |
 | Projects                                         | Their own git remotes                                                        | You                                |
 
@@ -93,8 +95,10 @@ sync only reports the change and never imports.
    `dotfiles private link`.
 3. The actions the change calls for: `mise install` when `config/mise/` changed;
    `brew bundle install` when a Brewfile is not satisfied; `install --claude` or
-   `--codex` when `claude/` or `codex/` changed. `secrets.age` changing is
-   reported, never applied.
+   `--codex` when `claude/` or `codex/` changed; `dotfiles codexbar apply` when
+   `apps/codexbar/` changed. `secrets.age` changing is reported, never applied.
+   When no CodexBar apply is pending, `dotfiles codexbar diff` runs read-only and
+   reports CodexBar settings changed on this Mac that the repo does not have.
 4. Drift: packages installed on this Mac (`brew leaves --installed-on-request`,
    casks, `mas list`, VS Code extensions, and the apps in `/Applications/Setapp`,
    which Jev never sees) that neither the public nor the private
@@ -117,7 +121,8 @@ sync only reports the change and never imports.
    clients or hosts), the lockfile hash. Work that is certain is passed as
    `--work` and always runs, with no judgement call: a fetch that failed, unpushed
    commits, either repo behind its upstream, upstream touching a package list, the
-   lockfiles, `claude/`, `codex/` or `secrets.age`, pending actions, a first run.
+   lockfiles, `claude/`, `codex/`, `apps/codexbar/` or `secrets.age`, pending
+   actions, a first run.
    The gate's fetch uses `ConnectTimeout=10` and ssh keepalives
    (`ServerAliveInterval=15`, `ServerAliveCountMax=2`).
 
@@ -169,13 +174,46 @@ again when the download finishes.
 5. Wait for iCloud to download the vault, then `dotfiles install --claude` again if it warned.
 6. `dotfiles apps list`, then `dotfiles apps restore --from <the other Mac>`, apps quit.
 
+## CodexBar
+
+CodexBar syncs most of itself through iCloud (Settings → iCloud Sync): the
+global preferences, which providers are on, quota warnings, accent colours and,
+when "Include API keys, cookies, and tokens" is on, end-to-end encrypted
+credentials. It keeps two kinds of setting per Mac on purpose, and
+`apps/codexbar/settings.json` carries those:
+
+- `providers`: each provider's data source (`source`, `cookieSource`,
+  `claudeDesktopCookiesEnabled`). Claude is set to Web with the Claude desktop
+  app's session. The OAuth source reads Claude Code's Keychain item, and every
+  `/login` or token refresh replaces that item and drops CodexBar's grant, so
+  background refreshes stopped silently.
+- `defaults`: the menu-bar layout and icons, the terminal it opens, and the
+  iCloud Sync switch, so a new Mac joins the sync.
+
+`dotfiles codexbar apply` writes them: provider fields into CodexBar's config
+under its own lock (it reloads the file itself), preferences with CodexBar quit
+and reopened, and only when one differs. `configure --defaults` runs it through
+`macos/defaults-codexbar.sh`, and `dotfiles sync` offers it when the file
+changes upstream. Going the other way, `dotfiles codexbar capture` records this
+Mac into the file for you to commit, and `dotfiles sync` reports when the two
+have drifted. CodexBar is not in mackup: its preferences file holds the iCloud
+Sync device id, so a restored copy would make two Macs sync as one.
+
+On a Mac where CodexBar has never run there is no config to write into yet:
+`apply` sets the preferences, says so, and exits 2. Open CodexBar once and run
+`dotfiles codexbar apply` again. The Claude desktop-app session needs CodexBar
+0.77 or later, and CodexBar and its CLI each need one "Always Allow" for the
+`Claude Safe Storage` Keychain item; the app asks only on a manual Refresh.
+
 ## What never syncs automatically
 
 - App preference files. Copy-mode snapshots are last-writer-wins, so a restore is
-  always chosen (`dotfiles apps restore --from`).
+  always chosen (`dotfiles apps restore --from`). CodexBar is the exception
+  above.
 - `secrets import` (it needs the age passphrase) and the Keychain itself.
-- `brew bundle`, `mise install` and the Claude/Codex bootstrap: the scheduled run
-  only reports them; an interactive `dotfiles sync` offers them.
+- `brew bundle`, `mise install`, the Claude/Codex bootstrap and `dotfiles
+  codexbar apply`: the scheduled run only reports them; an interactive
+  `dotfiles sync` offers them.
 - `sudo` settings: each Mac applies its own with `dotfiles configure`.
 - Commits in the private repo. `dotfiles private status` and `dotfiles sync` say when
   something is uncommitted or unpushed; committing and pushing is yours.

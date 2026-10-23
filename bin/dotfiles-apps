@@ -145,7 +145,10 @@ app_targets() {
     warp ".warp" \
     xcode "Library/Developer/Xcode/UserData/FontAndColorThemes" \
     claude ".claude" \
-    codex ".codex"
+    codex ".codex" \
+    codexbar "Library/Preferences/com.steipete.codexbar.plist" \
+    codexbar ".config/codexbar" \
+    codexbar ".codexbar"
 }
 
 # The defaults-domain listing the guard trusts. DOTFILES_APPS_BASELINE

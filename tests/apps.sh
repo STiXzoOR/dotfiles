@@ -170,6 +170,14 @@ t "G2.7c" "an apps/ target that macos/defaults-<app>.sh SYMLINKS into the repo (
      add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
      refused OVERLAP check || rc=1
    done; [ "$rc" -eq 0 ]'
+# A restored CodexBar plist carries the other Mac's iCloud Sync device id, so two
+# Macs would sync as one; apps/codexbar and CodexBar's own sync own it instead.
+t "G2.7g" "an app covering the CodexBar preferences or config is a hard failure (apps/codexbar owns them)" \
+  'W=$(newenv); rc=0
+   for p in "Library/Preferences/com.steipete.codexbar.plist" ".config/codexbar/config.json" ".codexbar/config.json"; do
+     add_app "$W" appsapp "$p"; set_allow "$W" alpha appsapp
+     refused OVERLAP check || rc=1
+   done; [ "$rc" -eq 0 ]'
 # mkdf <W> <empty>: a DOTFILES_DIR fixture whose runcom/config/macos are the
 # real ones except the named one, which is an empty directory.
 mkdf() {

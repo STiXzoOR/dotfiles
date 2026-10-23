@@ -132,8 +132,8 @@ It installs the Claude Code native binary and verifies it against Anthropic's
 signed release manifest, registers the marketplaces in `claude/marketplaces.list`,
 installs the plugins in `claude/plugins.list`, registers the MCP servers in
 `claude/mcp.list` (QMD and Blender), installs the skills in `claude/skills.list`
-(`find-docs`), copies the hooks, rules and status line from `claude/` into
-`~/.claude/`, merges `claude/settings.template.json` into `~/.claude/settings.json`,
+(`find-docs`), copies the hooks and rules from `claude/` into `~/.claude/`,
+links the status line there, merges `claude/settings.template.json` into `~/.claude/settings.json`,
 and sets up QMD over the Obsidian vault. The vault is a plain folder you bring
 over first (or the iCloud Drive vault, see [Two Macs](#two-macs)); if it is
 missing the script says so and skips it.
@@ -173,7 +173,7 @@ Where `YYYY.MM.DD.HH.MM.SS` is the timestamp of the backup you want to restore (
 
 ## Two Macs
 
-A MacBook and a Mac mini can share one setup. Dotfiles travel through git, the personal gitignored files (git identity, private profiles, work lists, private SSH hosts, the encrypted secrets export) through a private companion repo cloned to `~/.dotfiles-private`, and the Obsidian vault through iCloud Drive. Remote Login and the power settings apply to the desktop only.
+A MacBook and a Mac mini can share one setup. Dotfiles travel through git, the personal gitignored files (git identity, private profiles, work lists, private SSH hosts, the encrypted secrets export) through a private companion repo cloned to `~/.dotfiles-private`, and the Obsidian vault through iCloud Drive. CodexBar syncs itself through iCloud, and `dotfiles codexbar` carries the few settings it keeps per Mac (see [docs/agents/two-mac-sync.md](docs/agents/two-mac-sync.md#codexbar)). Remote Login and the power settings apply to the desktop only.
 
 ```shell
 ./bin/dotfiles sync                 # fetch, fast-forward what is safe, restow, offer the follow-ups, report drift

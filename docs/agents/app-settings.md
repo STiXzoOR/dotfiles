@@ -85,7 +85,6 @@ that is the owner's decision.
 | `bambu-studio` | custom: plist, `BambuStudio.conf`, `BambuNetworkEngine.conf`, `printers`, `user` (not plugins, system, ota, cache or logs) |
 | `claude-usage` | custom: `HamedElfayome.Claude-Usage.plist` |
 | `cleanmymac-setapp` | custom: the `-setapp` plist |
-| `codexbar` | custom: `com.steipete.codexbar.plist` |
 | `daisydisk` | custom: the container preferences plist |
 | `gitkraken-settings` | custom: `com.axosoft.gitkraken.plist` only (the built-in copies `~/.gitkraken`, where the dotfiles symlink the profile and theme, and a backup refuses symlinks) |
 | `istat-menus-setapp` | custom: the three `com.bjango.istatmenus-setapp*.plist` |
@@ -105,6 +104,7 @@ that is the owner's decision.
 
 - `bash`, `zsh`, `prezto`, `ruby`, `git`, `github-cli`, `mise`, `neovim`, `karabiner-elements`, `vscode`, `mackup`, `claude-code`, `codex`, `ssh`: stowed or installer-managed, a copy would replace the dotfiles' symlink.
 - `macosx`: the whole `.GlobalPreferences` is risky across macOS versions; `configure` sets the wanted keys.
+- `codexbar`: its preferences file holds the iCloud Sync device id, so a restored copy would make two Macs sync as one. CodexBar's own iCloud sync and `apps/codexbar/settings.json` (`dotfiles codexbar`) cover it; `check` now fails on any app that covers its preferences or `~/.config/codexbar`.
 - `openemu`, `proxyman`: superseded by `openemu-settings` and `proxyman-setapp`.
 - `brave`: restoring `Default/Preferences` without `Secure Preferences` trips Chromium's tracked-pref HMAC and Brave resets the settings; Brave Sync covers it.
 - `illustrator`, `photoshop`: the built-ins cover only old versions and `Application Support/Adobe/OOBE`, which holds account state and can break Adobe sign-in; replaced by `illustrator-settings` and `photoshop-settings`.

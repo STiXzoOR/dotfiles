@@ -104,6 +104,31 @@ t "E3.3" "renders without rate_limits"                'printf "{\"model\":{\"dis
 t "E3.4" "no git status walk per refresh"             '[ "$(code_of claude/statusline.sh | grep -c "status --porcelain")" -eq 0 ]'
 t "E3.5" "at most 3 jq invocations"                   '[ "$(code_of claude/statusline.sh | grep -c "jq ")" -le 3 ]'
 t "E3.6" "shellcheck clean"                           'shellcheck -e SC1090,SC1091,SC2034,SC2119,SC2154 -s bash claude/statusline.sh'
+# The live payload: resets_at is Unix epoch seconds and effort is an object.
+# Parsing resets_at as ISO 8601 dropped every reset time without an error.
+live='{"model":{"display_name":"Opus"},"workspace":{"current_dir":"/tmp"},"context_window":{"context_window_size":200000,"used_percentage":8},"effort":{"level":"xhigh"},"rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":1792774800},"seven_day":{"used_percentage":41.2,"resets_at":1793271600}}}'
+t "E3.7" "epoch resets_at renders reset times with BSD date" '[ "$(printf "%s" "$live" | PATH=/usr/bin:/bin bash claude/statusline.sh | grep -c "⟳")" -eq 2 ]'
+t "E3.8" "epoch resets_at renders reset times with GNU date first" '
+  if command -v gdate >/dev/null; then
+    W=$(sandbox); mkdir -p "$W/bin"; ln -s "$(command -v gdate)" "$W/bin/date"
+    [ "$(printf "%s" "$live" | PATH="$W/bin:/usr/bin:/bin" bash claude/statusline.sh | grep -c "⟳")" -eq 2 ]
+  fi'
+t "E3.9" "effort.level object renders its level" 'out=$(printf "%s" "$live" | bash claude/statusline.sh); echo "$out" | grep -q "● xhigh" && ! echo "$out" | grep -q "level"'
+t "E3.10" "skip-permissions parent shows the bolt" 'printf "%s" "$live" | bash -c "bash claude/statusline.sh; :" claude --dangerously-skip-permissions | grep -q "⚡"'
+t "E3.11" "no bolt without skip-permissions"          '! printf "%s" "$live" | bash -c "bash claude/statusline.sh; :" claude | grep -q "⚡"'
+# A link, not a copy: `dotfiles sync` fast-forwards the repo unattended but
+# never re-runs the bootstrap, so a copy left the other Mac on the old script.
+_install_sl() { (HOME="$1"; source scripts/install_claude.sh --lib 2>/dev/null; install_statusline >/dev/null 2>&1); }
+t "E3.13" "the status line is installed as a link into the repo" '
+  W=$(sandbox); mkdir -p "$W/.claude"; _install_sl "$W"
+  [ -L "$W/.claude/statusline.sh" ] && [ "$(readlink "$W/.claude/statusline.sh")" = "$ROOT_DIR/claude/statusline.sh" ]'
+t "E3.14" "a differing copy is backed up before the link replaces it" '
+  W=$(sandbox); mkdir -p "$W/.claude"; printf "mine\n" >"$W/.claude/statusline.sh"; _install_sl "$W"
+  [ -L "$W/.claude/statusline.sh" ] && grep -qx mine "$W"/.claude/statusline.sh.bak.*'
+t "E3.15" "re-installing over the link makes no backup" '
+  W=$(sandbox); mkdir -p "$W/.claude"; _install_sl "$W"; _install_sl "$W"
+  [ -L "$W/.claude/statusline.sh" ] && ! ls "$W/.claude" | grep -q "\.bak\."'
+t "E3.12" "extra usage reset date is inline"         'out=$(printf "{\"model\":{\"display_name\":\"X\"},\"rate_limits\":{\"extra_usage\":{\"is_enabled\":true,\"utilization\":10,\"used_credits\":500,\"monthly_limit\":5000}}}" | bash claude/statusline.sh); echo "$out" | grep "extra" | grep -q "⟳" && ! echo "$out" | grep -q "^resets"'
 
 section "E4 — rules and the drift check"
 t "E4.1" "vault-lookback names real qmd tools" '! grep -qE "qmd_search|qmd_vector_search|qmd_deep_search" claude/rules/vault-lookback.md && grep -q "multi_get" claude/rules/vault-lookback.md'
