@@ -24,10 +24,15 @@
 #
 # Payload fields used, all confirmed present in the installed CLI:
 #   model.display_name, context_window.{context_window_size,used_percentage},
-#   workspace.current_dir, cwd, cost.total_duration_ms, effort,
+#   workspace.current_dir, cwd, cost.total_duration_ms, effort.level,
 #   rate_limits.{five_hour,seven_day,extra_usage}
-# `effort` is top level, not a re-read of settings.json; elapsed time is
-# cost.total_duration_ms, not a `session.start_time` field that does not exist.
+# `effort` is an object in the payload, not a re-read of settings.json (older
+# CLIs sent a bare string, still accepted); `resets_at` is Unix epoch seconds;
+# elapsed time is cost.total_duration_ms, not a `session.start_time` field
+# that does not exist.
+#
+# Upstream: nilbuild/claude-statusline (was kamranahmedse/claude-statusline),
+# in sync with v1.0.6 apart from its OAuth/API fallback, dropped on purpose.
 
 set -f
 
@@ -119,10 +124,14 @@ iso_to_epoch() {
 }
 
 format_reset_time() {
-  local iso_str="$1" style="$2" epoch result=""
-  [ -z "$iso_str" ] && return
+  local raw="$1" style="$2" epoch result=""
+  [ -z "$raw" ] && return
 
-  epoch=$(iso_to_epoch "$iso_str") || return
+  # Epoch seconds as sent today; ISO 8601 is the fallback for older payloads.
+  case "${raw%%.*}" in
+    '' | *[!0-9]*) epoch=$(iso_to_epoch "$raw") || return ;;
+    *) epoch="${raw%%.*}" ;;
+  esac
   [ -n "$epoch" ] || return
 
   case "$style" in
@@ -160,7 +169,7 @@ fields=$(
                / (if $size > 0 then $size else 200000 end) ) ),
         (.workspace.current_dir // .cwd // ""),
         (.cost.total_duration_ms // 0),
-        (.effort // ""),
+        ((.effort | if type == "object" then .level else . end) // ""),
         (.rate_limits.five_hour.used_percentage // .rate_limits.five_hour.utilization | pct),
         (.rate_limits.five_hour.resets_at // ""),
         (.rate_limits.seven_day.used_percentage // .rate_limits.seven_day.utilization | pct),
@@ -198,6 +207,14 @@ dirname=$(basename "$cwd")
 # tracked file, on every refresh, to decide whether to print one character.
 git_branch=$(git -C "$cwd" symbolic-ref --short HEAD 2> /dev/null)
 
+# The payload carries no permission mode, but Claude Code runs this script as
+# its direct child, so its own argv says whether permissions are skipped.
+skip_perms=""
+parent_cmd=$(ps -o args= -p "$PPID" 2> /dev/null)
+if [[ "$parent_cmd" == *"--dangerously-skip-permissions"* ]]; then
+  skip_perms="⚡  "
+fi
+
 session_duration=""
 elapsed=$(($(as_int "$duration_ms") / 1000))
 if [ "$elapsed" -ge 3600 ]; then
@@ -212,7 +229,7 @@ line1="${blue}${model_name}${reset}"
 line1+="${sep}"
 line1+="✍️ ${pct_color}${pct_used}%${reset}"
 line1+="${sep}"
-line1+="${cyan}${dirname}${reset}"
+line1+="${skip_perms}${cyan}${dirname}${reset}"
 if [ -n "$git_branch" ]; then
   line1+=" ${green}(${git_branch})${reset}"
 fi
@@ -222,7 +239,7 @@ if [ -n "$session_duration" ]; then
 fi
 line1+="${sep}"
 case "$effort" in
-  high) line1+="${magenta}● ${effort}${reset}" ;;
+  high | xhigh | max) line1+="${magenta}● ${effort}${reset}" ;;
   medium) line1+="${dim}◑ ${effort}${reset}" ;;
   low) line1+="${dim}◔ ${effort}${reset}" ;;
   *) line1+="${dim}◑ ${effort:-default}${reset}" ;;
@@ -263,7 +280,7 @@ if [ "$extra_enabled" = "true" ]; then
 
   [ -n "$rate_lines" ] && rate_lines+="\n"
   rate_lines+="${white}extra${reset}   ${extra_bar} ${extra_pct_color}\$$((extra_used_int / 100)).$(printf '%02d' $((extra_used_int % 100)))${dim}/${reset}${white}\$$((extra_limit_int / 100)).$(printf '%02d' $((extra_limit_int % 100)))${reset}"
-  rate_lines+="\n${dim}resets ${reset}${white}${extra_reset}${reset}"
+  [ -n "$extra_reset" ] && rate_lines+=" ${dim}⟳${reset} ${white}${extra_reset}${reset}"
 fi
 
 # ── Output ──────────────────────────────────────────────
