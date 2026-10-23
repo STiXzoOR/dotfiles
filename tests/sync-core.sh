@@ -183,5 +183,22 @@ t "S4.6" "secrets.age changing upstream is only reported: no import, no prompt" 
   printf "%s\n" "$out" | grep -q "dotfiles secrets import" && [ "$(_calls "secrets")" -eq 0 ] && [ "$(_calls "^dotfiles-stub")" -eq 0 ]'
 t "S4.7" "the private repo changing claude/*.local.list calls for install --claude" '
   W=$(senv); push_change "$W" priv claude/work.local.list "m"; sy_env "DOTFILES_YES=1" syn >/dev/null 2>&1; grep -qx "dotfiles-stub install --claude" "$W/log"'
+t "S4.8" "apps/codexbar/ changing upstream calls for dotfiles codexbar apply" '
+  W=$(senv); push_change "$W" pub apps/codexbar/settings.json "{}"; sy_env "DOTFILES_YES=1" syn >/dev/null 2>&1
+  grep -qx "dotfiles-stub codexbar apply" "$W/log"'
+t "S4.9" "scheduled: a codexbar change is only reported as pending" '
+  W=$(senv); push_change "$W" pub apps/codexbar/settings.json "{}"; syn --scheduled >/dev/null 2>&1
+  [ "$(_calls "^dotfiles-stub")" -eq 0 ] && grep -q "pending: dotfiles codexbar apply" "$W/home/Library/Logs/dotfiles-sync.log"'
+# _cbdiff <W> <exit>: a dotfiles-codexbar in the public checkout whose diff exits <exit>.
+_cbdiff() { mkdir -p "$1/pub/bin"; stub "$1/pub/bin" dotfiles-codexbar "[ \"\$1\" = diff ] && exit $2; exit 0"; }
+t "S4.11" "CodexBar settings that drifted from the repo are reported with both commands" '
+  W=$(senv); _cbdiff "$W" 1; out=$(syn 2>&1)
+  printf "%s\n" "$out" | grep -q "dotfiles codexbar diff" && printf "%s\n" "$out" | grep -q "dotfiles codexbar capture"'
+t "S4.12" "no CodexBar line when its diff is clean or CodexBar has no config yet" '
+  W=$(senv); rc=0
+  for e in 0 2; do _cbdiff "$W" "$e"; syn 2>&1 | grep -qi codexbar && rc=1; done; [ "$rc" -eq 0 ]'
+t "S4.13" "no CodexBar drift check while its apply is still pending" '
+  W=$(senv); _cbdiff "$W" 1; push_change "$W" pub apps/codexbar/settings.json "{}"; out=$(syn 2>&1)
+  ! printf "%s\n" "$out" | grep -q "dotfiles codexbar capture"'
 
 finish

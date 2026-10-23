@@ -14,6 +14,7 @@
 #   mise install               when config/mise/ changed
 #   brew bundle install        when Brewfile / Brewfile.local are not satisfied
 #   install --claude / --codex when claude/ or codex/ changed
+#   dotfiles codexbar apply    when apps/codexbar/ changed
 # Interactively each one is offered (confirm). `secrets.age` changing upstream
 # is only reported: importing prompts for the age passphrase, so it is never
 # automatic. Finally, packages installed here but declared in neither the
@@ -259,13 +260,14 @@ collect_pending() {
   local l
   if [ -f "$PENDING_FILE" ]; then
     while IFS= read -r l; do
-      case "$l" in mise | brew | claude | codex) pending_add "$l" ;; esac
+      case "$l" in mise | brew | claude | codex | codexbar) pending_add "$l" ;; esac
     done <"$PENDING_FILE"
   fi
   if changed public 'config/mise/*'; then pending_add mise; fi
   if changed public 'Brewfile' || changed private 'Brewfile.local'; then pending_add brew; fi
   if changed public 'claude/*' || changed private 'claude/*'; then pending_add claude; fi
   if changed public 'codex/*' || changed private 'codex/*'; then pending_add codex; fi
+  if changed public 'apps/codexbar/*'; then pending_add codexbar; fi
   if changed private 'secrets.age'; then
     say "secrets.age changed upstream: run 'dotfiles secrets import $PRIVATE_DIR/secrets.age' (it asks for the age passphrase, so sync never does it)"
     attn "secrets.age changed: run dotfiles secrets import"
@@ -335,13 +337,14 @@ do_pending() {
   fi
 
   local name desc cmd
-  for name in mise brew claude codex; do
+  for name in mise brew claude codex codexbar; do
     pending_has "$name" || continue
     case "$name" in
       mise) desc="mise install (config/mise changed)"; cmd="mise install" ;;
       brew) desc="brew bundle install (the Brewfiles are not satisfied)"; cmd="brew bundle install --file=<Brewfile>" ;;
       claude) desc="dotfiles install --claude (claude/ changed)"; cmd="dotfiles install --claude" ;;
       codex) desc="dotfiles install --codex (codex/ changed)"; cmd="dotfiles install --codex" ;;
+      codexbar) desc="dotfiles codexbar apply (apps/codexbar changed)"; cmd="dotfiles codexbar apply" ;;
     esac
     if [ "$SCHEDULED" -eq 1 ]; then
       say "  pending: $cmd"
@@ -353,9 +356,29 @@ do_pending() {
       brew) run_action brew "$desc" install_brew_bundle ;;
       claude) run_action claude "$desc" "$DOTFILES_BIN" install --claude ;;
       codex) run_action codex "$desc" "$DOTFILES_BIN" install --codex ;;
+      codexbar) run_action codexbar "$desc" "$DOTFILES_BIN" codexbar apply ;;
     esac
   done
   pending_save
+}
+
+#############################################################################
+# CodexBar: settings changed here that apps/codexbar/settings.json lacks
+#############################################################################
+
+# Read-only: `dotfiles codexbar diff`. Skipped while its apply is pending, since
+# then the repo moved and closing the gap is the apply's job. Its exit 2 is a
+# Mac where CodexBar has never run, which is nothing to report.
+report_codexbar() {
+  local bin="$DOTFILES_DIR/bin/dotfiles-codexbar" rc
+  [ -x "$bin" ] || return 0
+  pending_has codexbar && return 0
+  "$bin" diff >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 1 ] || return 0
+  say "== codexbar: this Mac's settings differ from apps/codexbar/settings.json"
+  say "  see them: dotfiles codexbar diff; keep this Mac's: dotfiles codexbar capture, then commit; take the repo's: dotfiles codexbar apply"
+  attn "CodexBar settings drifted: dotfiles codexbar diff"
 }
 
 #############################################################################
@@ -1049,7 +1072,7 @@ skip_upstream_facts() { # skip_upstream_facts <label> <dir>: appends to SKIP_FAC
   [ "$ahead" -gt 0 ] && SKIP_WORK="${SKIP_WORK}${label} repo has unpushed commits"$'\n'
   while IFS= read -r p; do
     case "$p" in
-      Brewfile* | config/mise/* | *.lock | *lock*.json | packages/* | claude/* | codex/* | secrets.age)
+      Brewfile* | config/mise/* | *.lock | *lock*.json | packages/* | claude/* | codex/* | apps/codexbar/* | secrets.age)
         if [ "$label" = public ]; then
           SKIP_WORK="${SKIP_WORK}upstream ${label} commits touch ${p}"$'\n'
         else
@@ -1171,6 +1194,7 @@ main() {
   [ "$MOVED" -eq 1 ] && restow
   collect_pending
   do_pending
+  report_codexbar
   report_drift
   jev_drift
   jev_apps
