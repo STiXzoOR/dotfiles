@@ -116,7 +116,19 @@ t "E3.8" "epoch resets_at renders reset times with GNU date first" '
 t "E3.9" "effort.level object renders its level" 'out=$(printf "%s" "$live" | bash claude/statusline.sh); echo "$out" | grep -q "● xhigh" && ! echo "$out" | grep -q "level"'
 t "E3.10" "skip-permissions parent shows the bolt" 'printf "%s" "$live" | bash -c "bash claude/statusline.sh; :" claude --dangerously-skip-permissions | grep -q "⚡"'
 t "E3.11" "no bolt without skip-permissions"          '! printf "%s" "$live" | bash -c "bash claude/statusline.sh; :" claude | grep -q "⚡"'
-t "E3.12" "extra usage reset date is inline"          'out=$(printf "{\"model\":{\"display_name\":\"X\"},\"rate_limits\":{\"extra_usage\":{\"is_enabled\":true,\"utilization\":10,\"used_credits\":500,\"monthly_limit\":5000}}}" | bash claude/statusline.sh); echo "$out" | grep "extra" | grep -q "⟳" && ! echo "$out" | grep -q "^resets"'
+# A link, not a copy: `dotfiles sync` fast-forwards the repo unattended but
+# never re-runs the bootstrap, so a copy left the other Mac on the old script.
+_install_sl() { (HOME="$1"; source scripts/install_claude.sh --lib 2>/dev/null; install_statusline >/dev/null 2>&1); }
+t "E3.13" "the status line is installed as a link into the repo" '
+  W=$(sandbox); mkdir -p "$W/.claude"; _install_sl "$W"
+  [ -L "$W/.claude/statusline.sh" ] && [ "$(readlink "$W/.claude/statusline.sh")" = "$ROOT_DIR/claude/statusline.sh" ]'
+t "E3.14" "a differing copy is backed up before the link replaces it" '
+  W=$(sandbox); mkdir -p "$W/.claude"; printf "mine\n" >"$W/.claude/statusline.sh"; _install_sl "$W"
+  [ -L "$W/.claude/statusline.sh" ] && grep -qx mine "$W"/.claude/statusline.sh.bak.*'
+t "E3.15" "re-installing over the link makes no backup" '
+  W=$(sandbox); mkdir -p "$W/.claude"; _install_sl "$W"; _install_sl "$W"
+  [ -L "$W/.claude/statusline.sh" ] && ! ls "$W/.claude" | grep -q "\.bak\."'
+t "E3.12" "extra usage reset date is inline"         'out=$(printf "{\"model\":{\"display_name\":\"X\"},\"rate_limits\":{\"extra_usage\":{\"is_enabled\":true,\"utilization\":10,\"used_credits\":500,\"monthly_limit\":5000}}}" | bash claude/statusline.sh); echo "$out" | grep "extra" | grep -q "⟳" && ! echo "$out" | grep -q "^resets"'
 
 section "E4 — rules and the drift check"
 t "E4.1" "vault-lookback names real qmd tools" '! grep -qE "qmd_search|qmd_vector_search|qmd_deep_search" claude/rules/vault-lookback.md && grep -q "multi_get" claude/rules/vault-lookback.md'

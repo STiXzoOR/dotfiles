@@ -47,8 +47,10 @@ used to fail with "command not found".
 4. **Copy `claude/rules/` → `~/.claude/rules/`**, then append an
    `@~/.claude/rules/<name>.md` import line per rule to `~/.claude/CLAUDE.md`,
    idempotently and only if that file already exists.
-5. **Copy `claude/hooks/` → `~/.claude/hooks/`** and
-   **`claude/statusline.sh` → `~/.claude/statusline.sh`**.
+5. **Copy `claude/hooks/` → `~/.claude/hooks/`** and **link
+   `~/.claude/statusline.sh` → `claude/statusline.sh`**. A link, so the
+   fast-forward `dotfiles sync` does unattended updates the status line on the
+   other Mac; a differing copy already there is kept as `.bak.<epoch>`.
 6. **Create the recall venv** the index hook's extractor runs under.
 7. **Merge `claude/settings.template.json` into `~/.claude/settings.json`**.
 8. **Verify every path** the merged settings reference.
