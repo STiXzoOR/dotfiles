@@ -40,6 +40,7 @@ sub_help() {
   echo "   cheatsheet       Show aliases and functions cheatsheet"
   echo "   claude           Inspect the installed Claude Code setup"
   echo "   clean            Clean up Homebrew caches, unused mise versions and stale runtime dirs"
+  echo "   codexbar         CodexBar settings its iCloud sync leaves per Mac (apply, diff, capture)"
   echo "   configure        Configure system (defaults, dock)"
   echo "   doctor           Diagnose common issues"
   echo "   edit             Open dotfiles in IDE ($DOTFILES_IDE)"
@@ -1229,6 +1230,10 @@ sub_claude() {
   "$DOTFILES_DIR/bin/dotfiles-claude" "$@"
 }
 
+sub_codexbar() {
+  "$DOTFILES_DIR/bin/dotfiles-codexbar" "$@"
+}
+
 sub_baseline_help() {
   echo -e "\nUsage: $BIN_NAME baseline <command>"
   echo
@@ -1288,7 +1293,7 @@ case $COMMAND_NAME in
 "" | "help")
   sub_help
   ;;
-"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "private" | "sync" | "vault" | "apps" | "jev")
+"unlink" | "test" | "doctor" | "profiler" | "cheatsheet" | "setup" | "secrets" | "baseline" | "claude" | "codexbar" | "private" | "sync" | "vault" | "apps" | "jev")
   shift
   sub_"$COMMAND_NAME" "$@"
   ;;

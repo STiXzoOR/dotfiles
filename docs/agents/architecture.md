@@ -4,7 +4,7 @@
 
 | Directory       | Purpose                                                                                                     |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
-| `bin/`          | The `dotfiles` CLI and its subcommand scripts (`dotfiles-doctor`, `dotfiles-claude`, `dotfiles-test`, `dotfiles-sync`, `dotfiles-private`, `dotfiles-vault`, …) |
+| `bin/`          | The `dotfiles` CLI and its subcommand scripts (`dotfiles-doctor`, `dotfiles-claude`, `dotfiles-test`, `dotfiles-sync`, `dotfiles-private`, `dotfiles-vault`, `dotfiles-codexbar`, …) |
 | `scripts/`      | Install helpers — `echos.sh` (coloured output), `requirers.sh` (idempotent installers), `install_claude.sh`, `install_prezto.zsh`, and `lib/` (`fs.sh`, `lists.sh`, `ssh.sh`, `machine.sh`, `vault.sh`) |
 | `packages/`     | Lists for what Homebrew does not cover: `code.list` (Node CLIs live in `config/mise/config.toml`)            |
 | `macos/`        | System defaults scripts — `defaults.sh`, `defaults-*.sh` (per app), `dock.sh`                               |
@@ -13,7 +13,7 @@
 | `modules/`      | Git submodules — `prezto/` (the zsh framework). App themes are submodules under `apps/`                      |
 | `system/`       | Shell config sourced by `.zshrc` — `.alias`, `.env`, `.path`, `.function*`, `.fzf`, `.starship`, `.term_host`, …             |
 | `claude/`       | Claude Code bootstrap manifests — `marketplaces.list`, `plugins.list`, `settings.template.json`, `rules/`, `hooks/`, `statusline.sh`, `vault-templates/` |
-| `apps/`         | App themes — Terminal, Xcode, Warp, GitKraken, VLC, VS Code                                                  |
+| `apps/`         | App themes and settings — Terminal, Xcode, Warp, GitKraken, VLC, VS Code, CodexBar (`settings.json`)       |
 | `fonts/`        | Powerline fonts with `install.sh`                                                                            |
 | `profiles/`     | Machine-specific config — `default.zsh`, `personal.zsh`, `work.zsh`, `local.zsh` (gitignored)                |
 | `launchagents/` | macOS LaunchAgents, including a `disabled/` set installed only on request                                     |
