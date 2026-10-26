@@ -25,6 +25,8 @@ cbenv() {
   _cbstub "$w" osascript 'rm -f "$STUB_STATE/running"'
   _cbstub "$w" killall 'rm -f "$STUB_STATE/running"'
   _cbstub "$w" open ':'
+  # launchd's environment, which CodexBar.app runs with: $W/launchd-env/<VAR>.
+  _cbstub "$w" launchctl '[ "$1" = getenv ] && [ -f "$STUB_STATE/launchd-env/$2" ] && command cat "$STUB_STATE/launchd-env/$2"; exit 0'
   printf '%s' "$w"
 }
 _cbstub() { # _cbstub <W> <name> <body>
@@ -63,6 +65,16 @@ t "C1.6" "no config yet: exit 2, nothing created" '
 t "C1.7" "the legacy ~/.codexbar/config.json is used when there is no XDG config, as CodexBar does" '
   W=$(cbenv); mkdir -p "$W/home/.codexbar"; command mv "$(cfg_of)" "$W/home/.codexbar/config.json"
   cb apply >/dev/null 2>&1 && [ "$(claude_of "$W/home/.codexbar/config.json" | jq -r .source)" = web ] && [ ! -e "$(cfg_of)" ]'
+# bin/dotfiles always exports XDG_CONFIG_HOME, but CodexBar.app is started by
+# launchd and never sees it: a Mac with only the legacy file must still get it.
+t "C1.7b" "the caller's XDG_CONFIG_HOME is ignored, so the legacy file is still found" '
+  W=$(cbenv); mkdir -p "$W/home/.codexbar"; command mv "$(cfg_of)" "$W/home/.codexbar/config.json"
+  CBENV="XDG_CONFIG_HOME=$W/home/.config" cb apply >/dev/null 2>&1 &&
+  [ "$(claude_of "$W/home/.codexbar/config.json" | jq -r .source)" = web ] && [ ! -e "$(cfg_of)" ]'
+t "C1.7c" "an XDG_CONFIG_HOME in launchd's environment, which CodexBar.app sees, is honoured" '
+  W=$(cbenv); mkdir -p "$W/xdg/codexbar" "$W/launchd-env"; command mv "$(cfg_of)" "$W/xdg/codexbar/config.json"
+  printf "%s\n" "$W/xdg" >"$W/launchd-env/XDG_CONFIG_HOME"
+  cb apply >/dev/null 2>&1 && [ "$(claude_of "$W/xdg/codexbar/config.json" | jq -r .source)" = web ]'
 t "C1.8" "CODEXBAR_CONFIG wins over both default paths" '
   W=$(cbenv); cp "$(cfg_of)" "$W/other.json"
   CBENV="CODEXBAR_CONFIG=$W/other.json" cb apply >/dev/null 2>&1 &&
@@ -72,9 +84,11 @@ t "C1.9" "a config CodexBar rejects after the merge is rolled back" '
   ! cb apply >/dev/null 2>&1 && [ "$(cat "$(cfg_of)")" = "$before" ]'
 t "C1.10" "apply takes the CodexBar config lock and gives up without writing while it is held" '
   W=$(cbenv); before=$(cat "$(cfg_of)")
-  /usr/bin/lockf -k "$(cfg_of).lock" /bin/sh -c "touch \"$W/locked\"; sleep 3" &
+  # The lock is held until apply returns, not for a fixed time: a first exec of
+  # each new stub can stall on XProtect, and a 3 s hold used to expire first.
+  /usr/bin/lockf -k "$(cfg_of).lock" /bin/sh -c "touch \"$W/locked\"; n=0; while [ ! -e \"$W/done\" ] && [ \$n -lt 300 ]; do sleep 0.1; n=\$((n + 1)); done" &
   n=0; while [ ! -e "$W/locked" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
-  CBENV="DOTFILES_CODEXBAR_LOCK_TIMEOUT=1" cb apply >/dev/null 2>&1; rc=$?; wait
+  CBENV="DOTFILES_CODEXBAR_LOCK_TIMEOUT=1" cb apply >/dev/null 2>&1; rc=$?; : >"$W/done"; wait
   [ "$rc" -ne 0 ] && [ "$(cat "$(cfg_of)")" = "$before" ]'
 t "C1.11" "a field outside the allowlist is refused and nothing is written" '
   W=$(cbenv); before=$(cat "$(cfg_of)")

@@ -73,9 +73,13 @@ tmp_dir() {
 
 # The same resolution CodexBar uses (CodexBarConfigStore.defaultURL): the
 # override, an absolute XDG_CONFIG_HOME, the XDG file when it exists, then the
-# legacy file when it exists, else the XDG path.
+# legacy file when it exists, else the XDG path. XDG_CONFIG_HOME is read from
+# launchd's environment, which CodexBar.app is started with, not this shell's:
+# bin/dotfiles always exports it, and a Mac whose CodexBar reads the legacy file
+# was otherwise pointed at an XDG path that does not exist.
 config_path() {
-  local xdg="${XDG_CONFIG_HOME:-}"
+  local xdg
+  xdg=$(launchctl getenv XDG_CONFIG_HOME 2>/dev/null)
   if [ -n "${CODEXBAR_CONFIG:-}" ]; then
     case "$CODEXBAR_CONFIG" in "~"/*) printf '%s' "$HOME/${CODEXBAR_CONFIG#"~/"}" ;; *) printf '%s' "$CODEXBAR_CONFIG" ;; esac
     return 0

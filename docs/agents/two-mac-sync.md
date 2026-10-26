@@ -205,6 +205,14 @@ On a Mac where CodexBar has never run there is no config to write into yet:
 0.77 or later, and CodexBar and its CLI each need one "Always Allow" for the
 `Claude Safe Storage` Keychain item; the app asks only on a manual Refresh.
 
+An older CodexBar kept its config in `~/.codexbar/config.json`. Upgrading one
+from 0.72 to 0.79 did not migrate it: the new version wrote a default
+`~/.config/codexbar/config.json` (Claude off, other providers dropped) and
+reads that from then on. On such a Mac, quit CodexBar after the upgrade, keep
+the new file as a `.bak`, copy the legacy file over it, check it with
+`CODEXBAR_CONFIG=~/.config/codexbar/config.json codexbar config validate`, then
+run `dotfiles codexbar apply` and reopen CodexBar.
+
 ## What never syncs automatically
 
 - App preference files. Copy-mode snapshots are last-writer-wins, so a restore is
