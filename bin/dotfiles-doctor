@@ -193,8 +193,10 @@ check_homebrew() {
       warn "Homebrew $brew_version is older than $BREW_MIN_MAJOR (run: brew update)"
     fi
 
-    # Check for issues
-    local brew_issues=$(brew doctor 2>&1 | grep -c "Warning")
+    # Check for issues. GNU coreutils ahead of the system tools in the
+    # interactive PATH is this repo's choice (system/.path), and brew doctor
+    # flags it on every run, so that one warning is not counted.
+    local brew_issues=$(brew doctor 2>&1 | grep "Warning" | grep -vc "non-prefixed coreutils")
     if [[ $brew_issues -gt 0 ]]; then
       warn "brew doctor reports $brew_issues warning(s)"
     else
@@ -276,13 +278,22 @@ check_cache() {
     local cache_file="${cache_info%%:*}"
     local tool="${cache_info##*:}"
 
+    # The shell rebuilds a cache when what it is built from is newer, so its
+    # age says nothing: one untouched for months is current if the tool is.
+    # Only a cache older than its input is stale, until the next shell start.
+    local input="" input_name=""
+    case "$tool" in
+      dircolors) input="$DOTFILES_DIR/system/.dir_colors"; input_name="system/.dir_colors" ;;
+      *) input="$(command -v "$tool" 2>/dev/null)"; input_name="$tool" ;;
+    esac
+
     if [[ -f "$cache_dir/$cache_file" ]]; then
       local age="$(dotfiles_age_days "$cache_dir/$cache_file")"
       [[ -n "$age" ]] || age=0
-      if [[ $age -gt 7 ]]; then
-        warn "$cache_file is $age days old (consider refreshing)"
+      if [[ -n "$input" && "$input" -nt "$cache_dir/$cache_file" ]]; then
+        warn "$cache_file is older than $input_name (rebuilt by the next shell that loads it)"
       else
-        ok "$cache_file exists (${age}d old)"
+        ok "$cache_file is current (${age}d old)"
       fi
     else
       if command -v "$tool" &>/dev/null; then
@@ -352,9 +363,12 @@ check_node() {
   # yarn backend, which config.toml disables along with every other plugin
   # backend. Reporting the exit status would warn on every run, forever --
   # exactly the defect this doctor already removed for caches nothing writes.
-  # So drop those two and report whatever is left.
-  local doctor_left
-  doctor_left=$(mise doctor 2>&1 |
+  # So drop those two and report whatever is left. It runs with the caller's
+  # PATH (DOTFILES_CALLER_PATH, from bin/dotfiles), not the one bin/dotfiles
+  # builds with Homebrew first.
+  local doctor_left mise_bin
+  mise_bin="$(command -v mise)"
+  doctor_left=$(PATH="${DOTFILES_CALLER_PATH:-$PATH}" "$mise_bin" doctor 2>&1 |
     grep -E '^[0-9]+\. ' |
     grep -vE 'not activated|vfox:mise-plugins/vfox-yarn')
   if [[ -z "$doctor_left" ]]; then
@@ -389,16 +403,18 @@ check_git_config() {
   section "Git Configuration"
 
   # Running git on a Mac with no Command Line Tools pops the GUI installer, so
-  # the identity is only read once they exist.
+  # the identity is only read once they exist. It lives in
+  # config/git/config.local, an include, and `git config --global` reads no
+  # include unless told to.
   if xcode-select -p &>/dev/null; then
-    if [[ -n "$(git config --global user.name)" ]]; then
-      ok "Git user.name: $(git config --global user.name)"
+    if [[ -n "$(git config --global --includes user.name)" ]]; then
+      ok "Git user.name: $(git config --global --includes user.name)"
     else
       warn "Git user.name not configured"
     fi
 
-    if [[ -n "$(git config --global user.email)" ]]; then
-      ok "Git user.email: $(git config --global user.email)"
+    if [[ -n "$(git config --global --includes user.email)" ]]; then
+      ok "Git user.email: $(git config --global --includes user.email)"
     else
       warn "Git user.email not configured"
     fi

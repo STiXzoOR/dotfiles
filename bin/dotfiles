@@ -24,6 +24,10 @@ if [[ "$(uname -m)" != "arm64" ]]; then
   exit 1
 fi
 HOMEBREW_PREFIX="/opt/homebrew"
+# The PATH the caller's shells use, kept before Homebrew goes first: the
+# doctor judges mise by it, since Homebrew's python3 would shadow mise's shim
+# here and in no shell the user actually runs.
+export DOTFILES_CALLER_PATH="$PATH"
 PATH="$HOMEBREW_PREFIX/bin:$DOTFILES_DIR/bin:$PATH"
 
 source "$ROOT_DIR/scripts/echos.sh"

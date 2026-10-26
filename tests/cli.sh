@@ -1457,7 +1457,8 @@ _doc_setup() { # _doc_setup <W> <clt: yes|no>
 }
 _doc_run() { # _doc_run <W> [doctor args...]
   local W="$1"; shift
-  env SW="$W" HP="${HP:-}" HOME="$W/h" XDG_CONFIG_HOME="$W/h/.config" DOTFILES_DIR="$W/df" PATH="$W/bin:/usr/bin:/bin" SHELL=/bin/zsh XDG_CACHE_HOME="$W/cache" TERM=dumb \
+  env SW="$W" HP="${HP:-}" HOME="$W/h" XDG_CONFIG_HOME="$W/h/.config" DOTFILES_DIR="$W/df" SHELL=/bin/zsh XDG_CACHE_HOME="$W/cache" TERM=dumb \
+    PATH="${DOC_PATH_PREFIX:+$DOC_PATH_PREFIX:}$W/bin:/usr/bin:/bin" DOTFILES_CALLER_PATH="${DOC_CALLER_PATH:-}" \
     zsh bin/dotfiles-doctor "$@" </dev/null
 }
 t "N10.1" "no phantom submodules: prezto-contrib and stevenblack-hosts are never mentioned" '
@@ -1494,6 +1495,56 @@ t "N10.11" "--fix initialises submodules shallowly" '
   grep -q "^git submodule update --init --depth 1" "$W/log"'
 t "N10.12" "--fix does not init recursively without a depth" \
   '[ "$(code_of bin/dotfiles-doctor | grep -c "submodule update --init --recursive")" -eq 0 ]'
+# config/git/config keeps the identity in an included, gitignored config.local,
+# and `git config --global` does not follow includes unless asked to.
+t "N10.13" "a git identity kept in an included file counts as configured" '
+  W=$(sandbox); _doc_setup "$W" yes; stub "$W/bin" git "exec /usr/bin/git \"\$@\""
+  mkdir -p "$W/h/.config/git"
+  printf "[include]\n\tpath = config.local\n" > "$W/h/.config/git/config"
+  printf "[user]\n\tname = Doc Test\n\temail = doc@example.invalid\n" > "$W/h/.config/git/config.local"
+  out=$(_doc_run "$W" 2>&1)
+  _has "$out" "Git user.name: Doc Test" && _has "$out" "Git user.email: doc@example.invalid"'
+# The shell rebuilds each cache when what it is built from is newer, so a
+# cache's age says nothing; only a cache older than its input is stale.
+t "N10.14" "a cache older than a week, but newer than the tool that writes it, is current" '
+  W=$(sandbox); _doc_setup "$W" yes; stub "$W/bin" zoxide "exit 0"; mkdir -p "$W/cache"
+  : > "$W/cache/zoxide-init.zsh"; touch -t 202001020000 "$W/cache/zoxide-init.zsh"; touch -t 202001010000 "$W/bin/zoxide"
+  out=$(_doc_run "$W" 2>&1)
+  _has "$out" "zoxide-init.zsh is current" && ! _has "$out" "zoxide-init.zsh is older"'
+t "N10.15" "a cache older than the tool that writes it is reported stale" '
+  W=$(sandbox); _doc_setup "$W" yes; stub "$W/bin" zoxide "exit 0"; mkdir -p "$W/cache"
+  : > "$W/cache/zoxide-init.zsh"; touch -t 202001010000 "$W/cache/zoxide-init.zsh"
+  out=$(_doc_run "$W" 2>&1)
+  _has "$out" "zoxide-init.zsh is older than zoxide"'
+t "N10.16" "the dircolors cache is judged against system/.dir_colors, which it is built from" '
+  W=$(sandbox); _doc_setup "$W" yes; stub "$W/bin" dircolors "exit 0"; mkdir -p "$W/cache" "$W/df/system"
+  : > "$W/cache/dircolors-dumb.zsh"; touch -t 202001010000 "$W/cache/dircolors-dumb.zsh"
+  : > "$W/df/system/.dir_colors"; touch -t 201901010000 "$W/bin/dircolors"
+  out=$(_doc_run "$W" 2>&1)
+  _has "$out" "dircolors-dumb.zsh is older than system/.dir_colors"'
+# GNU coreutils ahead of the system tools in the interactive PATH is the
+# repo's choice (system/.path), and brew doctor flags it on every run.
+t "N10.17" "brew doctor's warning about unprefixed GNU coreutils is not counted" '
+  W=$(sandbox); _doc_setup "$W" yes
+  stub "$W/bin" brew "case \"\$1\" in --version) echo \"Homebrew 7.0.0\" ;; doctor) echo \"Warning: Putting non-prefixed coreutils in your path can cause GMP builds to fail.\"; exit 1 ;; esac; exit 0"
+  out=$(_doc_run "$W" 2>&1)
+  _has "$out" "brew doctor: no issues"'
+# bin/dotfiles puts Homebrew's bin first, which makes Homebrew's python3 shadow
+# the mise shim inside the doctor and in no shell the user actually runs.
+t "N10.19" "mise is judged by the caller's PATH, not the one bin/dotfiles builds" '
+  W=$(sandbox); _doc_setup "$W" yes; mkdir -p "$W/brew"
+  stub "$W/bin" mise "[ \"\$1\" = doctor ] && case \":\$PATH:\" in *\":$W/brew:\"*) echo \"1. mise shims are shadowed by executables earlier in PATH:\" ;; esac; exit 0"
+  out=$(DOC_PATH_PREFIX="$W/brew" DOC_CALLER_PATH="$W/bin:/usr/bin:/bin" _doc_run "$W" 2>&1)
+  _has "$out" "mise doctor reports nothing"'
+t "N10.20" "bin/dotfiles records the caller PATH before putting Homebrew first" '
+  rec=$(_first_line "DOTFILES_CALLER_PATH=\"\$PATH\"" bin/dotfiles)
+  pre=$(_first_line "PATH=\"\$HOMEBREW_PREFIX/bin:" bin/dotfiles)
+  [ "$rec" -gt 0 ] && [ "$pre" -gt "$rec" ]'
+t "N10.18" "every other brew doctor warning is still counted" '
+  W=$(sandbox); _doc_setup "$W" yes
+  stub "$W/bin" brew "case \"\$1\" in --version) echo \"Homebrew 7.0.0\" ;; doctor) printf \"Warning: Putting non-prefixed coreutils in your path can cause GMP builds to fail.\nWarning: You have unlinked kegs in your Cellar.\n\"; exit 1 ;; esac; exit 0"
+  out=$(_doc_run "$W" 2>&1)
+  _has "$out" "brew doctor reports 1 warning(s)"'
 
 #############################################################################
 section "N11 — the setup wizard (1.11)"
