@@ -132,8 +132,13 @@ not_found_auto_install = false
 # Pin resolved versions in mise.lock next to this file.
 lockfile = true
 
-# Refuse tools whose provenance mise cannot verify.
-paranoid = true
+# Refuse tools whose provenance mise cannot verify, refuse unregistered
+# plugins, and approve each .env file mise loads. Not the `config` category:
+# since 2026.10.19 it wants every project's package.json and .nvmrc approved,
+# bound to its content, so any edit revokes approval and every shim in that
+# project fails, Claude Code's node hooks included. Project config still
+# follows mise's normal trust rules.
+paranoid = ["provenance", "plugins", "env_files"]
 
 # Never take a release less than three days old. Malicious releases of popular
 # npm packages are typically pulled within hours; this window costs nothing and

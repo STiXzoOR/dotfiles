@@ -36,10 +36,30 @@ t "M1.3" "no auto install in agent shells" \
 
 t "M1.4" "lockfile, paranoid, release age, quiet set" \
   '_all=1
-   for k in "lockfile = true" "paranoid = true" "minimum_release_age = " "quiet = true"; do
+   for k in "lockfile = true" "paranoid = " "minimum_release_age = " "quiet = true"; do
      grep -q "$k" config/mise/config.toml || _all=0
    done
    [ "$_all" = 1 ]'
+
+# Since 2026.10.19 paranoid's `config` category wants every project's
+# package.json and .nvmrc approved, bound to its content: an untrusted one fails
+# every shim, Claude Code's node hooks included, and any edit revokes approval.
+t "M1.4b" "paranoid keeps provenance, plugins and env files, without the config category" \
+  '_p=$(code_of config/mise/config.toml | grep -E "^paranoid *=")
+   case "$_p" in *provenance*) ;; *) false ;; esac &&
+   case "$_p" in *plugins*) ;; *) false ;; esac &&
+   case "$_p" in *env_files*) ;; *) false ;; esac &&
+   case "$_p" in *\"config\"*|*"= true"*) false ;; *) true ;; esac'
+t "M1.4c" "an untrusted project package.json does not break mise" \
+  '! command -v mise >/dev/null 2>&1 || {
+     W=$(sandbox); mkdir -p "$W/proj" "$W/state"
+     printf "{\"name\":\"x\",\"packageManager\":\"pnpm@12.4.1\"}\n" > "$W/proj/package.json"
+     out=$(cd "$W/proj" && env -u MISE_PARANOID MISE_STATE_DIR="$W/state" \
+       MISE_CONFIG_DIR="$ROOT_DIR/config/mise" \
+       MISE_GLOBAL_CONFIG_FILE="$ROOT_DIR/config/mise/config.toml" \
+       mise current node 2>&1)
+     case "$out" in *"not trusted"*|*"error parsing config file"*) false ;; *) true ;; esac
+   }'
 
 t "M1.5" "node pinned to major 24, corepack off, gpg on" \
   'grep -qE "^node *= *\"24\"" config/mise/config.toml &&
