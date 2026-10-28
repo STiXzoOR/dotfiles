@@ -122,7 +122,13 @@ if [ "$(dotfiles_remote_access)" = on ]; then
   # macOS reloads pf.conf or something disables pf. It runs as root, so the
   # plist (root:wheel 0644) references only root-owned system paths and nothing
   # in the repo or a home directory.
-  running "Allow SSH and Screen Sharing only from Tailscale (pf)"
+  #
+  # LAN peers (dotfiles_remote_lan_peers, validated there: the other Mac on the
+  # home network) may connect too. The rules root loads are built from the
+  # tracked file plus one pass line for them before the final block, and that
+  # built file is what is parsed, compared and installed.
+  _ra_lan=$(dotfiles_remote_lan_peers)
+  running "Allow SSH and Screen Sharing only from Tailscale${_ra_lan:+ and $_ra_lan} (pf)"
   _ra_pf_label=com.stixzoor.dotfiles-pf-remote
   _ra_pf_anchor=com.apple/900.dotfiles-remote
   _ra_pf_src="$DOTFILES_DIR/macos/remote-access/pf.rules"
@@ -138,14 +144,24 @@ if [ "$(dotfiles_remote_access)" = on ]; then
   _ra_pf_good=1
   _ra_pf_ok=0
   _ra_pf_changed=0
-  if ! cmp -s "$_ra_pf_src" "$_ra_pf_dest" 2>/dev/null || ! cmp -s "$_ra_plist_src" "$_ra_plist_dest" 2>/dev/null; then
+  if ! _ra_pf_built=$(mktemp "${TMPDIR:-/tmp}/dotfiles-pf.XXXXXX"); then
+    error "could not create a temporary file for the pf rules (mktemp failed); nothing was installed"
+    _ra_fail
+    _ra_pf_good=0
+  elif [ -n "$_ra_lan" ]; then
+    awk -v line="pass in quick proto { tcp udp } from { $(printf '%s' "$_ra_lan" | sed 's/ /, /g') } to any port { 22 5900 }" \
+      '/^block / && !done { print line; done = 1 } { print }' "$_ra_pf_src" >"$_ra_pf_built"
+  else
+    cat "$_ra_pf_src" >"$_ra_pf_built"
+  fi
+  if [ "$_ra_pf_good" -eq 1 ] && { ! cmp -s "$_ra_pf_built" "$_ra_pf_dest" 2>/dev/null || ! cmp -s "$_ra_plist_src" "$_ra_plist_dest" 2>/dev/null; }; then
     _ra_pf_changed=1
     # Parse the rules before anything is installed or loaded.
-    if ! sudo pfctl -n -f "$_ra_pf_src" >/dev/null 2>&1; then
-      error "pf rejected macos/remote-access/pf.rules (pfctl -n -f failed); nothing was installed"
+    if ! sudo pfctl -n -f "$_ra_pf_built" >/dev/null 2>&1; then
+      error "pf rejected the rules built from macos/remote-access/pf.rules${_ra_lan:+ and DOTFILES_REMOTE_LAN_PEERS} (pfctl -n -f failed); nothing was installed"
       _ra_fail
       _ra_pf_good=0
-    elif ! _ra_put "$_ra_pf_src" "$_ra_pf_dest" || ! _ra_put "$_ra_plist_src" "$_ra_plist_dest"; then
+    elif ! _ra_put "$_ra_pf_built" "$_ra_pf_dest" || ! _ra_put "$_ra_plist_src" "$_ra_plist_dest"; then
       error "could not install the pf rules and their LaunchDaemon (sudo install failed)"
       _ra_fail
       _ra_pf_good=0
@@ -176,6 +192,8 @@ if [ "$(dotfiles_remote_access)" = on ]; then
       _ra_fail
     fi
   fi
+
+  [ -z "${_ra_pf_built:-}" ] || rm -f "$_ra_pf_built"
 
   # Remote Login (SSH) on, last. -f suppresses the confirmation prompt, which
   # would otherwise block forever because it is written to a stream that goes to
@@ -226,7 +244,7 @@ if [ "$(dotfiles_remote_access)" = on ]; then
   echo -e " ⇒ SSH and Screen Sharing now answer only on Tailscale: use this Mac's Tailscale name, not its LAN address"
 
   unset _ra_user _ra_group _ra_good _ra_keys _ra_sshd_ok _ra_sshd_msg _ra_sshd_src _ra_sshd_dest _ra_pf_label _ra_pf_anchor _ra_pf_src \
-    _ra_pf_dest _ra_plist_src _ra_plist_dest _ra_pf_good _ra_pf_ok _ra_pf_changed _ra_wait _RA_CHANGED
+    _ra_pf_dest _ra_plist_src _ra_plist_dest _ra_pf_good _ra_pf_ok _ra_pf_changed _ra_wait _ra_lan _ra_pf_built _RA_CHANGED
 else
   skip "remote access: off for this Mac (DOTFILES_REMOTE_ACCESS=on in macos/machine.local.sh turns it on); nothing changed"
 fi

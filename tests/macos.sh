@@ -1499,4 +1499,62 @@ t "R3.38" "the tracked files carry no home path and no private address" \
    homes=$(cat macos/remote-access/* macos/defaults-remote-access.sh | grep -F "/Users/")
    [ -z "$ips" ] && [ -z "$homes" ]'
 
+#############################################################################
+section "R4 — LAN peers: the other Mac on the local network, besides Tailscale"
+#############################################################################
+
+# _lan_fn <dir> [VAR=val ...] -- what dotfiles_remote_lan_peers prints; _lan_err
+# its stderr. Addresses are from the documentation range 192.0.2.0/24.
+_lan_fn() {
+  local d=$1
+  shift
+  env -i PATH="/usr/bin:/bin" HOME="$d" "$@" bash -c '. "$1/scripts/lib/machine.sh"; dotfiles_remote_lan_peers "$2"' _ "$ROOT_DIR" "$d" 2>/dev/null
+}
+# shellcheck disable=SC2069
+_lan_err() {
+  local d=$1
+  shift
+  env -i PATH="/usr/bin:/bin" HOME="$d" "$@" bash -c '. "$1/scripts/lib/machine.sh"; dotfiles_remote_lan_peers "$2"' _ "$ROOT_DIR" "$d" 2>&1 >/dev/null
+}
+
+t "R4.1" "none configured: prints nothing" \
+  'D=$(_ra_dir) && [ -z "$(_lan_fn "$D")" ]'
+t "R4.2" "the environment wins, and addresses and /prefixes are kept in order" \
+  'D=$(_ra_dir) && echo "DOTFILES_REMOTE_LAN_PEERS=192.0.2.9" >"$D/macos/local.sh" &&
+   [ "$(_lan_fn "$D" DOTFILES_REMOTE_LAN_PEERS="192.0.2.10 192.0.2.20 192.0.2.0/24")" = "192.0.2.10 192.0.2.20 192.0.2.0/24" ]'
+t "R4.3" "machine.local.sh beats local.sh, and local.sh (shared by both Macs) is read" '
+  D=$(_ra_dir) && echo "DOTFILES_REMOTE_LAN_PEERS=\"192.0.2.10 192.0.2.20\"" >"$D/macos/local.sh" &&
+  [ "$(_lan_fn "$D")" = "192.0.2.10 192.0.2.20" ] &&
+  echo "DOTFILES_REMOTE_LAN_PEERS=192.0.2.30" >"$D/macos/machine.local.sh" && [ "$(_lan_fn "$D")" = "192.0.2.30" ]'
+t "R4.4" "anything that is not an IPv4 address with an optional /0-32 is dropped with a warning" '
+  D=$(_ra_dir) && v="192.0.2.10 300.1.1.1 192.0.2.0/33 any 192.0.2.5;pass 1.2.3 * 192.0.2.20/32" &&
+  [ "$(_lan_fn "$D" DOTFILES_REMOTE_LAN_PEERS="$v")" = "192.0.2.10 192.0.2.20/32" ] &&
+  [ "$(_lan_err "$D" DOTFILES_REMOTE_LAN_PEERS="$v" | grep -c "warning")" -eq 6 ]'
+t "R4.5" "nothing the files set leaks into the caller" \
+  'D=$(_ra_dir) && printf "DOTFILES_REMOTE_LAN_PEERS=192.0.2.10\nLEAK=yes\n" >"$D/macos/local.sh" &&
+   [ "$(env -i PATH=/usr/bin:/bin bash -c ". \"$ROOT_DIR/scripts/lib/machine.sh\"; dotfiles_remote_lan_peers \"$D\" >/dev/null; echo \"\${LEAK:-none}\${DOTFILES_REMOTE_LAN_PEERS:-none}\"")" = nonenone ]'
+
+ANCH=etc/pf.anchors/dotfiles.remote
+LANLINE="pass in quick proto { tcp udp } from { 192.0.2.10, 192.0.2.20 } to any port { 22 5900 }"
+RLAN=$(_ra_env); _ra_run "$RLAN" DOTFILES_REMOTE_LAN_PEERS="192.0.2.10 192.0.2.20"
+t "R4.6" "with LAN peers the installed rules are the tracked ones plus one pass line for them, before the block" '
+  grep -qxF "$LANLINE" "$RLAN/$ANCH" && [ "$(tail -1 "$RLAN/$ANCH")" = "$(tail -1 macos/remote-access/pf.rules)" ] &&
+  [ "$(grep -vxF "$LANLINE" "$RLAN/$ANCH" | cmp -s - macos/remote-access/pf.rules && echo same)" = same ] &&
+  [ "$(grep -c "error" "$RLAN/out")" -eq 0 ]'
+t "R4.7" "without LAN peers the installed rules are exactly the tracked file" \
+  'cmp -s macos/remote-access/pf.rules "$RON/$ANCH"'
+t "R4.8" "an injection attempt never reaches the root-loaded rules" '
+  W=$(_ra_env) && _ra_run "$W" DOTFILES_REMOTE_LAN_PEERS="192.0.2.10 } pass in all {" &&
+  [ "$(grep -c "pass in all" "$W/$ANCH")" -eq 0 ] && grep -qxF "pass in quick proto { tcp udp } from { 192.0.2.10 } to any port { 22 5900 }" "$W/$ANCH"'
+t "R4.9" "a re-run with the same LAN peers changes nothing" '
+  : >"$RLAN/log" && _ra_run "$RLAN" DOTFILES_REMOTE_LAN_PEERS="192.0.2.10 192.0.2.20" &&
+  [ "$(_logcount "$RLAN" "install")" -eq 0 ] && [ "$(_logcount "$RLAN" "bootstrap")" -eq 0 ] && grep -q "Tailscale.*already set" "$RLAN/out"'
+t "R4.10" "changing the LAN peers reinstalls and reloads the rules" '
+  : >"$RLAN/log" && _ra_run "$RLAN" DOTFILES_REMOTE_LAN_PEERS="192.0.2.30" &&
+  grep -qxF "pass in quick proto { tcp udp } from { 192.0.2.30 } to any port { 22 5900 }" "$RLAN/$ANCH" && _logged "$RLAN" "sudo launchctl bootout system/com.stixzoor.dotfiles-pf-remote"'
+t "R4.11" "the rules are parsed (pfctl -n) as built, LAN line included, before anything is installed" '
+  W=$(_ra_env) && _ra_run "$W" DOTFILES_REMOTE_LAN_PEERS="192.0.2.10" PF_RC=1 && [ ! -e "$W/$ANCH" ]'
+t "R4.12" "macos/local.sh.example documents it, commented out, with documentation addresses only" \
+  '[ "$(grep -c "^# DOTFILES_REMOTE_LAN_PEERS=\"192[.]0[.]2[.]" macos/local.sh.example)" -eq 1 ] && [ "$(grep -c "^DOTFILES_REMOTE_LAN_PEERS=" macos/local.sh.example)" -eq 0 ]'
+
 finish

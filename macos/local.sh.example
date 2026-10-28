@@ -33,3 +33,9 @@ DOTFILES_TIMEZONE="UTC"
 # Both fully apply after a logout.
 # DOTFILES_ICON_STYLE="RegularDark"
 # DOTFILES_GLASS="clear"
+
+# Remote access (macos/defaults-remote-access.sh): LAN addresses that may reach
+# SSH and Screen Sharing besides Tailscale, space-separated (IPv4, optionally
+# /prefix). Both Macs read this file, so list both; reserve the addresses in the
+# router (DHCP) so they stay put. Anyone else on the LAN stays blocked.
+# DOTFILES_REMOTE_LAN_PEERS="192.0.2.10 192.0.2.20"

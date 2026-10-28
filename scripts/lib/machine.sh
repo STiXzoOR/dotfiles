@@ -114,6 +114,58 @@ dotfiles_remote_access() {
   printf '%s\n' "$default"
 }
 
+# The LAN addresses that may reach Remote Login and Screen Sharing besides
+# Tailscale (macos/defaults-remote-access.sh), space-separated: the other Mac on
+# the home network. DOTFILES_REMOTE_LAN_PEERS from the environment, else
+# macos/machine.local.sh, else macos/local.sh (shared between the Macs, which
+# sit on the same LAN), else none. Each entry must be an IPv4 address with an
+# optional /0-32 prefix; anything else warns and is dropped, because the list
+# ends up in pf rules that root loads. Read into an array, so an entry such as
+# `*` is never globbed. Takes the dotfiles dir as $1, else DOTFILES_DIR, else
+# ~/.dotfiles. The files are read in a subshell, so nothing they set leaks.
+dotfiles_remote_lan_peers() {
+  local dir="${1:-${DOTFILES_DIR:-$HOME/.dotfiles}}" v="${DOTFILES_REMOTE_LAN_PEERS:-}" f e ip pfx o good out=""
+  local re='^[0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}$'
+  local -a entries octets
+  for f in machine.local.sh local.sh; do
+    [ -n "$v" ] && break
+    [ -e "$dir/macos/$f" ] || continue
+    if [ ! -r "$dir/macos/$f" ] || ! bash -n "$dir/macos/$f" >/dev/null 2>&1; then
+      printf 'warning: cannot read %s/macos/%s (unreadable or a syntax error); ignoring it\n' "$dir" "$f" >&2
+      continue
+    fi
+    # shellcheck disable=SC1090
+    v=$(unset DOTFILES_REMOTE_LAN_PEERS; . "$dir/macos/$f" >/dev/null 2>&1; printf '%s' "${DOTFILES_REMOTE_LAN_PEERS:-}")
+  done
+  v=$(printf '%s' "$v" | tr '\n\t' '  ')
+  IFS=' ' read -r -a entries <<<"$v"
+  for e in ${entries[@]+"${entries[@]}"}; do
+    ip=${e%%/*}
+    good=1
+    if [[ "$ip" =~ $re ]]; then
+      IFS=. read -r -a octets <<<"$ip"
+      for o in "${octets[@]}"; do [ "$o" -le 255 ] || good=0; done
+    else
+      good=0
+    fi
+    case "$e" in
+      */*)
+        pfx=${e#*/}
+        case "$pfx" in
+          "" | *[!0-9]*) good=0 ;;
+          *) { [ "${#pfx}" -le 2 ] && [ "$pfx" -le 32 ]; } || good=0 ;;
+        esac
+        ;;
+    esac
+    if [ "$good" -eq 1 ]; then
+      out="$out${out:+ }$e"
+    else
+      printf 'warning: ignoring DOTFILES_REMOTE_LAN_PEERS entry %s (use an IPv4 address, optionally /0-32)\n' "$e" >&2
+    fi
+  done
+  [ -z "$out" ] || printf '%s\n' "$out"
+}
+
 # Export the resolved launcher where `brew bundle` can see it. brew hides every
 # variable that does not start with HOMEBREW_ from the Brewfile, so this is
 # HOMEBREW_DOTFILES_LAUNCHER. Call it before any `brew bundle check|install`.

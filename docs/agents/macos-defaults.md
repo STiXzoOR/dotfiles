@@ -104,7 +104,14 @@ counted in `DOTFILES_DEFAULTS_FAILURES`:
    and loads into the anchor `com.apple/900.dotfiles-remote`, which Apple's stock
    `anchor "com.apple/*"` already evaluates, so `/etc/pf.conf` is never edited. Ports
    22 and 5900 pass on loopback and from Tailscale's `100.64.0.0/10` and
-   `fd7a:115c:a1e0::/48` and are blocked from everywhere else. The LaunchDaemon
+   `fd7a:115c:a1e0::/48` and are blocked from everywhere else. LAN peers are
+   the one exception: `DOTFILES_REMOTE_LAN_PEERS` (environment, else
+   `machine.local.sh`, else the shared `local.sh`; IPv4 addresses with an optional
+   `/prefix`, anything else is dropped with a warning) adds one `pass` line for
+   them before the block, so the two Macs reach each other on the home LAN while
+   everyone else on it stays blocked. The installed rules are built from
+   `pf.rules` plus that line; that built file is what is parsed, compared and
+   installed. The LaunchDaemon
    `com.stixzoor.dotfiles-pf-remote` (installed root:wheel 0644 in
    `/Library/LaunchDaemons`) re-asserts the rules at boot and every 300 seconds.
    It runs as root, so its plist references only `/bin`, `/sbin`, `/usr/bin` and
@@ -136,8 +143,9 @@ re-run changes nothing.
 - Turn on Screen Sharing: System Settings > General > Sharing > Screen Sharing,
   then (i) > Allow access for: Only these users. Turn the legacy VNC password
   option off if the run warns about it.
-- After this, SSH or Screen Sharing to the Mac's LAN address no longer works: use
-  its Tailscale name.
+- After this, SSH or Screen Sharing to the Mac's LAN address works only from the
+  addresses in `DOTFILES_REMOTE_LAN_PEERS`; from anywhere else use its Tailscale
+  name. Reserve the peers' addresses in the router so they do not change.
 
 ## Appearance
 
