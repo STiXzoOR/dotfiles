@@ -3,18 +3,27 @@
 # Claude Code status line.
 #
 # Everything rendered here comes from the JSON payload Claude Code writes to
-# this script's stdin. Nothing else is read: no keychain, no credentials file,
-# no network, no cache.
+# this script's stdin, with one exception: extra usage. The payload's
+# `rate_limits` carry the five-hour and weekly windows (and a gateway's spend
+# limit) but not extra usage, which only Anthropic's usage API returns. So for
+# a subscriber whose payload lacks it, the script fetches it -- hardened,
+# because the 2026-09 audit removed an earlier version of this for good
+# reasons (it read a credentials file, put the token on curl's command line
+# where `ps` shows it to every local process, and stalled five seconds when
+# the network was down):
 #
-# That is a deliberate rewrite. The previous version located an OAuth access
-# token (env, then the macOS keychain, then ~/.claude/.credentials.json, then
-# secret-tool) and spent a network round-trip every 60 seconds asking
-# api.anthropic.com for usage figures the payload already carries in
-# `rate_limits`. It also passed the token as a curl argv, where any local
-# process could read it out of `ps` for the life of the request. Deleting that
-# path removes a credential-handling code path from a public repo, the token
-# exposure, both cache files, a CLI-version probe and a five-second stall when
-# the network is down -- with no loss of function.
+#   - The fetch runs detached, at most every five minutes (a marker file
+#     throttles failures too), never on the render path.
+#   - The OAuth token comes from the macOS keychain only (or
+#     CLAUDE_CODE_OAUTH_TOKEN), never a credentials file, and reaches curl
+#     through its config on stdin (-K -), never a command line.
+#   - Only the extra_usage object is cached, never the token: a 0700 directory
+#     under ~/Library/Caches, a 0600 file replaced atomically. An answer older
+#     than an hour is not shown.
+#   - The User-Agent version comes from the payload, not a pinned number.
+#
+# CLAUDE_STATUSLINE_FETCH=off turns the fetch off; =sync runs it in the
+# foreground (the tests). CLAUDE_STATUSLINE_CACHE_DIR moves the cache.
 #
 # Cost matters here: this runs on every refresh. One jq pass emits every field
 # as one delimited line and the rest is pure bash. The old version made
@@ -24,15 +33,16 @@
 #
 # Payload fields used, all confirmed present in the installed CLI:
 #   model.display_name, context_window.{context_window_size,used_percentage},
-#   workspace.current_dir, cwd, cost.total_duration_ms, effort.level,
-#   rate_limits.{five_hour,seven_day,extra_usage}
+#   workspace.current_dir, cwd, cost.total_duration_ms, effort.level, version,
+#   rate_limits.{five_hour,seven_day} (and extra_usage, should it ever appear)
 # `effort` is an object in the payload, not a re-read of settings.json (older
 # CLIs sent a bare string, still accepted); `resets_at` is Unix epoch seconds;
 # elapsed time is cost.total_duration_ms, not a `session.start_time` field
 # that does not exist.
 #
 # Upstream: nilbuild/claude-statusline (was kamranahmedse/claude-statusline),
-# in sync with v1.0.6 apart from its OAuth/API fallback, dropped on purpose.
+# in sync with v1.0.6; its OAuth/API fallback is replaced by the hardened
+# extra-usage fetch described above.
 
 set -f
 
@@ -151,15 +161,65 @@ format_reset_time() {
   printf "%s" "$result"
 }
 
+# ── Extra usage cache (see the header) ──────────────────
+cache_dir="${CLAUDE_STATUSLINE_CACHE_DIR:-$HOME/Library/Caches/claude-statusline}"
+cache_file="$cache_dir/extra-usage.json"
+attempt_file="$cache_dir/last-fetch"
+usage_fetch_every=300
+usage_max_age=3600
+
+if [ ! -d "$cache_dir" ]; then
+  mkdir -p "${cache_dir%/*}" 2> /dev/null
+  mkdir -m 700 "$cache_dir" 2> /dev/null
+fi
+# Every mtime is normalised before arithmetic: a missing or unreadable file
+# reads as 0, which means "old". BSD stat by path: GNU stat, which may come
+# first in PATH, reads -f as "file system".
+now=$(date +%s)
+case "$now" in '' | *[!0-9]*) now=0 ;; esac
+cache_mtime=$(/usr/bin/stat -f %m "$cache_file" 2> /dev/null)
+case "$cache_mtime" in '' | *[!0-9]*) cache_mtime=0 ;; esac
+attempt_mtime=$(/usr/bin/stat -f %m "$attempt_file" 2> /dev/null)
+case "$attempt_mtime" in '' | *[!0-9]*) attempt_mtime=0 ;; esac
+
+cached_args=(--arg cached "")
+if [ "$cache_mtime" -gt 0 ] && [ $((now - cache_mtime)) -lt "$usage_max_age" ]; then
+  cached_args=(--rawfile cached "$cache_file")
+fi
+
+# fetch_extra_usage <cli-version> -- runs detached, off the render path. Caches
+# only the extra_usage object; a failure leaves the last good answer alone.
+fetch_extra_usage() {
+  local token tmp
+  token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+  [ -n "$token" ] || token=$(security find-generic-password -s "Claude Code-credentials" -w 2> /dev/null |
+    sed -n 's/.*"accessToken" *: *"\([^"]*\)".*/\1/p')
+  [ -n "$token" ] || return 0
+  tmp=$(mktemp "$cache_dir/.extra-usage.XXXXXX" 2> /dev/null) || return 0
+  # The token goes to curl as config on stdin (-K -), never as an argument.
+  printf 'header = "Authorization: Bearer %s"\n' "$token" |
+    curl -fsS --max-time 10 -K - -H "anthropic-beta: oauth-2025-04-20" -A "claude-code/${1:-unknown}" \
+      "https://api.anthropic.com/api/oauth/usage" 2> /dev/null |
+    jq -ce '.extra_usage | objects' > "$tmp" 2> /dev/null
+  if [ -s "$tmp" ]; then
+    chmod 600 "$tmp" && mv -f "$tmp" "$cache_file"
+  else
+    rm -f "$tmp"
+  fi
+}
+
 # ── One pass over the payload ───────────────────────────
 # context_window.used_percentage is authoritative when present; the token sum
 # is the fallback for payloads that predate it. `// empty` on the rate limits
 # keeps them distinguishable from a real zero: they are absent for accounts
-# without plan limits and before the session's first API response.
+# without plan limits and before the session's first API response. Extra usage
+# comes from the payload if it ever carries it, else from a fresh cache; a
+# corrupt or non-object cache reads as none.
 fields=$(
-  printf '%s' "$input" | jq -r '
+  printf '%s' "$input" | jq -r "${cached_args[@]}" '
     def pct: if . == null then "" else . end;
     (.context_window.context_window_size // 200000) as $size
+    | ((((.rate_limits.extra_usage // ($cached | try fromjson catch null)) | objects) // {})) as $eu
     | [ (.model.display_name // "Claude"),
         $size,
         ( .context_window.used_percentage
@@ -174,10 +234,14 @@ fields=$(
         (.rate_limits.five_hour.resets_at // ""),
         (.rate_limits.seven_day.used_percentage // .rate_limits.seven_day.utilization | pct),
         (.rate_limits.seven_day.resets_at // ""),
-        (.rate_limits.extra_usage.is_enabled // false),
-        (.rate_limits.extra_usage.used_percentage // .rate_limits.extra_usage.utilization // 0),
-        (.rate_limits.extra_usage.used_credits // 0),
-        (.rate_limits.extra_usage.monthly_limit // 0)
+        ($eu.is_enabled // false),
+        ($eu.used_percentage // $eu.utilization // 0),
+        ($eu.used_credits // 0),
+        ($eu.monthly_limit // 0),
+        (.version // ""),
+        (if .rate_limits then "yes" else "" end),
+        (if .rate_limits.extra_usage then "yes" else "" end),
+        ($eu.currency // "")
       ] | map(tostring) | join("\u001f")
   ' 2> /dev/null
 )
@@ -191,7 +255,21 @@ fi
 # run of them into one delimiter and every field after an empty one shifts up.
 IFS=$'\037' read -r model_name ctx_size ctx_pct cwd duration_ms effort \
   five_pct five_reset seven_pct seven_reset \
-  extra_enabled extra_pct extra_used extra_limit <<< "$fields"
+  extra_enabled extra_pct extra_used extra_limit \
+  cli_version has_limits payload_extra extra_currency <<< "$fields"
+
+# Fetch extra usage for a subscriber (rate_limits present) whose payload lacks
+# it, at most every five minutes. The marker is touched first, so a failing
+# fetch is throttled too.
+if [ "${CLAUDE_STATUSLINE_FETCH:-}" != off ] && [ -n "$has_limits" ] && [ -z "$payload_extra" ] &&
+  [ -d "$cache_dir" ] && [ $((now - attempt_mtime)) -ge "$usage_fetch_every" ]; then
+  : > "$attempt_file"
+  if [ "${CLAUDE_STATUSLINE_FETCH:-}" = sync ]; then
+    fetch_extra_usage "$cli_version"
+  else
+    fetch_extra_usage "$cli_version" < /dev/null > /dev/null 2>&1 &
+  fi
+fi
 
 : "${ctx_size:=200000}"
 pct_used=$(as_int "$ctx_pct")
@@ -272,14 +350,20 @@ if [ "$extra_enabled" = "true" ]; then
   extra_pct_int=$(as_int "$extra_pct")
   extra_bar=$(build_bar "$extra_pct_int" "$bar_width")
   extra_pct_color=$(color_for_pct "$extra_pct_int")
-  # Credits arrive in cents.
+  # Credits arrive in minor units (cents), in the account's currency.
   extra_used_int=$(as_int "$extra_used")
   extra_limit_int=$(as_int "$extra_limit")
+  case "$extra_currency" in
+    EUR) cur="€" ;;
+    GBP) cur="£" ;;
+    '' | USD) cur="\$" ;;
+    *) cur="$extra_currency " ;;
+  esac
   extra_reset=$(date -v+1m -v1d +"%b %-d" 2> /dev/null | tr '[:upper:]' '[:lower:]')
   [ -z "$extra_reset" ] && extra_reset=$(date -d "$(date +%Y-%m-01) +1 month" +"%b %-d" 2> /dev/null | tr '[:upper:]' '[:lower:]')
 
   [ -n "$rate_lines" ] && rate_lines+="\n"
-  rate_lines+="${white}extra${reset}   ${extra_bar} ${extra_pct_color}\$$((extra_used_int / 100)).$(printf '%02d' $((extra_used_int % 100)))${dim}/${reset}${white}\$$((extra_limit_int / 100)).$(printf '%02d' $((extra_limit_int % 100)))${reset}"
+  rate_lines+="${white}extra${reset}   ${extra_bar} ${extra_pct_color}${cur}$((extra_used_int / 100)).$(printf '%02d' $((extra_used_int % 100)))${dim}/${reset}${white}${cur}$((extra_limit_int / 100)).$(printf '%02d' $((extra_limit_int % 100)))${reset}"
   [ -n "$extra_reset" ] && rate_lines+=" ${dim}⟳${reset} ${white}${extra_reset}${reset}"
 fi
 

@@ -96,10 +96,23 @@ t "E2.14" "a failed binary install makes the bootstrap exit non-zero" 'W=$(sandb
 t "E2.16" "the template documents the per-event hooks merge" 'out=$(jq -r ".\"\$comment\"[]" claude/settings.template.json); echo "$out" | grep -qi "per event"'
 t "E2.15" "the bootstrap still exits 0 when every step succeeds" 'W=$(sandbox); _main_with_failing _no_such_step "$W"'
 
-section "E3 — statusline reads stdin only"
+section "E3 — statusline renders from stdin"
+# Every status line run in this file stays off the real keychain, network and
+# usage cache; the extra-usage tests below opt back in with sandboxed stubs.
+export CLAUDE_STATUSLINE_FETCH=off
+CLAUDE_STATUSLINE_CACHE_DIR="$(sandbox)/sl-cache"
+export CLAUDE_STATUSLINE_CACHE_DIR
 fixture='{"model":{"display_name":"Opus"},"cwd":"/tmp","workspace":{"current_dir":"/tmp"},"cost":{"total_cost_usd":1.5,"total_duration_ms":65000},"context_window":{"context_window_size":200000,"used_percentage":42},"rate_limits":{"five_hour":{"used_percentage":31},"seven_day":{"used_percentage":12}},"effort":"high"}'
 t "E3.1" "renders model, context and limits from stdin" 'out=$(printf "%s" "$fixture" | PATH=/usr/bin:/bin bash claude/statusline.sh); echo "$out" | grep -q Opus && echo "$out" | grep -q "42" && echo "$out" | grep -q "31"'
-t "E3.2" "no keychain, credentials or network access" '[ "$(code_of claude/statusline.sh | grep -cE "security find-generic-password|credentials.json|curl|api.anthropic.com|oauth")" -eq 0 ]'
+# Extra usage is not in the payload, only in the usage API, so the token is
+# read again -- from the keychain only, and handed to curl through its config
+# on stdin (-K -), never a command line `ps` shows to every local process.
+t "E3.2" "credentials stay on the fetch path: keychain only, token never on a command line" '
+  c=$(code_of claude/statusline.sh)
+  [ "$(printf "%s\n" "$c" | grep -c "credentials.json")" -eq 0 ] &&
+  [ "$(printf "%s\n" "$c" | grep -c "Bearer")" -eq 1 ] &&
+  printf "%s\n" "$c" | grep "Bearer" | grep -qE "^[[:space:]]*printf .header = " &&
+  [ "$(printf "%s\n" "$c" | grep -c -- "-K -")" -ge 1 ]'
 t "E3.3" "renders without rate_limits"                'printf "{\"model\":{\"display_name\":\"X\"}}" | bash claude/statusline.sh | grep -q X'
 t "E3.4" "no git status walk per refresh"             '[ "$(code_of claude/statusline.sh | grep -c "status --porcelain")" -eq 0 ]'
 t "E3.5" "at most 3 jq invocations"                   '[ "$(code_of claude/statusline.sh | grep -c "jq ")" -le 3 ]'
@@ -129,6 +142,76 @@ t "E3.15" "re-installing over the link makes no backup" '
   W=$(sandbox); mkdir -p "$W/.claude"; _install_sl "$W"; _install_sl "$W"
   [ -L "$W/.claude/statusline.sh" ] && ! ls "$W/.claude" | grep -q "\.bak\."'
 t "E3.12" "extra usage reset date is inline"         'out=$(printf "{\"model\":{\"display_name\":\"X\"},\"rate_limits\":{\"extra_usage\":{\"is_enabled\":true,\"utilization\":10,\"used_credits\":500,\"monthly_limit\":5000}}}" | bash claude/statusline.sh); echo "$out" | grep "extra" | grep -q "⟳" && ! echo "$out" | grep -q "^resets"'
+
+# Extra usage from the usage API. _xu_env: a sandbox with a stub keychain that
+# returns a token, a stub curl that records its argv and its stdin separately
+# and answers with $W/resp, and no cache yet. _xu <W> [VAR=val ...] renders
+# $XU_PAYLOAD (default: a subscriber payload without extra_usage) with them,
+# fetching in the foreground so the result can be checked.
+xu_payload='{"version":"9.8.7","model":{"display_name":"X"},"workspace":{"current_dir":"/tmp"},"rate_limits":{"five_hour":{"used_percentage":5}}}'
+_xu_env() {
+  local W
+  W=$(sandbox) || return 1
+  mkdir -p "$W/bin"
+  printf '%s\n' '#!/bin/bash' 'echo "security $*" >>"$XU/calls"' \
+    '[ -n "${SEC_EMPTY:-}" ] || printf "%s\n" "{\"claudeAiOauth\":{\"accessToken\":\"tok-SECRET-123\",\"refreshToken\":\"r\"}}"' >"$W/bin/security"
+  printf '%s\n' '#!/bin/bash' 'echo "curl $*" >>"$XU/calls"' 'printf "%s\n" "$*" >"$XU/curl.argv"' 'cat >"$XU/curl.stdin"' \
+    '[ -z "${CURL_SLEEP:-}" ] || sleep "$CURL_SLEEP"' '[ -z "${CURL_FAIL:-}" ] || exit 22' 'cat "$XU/resp"' >"$W/bin/curl"
+  chmod +x "$W/bin/security" "$W/bin/curl"
+  printf '%s' '{"five_hour":{"utilization":5},"extra_usage":{"is_enabled":true,"monthly_limit":5000,"used_credits":1234,"utilization":24.68}}' >"$W/resp"
+  printf '%s' "$W"
+}
+_xu() {
+  local W=$1
+  shift
+  printf '%s' "${XU_PAYLOAD:-$xu_payload}" |
+    env XU="$W" PATH="$W/bin:/usr/bin:/bin" CLAUDE_STATUSLINE_CACHE_DIR="$W/cache" CLAUDE_STATUSLINE_FETCH=sync "$@" \
+      bash claude/statusline.sh >"$W/out" 2>&1
+}
+t "E3.16" "a subscriber payload without extra_usage fetches it and caches only extra_usage, privately" '
+  W=$(_xu_env) && _xu "$W" && f="$W/cache/extra-usage.json" &&
+  [ "$(jq -r .used_credits "$f")" = 1234 ] && [ "$(jq -r "has(\"five_hour\")" "$f")" = false ] &&
+  [ "$(grep -c tok-SECRET "$f")" -eq 0 ] &&
+  [ "$(/usr/bin/stat -f %Lp "$f")" = 600 ] && [ "$(/usr/bin/stat -f %Lp "$W/cache")" = 700 ]'
+t "E3.17" "the next render shows the fetched extra usage" '
+  W=$(_xu_env) && _xu "$W" && _xu "$W" && grep "extra" "$W/out" | grep -qF "\$12.34" && grep "extra" "$W/out" | grep -qF "\$50.00"'
+t "E3.18" "the token reaches curl only through its config on stdin, never its command line" '
+  W=$(_xu_env) && _xu "$W" && [ "$(grep -c tok-SECRET "$W/curl.argv")" -eq 0 ] &&
+  grep -q "Authorization: Bearer tok-SECRET-123" "$W/curl.stdin" && grep -q -- "-K -" "$W/curl.argv"'
+t "E3.19" "the User-Agent version comes from the payload, not a pinned number" \
+  'W=$(_xu_env) && _xu "$W" && grep -q "claude-code/9.8.7" "$W/curl.argv"'
+t "E3.20" "a fetch attempt within five minutes is not repeated" \
+  'W=$(_xu_env) && _xu "$W" && _xu "$W" && [ "$(grep -c "^curl" "$W/calls")" -eq 1 ]'
+t "E3.21" "no rate_limits in the payload (no subscription): no keychain read, no fetch" \
+  'W=$(_xu_env) && XU_PAYLOAD="{\"model\":{\"display_name\":\"X\"}}" _xu "$W" && [ ! -e "$W/calls" ]'
+t "E3.22" "extra_usage in the payload wins and nothing is fetched" '
+  W=$(_xu_env) && XU_PAYLOAD="{\"model\":{\"display_name\":\"X\"},\"rate_limits\":{\"extra_usage\":{\"is_enabled\":true,\"utilization\":10,\"used_credits\":500,\"monthly_limit\":5000}}}" _xu "$W" &&
+  [ ! -e "$W/calls" ] && grep "extra" "$W/out" | grep -qF "\$5.00"'
+t "E3.23" "no token in the keychain: curl is never run and nothing is cached" \
+  'W=$(_xu_env) && _xu "$W" SEC_EMPTY=1 && [ "$(grep -c "^curl" "$W/calls")" -eq 0 ] && [ ! -e "$W/cache/extra-usage.json" ]'
+t "E3.24" "a failed fetch keeps the last good answer and leaves no temp file" '
+  W=$(_xu_env) && _xu "$W" && cp "$W/cache/extra-usage.json" "$W/good" && rm "$W/cache/last-fetch" &&
+  _xu "$W" CURL_FAIL=1 && cmp -s "$W/good" "$W/cache/extra-usage.json" && [ "$(ls -A "$W/cache" | grep -c "^[.]")" -eq 0 ]'
+t "E3.25" "an answer older than an hour is not shown" '
+  W=$(_xu_env) && _xu "$W" && touch -t 202001010000 "$W/cache/extra-usage.json" "$W/cache/last-fetch" &&
+  _xu "$W" CURL_FAIL=1 && [ "$(grep -c extra "$W/out")" -eq 0 ]'
+t "E3.26" "a corrupt cache renders without the extra line and exits 0" '
+  W=$(_xu_env) && mkdir -m 700 "$W/cache" && printf "not json{" >"$W/cache/extra-usage.json" && : >"$W/cache/last-fetch" &&
+  _xu "$W" && grep -q X "$W/out" && [ "$(grep -c extra "$W/out")" -eq 0 ]'
+t "E3.27" "the default background fetch never delays the render" '
+  W=$(_xu_env) && s=$(date +%s) && _xu "$W" CLAUDE_STATUSLINE_FETCH= CURL_SLEEP=4 && e=$(date +%s) &&
+  [ $((e - s)) -le 2 ] && grep -q X "$W/out"'
+t "E3.28" "CLAUDE_STATUSLINE_FETCH=off: no keychain read, no fetch" \
+  'W=$(_xu_env) && _xu "$W" CLAUDE_STATUSLINE_FETCH=off && [ ! -e "$W/calls" ]'
+t "E3.29" "extra usage shows its currency: EUR as €, none or USD as \$, anything else by its code" '
+  W=$(_xu_env) && mkdir -m 700 "$W/cache" && : >"$W/cache/last-fetch" && f="$W/cache/extra-usage.json" &&
+  printf "%s" "{\"is_enabled\":true,\"monthly_limit\":35000,\"used_credits\":3390.0,\"utilization\":9.7,\"currency\":\"EUR\"}" >"$f" &&
+  _xu "$W" && grep extra "$W/out" | grep -qF "€33.90" && grep extra "$W/out" | grep -qF "€350.00" &&
+  [ "$(grep extra "$W/out" | grep -cF "\$")" -eq 0 ] &&
+  printf "%s" "{\"is_enabled\":true,\"monthly_limit\":5000,\"used_credits\":100}" >"$f" &&
+  _xu "$W" && grep extra "$W/out" | grep -qF "\$1.00" && grep extra "$W/out" | grep -qF "\$50.00" &&
+  printf "%s" "{\"is_enabled\":true,\"monthly_limit\":5000,\"used_credits\":100,\"currency\":\"CHF\"}" >"$f" &&
+  _xu "$W" && grep extra "$W/out" | grep -qF "CHF 1.00" && grep extra "$W/out" | grep -qF "CHF 50.00"'
 
 section "E4 — rules and the drift check"
 t "E4.1" "vault-lookback names real qmd tools" '! grep -qE "qmd_search|qmd_vector_search|qmd_deep_search" claude/rules/vault-lookback.md && grep -q "multi_get" claude/rules/vault-lookback.md'
