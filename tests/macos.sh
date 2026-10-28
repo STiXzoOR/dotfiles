@@ -371,7 +371,13 @@ exit 0'
 [ -z "${INSTALL_FAIL:-}" ] || exit 1
 for a in "$@"; do p2=${p1:-}; p1=$a; done
 cp "$p2" "$p1"'
-  _stub "$W/bin" sshd '[ "$1" != -t ] || exit ${SSHD_RC:-0}'
+  # sshd -t fails like a Mac that never ran Remote Login (no host keys yet)
+  # when SSHD_RC is non-zero; ssh-keygen -A is the step that generates them.
+  _stub "$W/bin" sshd '
+[ "$1" = -t ] || exit 0
+[ "${SSHD_RC:-0}" -eq 0 ] || echo "sshd: no hostkeys available -- exiting." >&2
+exit ${SSHD_RC:-0}'
+  _stub "$W/bin" ssh-keygen 'exit ${SSHKEYGEN_RC:-0}'
   # pfctl -sr lists rules once the daemon has loaded them (PF_EMPTY: never;
   # PF_LATE: not on the first look, as when launchd has not run the job yet).
   # -s info says pf is enabled unless PF_DISABLED is set.
@@ -449,7 +455,7 @@ _g_run() {
     DOTFILES_SOCKETFILTERFW="$W/bin/socketfilterfw" \
     DOTFILES_ACTIVATE_SETTINGS="$W/bin/activateSettings" \
     DOTFILES_LSREGISTER="$W/bin/lsregister" \
-    DOTFILES_SSHD="$W/bin/sshd" DOTFILES_SSHD_CONF_DIR="$W/etc/ssh/sshd_config.d" \
+    DOTFILES_SSHD="$W/bin/sshd" DOTFILES_SSH_KEYGEN="$W/bin/ssh-keygen" DOTFILES_SSHD_CONF_DIR="$W/etc/ssh/sshd_config.d" \
     DOTFILES_PF_ANCHOR_DIR="$W/etc/pf.anchors" DOTFILES_LAUNCHDAEMONS_DIR="$W/Library/LaunchDaemons" \
     DOTFILES_VNC_SETTINGS="$W/vnc.txt" \
     HK_STATE="$W/hk" SFE_STATE="$W/sfe" W_STATE="$W" DOTFILES_RAYCAST_APP="$W/Raycast.app" DOTFILES_TINYCAST_APP="$W/Tinycast.app" \
@@ -1379,6 +1385,11 @@ t "R3.13" "sshd -t runs after the file is installed" \
 t "R3.14" "a failing sshd -t removes the file again, errors and counts a failure" '
   W=$(_ra_env) && [ "$(_ra_tally "$W" SSHD_RC=1)" -ge 1 ] && [ ! -e "$W/etc/ssh/sshd_config.d/010-dotfiles.conf" ] &&
   grep -q "error.*sshd" "$W/out"'
+t "R3.14b" "missing host keys are generated with the system ssh-keygen -A before sshd -t (a Mac that never ran Remote Login has none)" '
+  _logged "$RON" "ssh-keygen -A" && [ "$(_first_line "ssh-keygen -A" "$RON/log")" -lt "$(_first_line "sshd -t" "$RON/log")" ] &&
+  [ "$(code_of macos/defaults-remote-access.sh | grep -c "DOTFILES_SSH_KEYGEN:-/usr/bin/ssh-keygen")" -ge 1 ]'
+t "R3.14c" "a failing sshd -t shows sshd own message, not just that it failed" \
+  'W=$(_ra_env) && _ra_run "$W" SSHD_RC=1 && grep -q "error.*no hostkeys available" "$W/out"'
 t "R3.15" "no authorized_keys: nothing installed, an error naming the phone key, a counted failure" '
   W=$(_ra_env) && rm -f "$W/home/.ssh/authorized_keys" && [ "$(_ra_tally "$W")" -ge 1 ] &&
   [ ! -e "$W/etc/ssh/sshd_config.d/010-dotfiles.conf" ] && [ "$(_logcount "$W" "sshd -t")" -eq 0 ] &&

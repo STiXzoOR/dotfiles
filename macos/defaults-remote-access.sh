@@ -93,13 +93,21 @@ if [ "$(dotfiles_remote_access)" = on ]; then
     elif ! _ra_put "$_ra_sshd_src" "$_ra_sshd_dest"; then
       error "could not install $_ra_sshd_dest (sudo install failed)"
       _ra_fail
-    elif sudo "${DOTFILES_SSHD:-/usr/sbin/sshd}" -t >/dev/null 2>&1; then
-      ok
-      _ra_sshd_ok=1
     else
-      sudo rm -f "$_ra_sshd_dest"
-      error "sshd rejected the new configuration (sshd -t failed), so it was removed again; SSH is as it was"
-      _ra_fail
+      # A Mac that never ran Remote Login has no host keys yet, and sshd -t
+      # refuses to run without them ("no hostkeys available"). Generate any that
+      # are missing, as macOS does on the first Remote Login connection. The
+      # system ssh-keygen, by absolute path: a Homebrew one would write them
+      # under its own etc.
+      sudo "${DOTFILES_SSH_KEYGEN:-/usr/bin/ssh-keygen}" -A >/dev/null 2>&1
+      if _ra_sshd_msg=$(sudo "${DOTFILES_SSHD:-/usr/sbin/sshd}" -t 2>&1); then
+        ok
+        _ra_sshd_ok=1
+      else
+        sudo rm -f "$_ra_sshd_dest"
+        error "sshd rejected the new configuration (sshd -t: ${_ra_sshd_msg%%$'\n'*}), so it was removed again; SSH is as it was"
+        _ra_fail
+      fi
     fi
   else
     error "no public key in ~/.ssh/authorized_keys: add your phone's public key there first, then run \`dotfiles configure --remote-access\` again (the sshd hardening is not installed without it, so you cannot lock yourself out)"
@@ -217,7 +225,7 @@ if [ "$(dotfiles_remote_access)" = on ]; then
   fi
   echo -e " ⇒ SSH and Screen Sharing now answer only on Tailscale: use this Mac's Tailscale name, not its LAN address"
 
-  unset _ra_user _ra_group _ra_good _ra_keys _ra_sshd_ok _ra_sshd_src _ra_sshd_dest _ra_pf_label _ra_pf_anchor _ra_pf_src \
+  unset _ra_user _ra_group _ra_good _ra_keys _ra_sshd_ok _ra_sshd_msg _ra_sshd_src _ra_sshd_dest _ra_pf_label _ra_pf_anchor _ra_pf_src \
     _ra_pf_dest _ra_plist_src _ra_plist_dest _ra_pf_good _ra_pf_ok _ra_pf_changed _ra_wait _RA_CHANGED
 else
   skip "remote access: off for this Mac (DOTFILES_REMOTE_ACCESS=on in macos/machine.local.sh turns it on); nothing changed"
