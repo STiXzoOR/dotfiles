@@ -170,11 +170,13 @@ t "S6.4" "zpreztorc does not load a non-existent identity" \
 # S6.5 withdrawn: com.apple.mail keys are valid (defaults write creates a
 # missing domain) and the BluetoothAudioAgent line was already commented out.
 # What is worth guarding is the shape that mistake would have produced -- a
-# defaults script that prints ok without performing any write.
+# defaults script that prints ok without performing any write. System settings
+# that are not preferences (defaults-remote-access.sh) are written with sudo
+# install, dseditgroup, systemsetup and launchctl, which count as work too.
 t "S6.5" "no defaults script reports ok without doing any work" '
   bad=0
   for f in macos/defaults-*.sh; do
-    w=$(grep -cE "defaults write|PlistBuddy|osascript|chflags|killall" "$f")
+    w=$(grep -cE "defaults write|PlistBuddy|osascript|chflags|killall|sudo install|dseditgroup -o (create|edit)|systemsetup -set|launchctl bootstrap" "$f")
     o=$(grep -cE "^[[:space:]]*ok\b" "$f")
     if [ "$o" -gt 0 ] && [ "$w" -eq 0 ]; then bad=1; fi
   done
