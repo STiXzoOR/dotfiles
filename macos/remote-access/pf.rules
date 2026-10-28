@@ -1,0 +1,7 @@
+# Remote Login (22) and Screen Sharing (5900) answer only on loopback and on
+# Tailscale addresses (its CGNAT range and its IPv6 ULA); every other network
+# sees nothing.
+table <dotfiles_tailnet> const { 100.64.0.0/10, fd7a:115c:a1e0::/48 }
+pass in quick on lo0 proto { tcp udp } to any port { 22 5900 }
+pass in quick proto { tcp udp } from <dotfiles_tailnet> to any port { 22 5900 }
+block drop in quick proto { tcp udp } to any port { 22 5900 }

@@ -17,17 +17,21 @@ SCREENSHOTS_FOLDER="${HOME}/Desktop/Screenshots"
 # outranks both files, and a value leaked from local.sh would outrank the
 # per-Mac file.
 _launcher_env="${DOTFILES_LAUNCHER:-}"
+# DOTFILES_REMOTE_ACCESS is per Mac too (dotfiles_remote_access reads it from
+# machine.local.sh itself and never from local.sh), so it is put back the same way.
+_remote_env="${DOTFILES_REMOTE_ACCESS:-}"
 # shellcheck disable=SC1091
 [ -f "$DOTFILES_DIR/macos/local.sh" ] && source "$DOTFILES_DIR/macos/local.sh"
 # Per-Mac values (a computer name of its own, the launcher) come after the
 # shared file and win over it.
 # shellcheck disable=SC1091
 [ -f "$DOTFILES_DIR/macos/machine.local.sh" ] && source "$DOTFILES_DIR/macos/machine.local.sh"
-unset DOTFILES_LAUNCHER
+unset DOTFILES_LAUNCHER DOTFILES_REMOTE_ACCESS
 [ -z "$_launcher_env" ] || DOTFILES_LAUNCHER="$_launcher_env"
+[ -z "$_remote_env" ] || DOTFILES_REMOTE_ACCESS="$_remote_env"
 
-# Absolute-path binaries, overridable so the tests can stub them.
-FIREWALL_CTL="${DOTFILES_SOCKETFILTERFW:-/usr/libexec/ApplicationFirewall/socketfilterfw}"
+# Absolute-path binaries, overridable so the tests can stub them. The firewall
+# control is in scripts/lib/defaults-common.sh.
 ACTIVATE_SETTINGS="${DOTFILES_ACTIVATE_SETTINGS:-/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings}"
 LSREGISTER="${DOTFILES_LSREGISTER:-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister}"
 
@@ -35,30 +39,21 @@ source "$DOTFILES_DIR/scripts/echos.sh"
 source "$DOTFILES_DIR/scripts/requirers.sh"
 source "$DOTFILES_DIR/scripts/lib/machine.sh"
 
-# scripts/echos.sh prints a bare "[error]" when print_result has no message.
-# Here every error line names the step that failed and says what to do, so
-# running() remembers its title and print_result uses it.
-DOTFILES_STEP=""
-running() {
-  DOTFILES_STEP="${1:-}"
-  echo -en "${COL_YELLOW} ⇒ ${COL_RESET}${1:-}: "
-}
-print_result() {
-  if [[ "${1:-1}" -eq 0 ]]; then
-    ok "${2:-}"
-  else
-    error "${2:-"${DOTFILES_STEP:-a step} failed (exit ${1:-1}); fix what the output above says, then run \`dotfiles configure --defaults\` again"}"
-  fi
-}
+# running(), print_result() and the firewall routine are shared with
+# macos/defaults-remote-access.sh.
+source "$DOTFILES_DIR/scripts/lib/defaults-common.sh"
 
-# desktop or laptop (scripts/lib/machine.sh). Remote Login and the power
-# settings below are desktop-only: the laptop keeps its own, and this script
-# neither turns them on nor off there.
+# desktop or laptop (scripts/lib/machine.sh). The power settings below are
+# desktop-only: the laptop keeps its own, and this script neither turns them on
+# nor off there. Remote Login is in macos/defaults-remote-access.sh and follows
+# dotfiles_remote_access, not the role.
 DOTFILES_ROLE=$(dotfiles_machine_role)
 
-# Failed read-backs (firewall, stealth mode, Remote Login) are counted here;
+# Failed read-backs (firewall, stealth mode) are counted here;
 # `dotfiles configure --defaults` turns a non-zero count into a non-zero status.
-DOTFILES_DEFAULTS_FAILURES=0
+# Kept, not reset: a defaults file sourced before this one (the glob puts
+# defaults-remote-access.sh first) may already have counted failures.
+DOTFILES_DEFAULTS_FAILURES="${DOTFILES_DEFAULTS_FAILURES:-0}"
 # Only real system settings count as failures. Anything with a documented GUI
 # fallback (the Tinycast hotkey, Spotlight indexing, the Open With rebuild, the
 # reduce-transparency reset) is a warning that names the fallback.
@@ -111,35 +106,6 @@ sudo systemsetup -setremoteappleevents off >/dev/null 2>&1
 print_result $?
 
 if [ "$DOTFILES_ROLE" = desktop ]; then
-  # Remote Login (SSH) is ON: this machine is reached remotely. -f suppresses the
-  # confirmation prompt, which would otherwise block forever because it is
-  # written to a stream that goes to /dev/null while stdin is still the
-  # terminal. See `man systemsetup`, -setremotelogin [-f] on | off.
-  #
-  # The state is read first and the setter only runs when it is off: without
-  # Full Disk Access the setter errors even when Remote Login is already on
-  # (enabled by hand), and `-getremotelogin` needs Full Disk Access too, reading
-  # Off while sshd runs. So the state is read from systemsetup, from launchd's
-  # disabled list and from sshd listening on port 22; the last two need no Full
-  # Disk Access.
-  _remote_login_on() {
-    sudo systemsetup -getremotelogin 2>/dev/null | grep -q "Remote Login: On" ||
-      sudo launchctl print-disabled system 2>/dev/null | grep -q '"com.openssh.sshd" => enabled' ||
-      nc -z 127.0.0.1 22 >/dev/null 2>&1
-  }
-  running "Enable remote login"
-  if _remote_login_on; then
-    ok "already on"
-  else
-    sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
-    if _remote_login_on; then
-      ok
-    else
-      error "Remote Login is off: turn it on in System Settings, General, Sharing, Remote Login (or grant Full Disk Access to this terminal), then run \`dotfiles configure --defaults\` again"
-      DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
-    fi
-  fi
-
   # Power. Apple silicon ignores `standbydelay` (it reads back absent), so it is
   # not written.
   running "Restart automatically after a power failure"
@@ -164,7 +130,7 @@ if [ "$DOTFILES_ROLE" = desktop ]; then
   sudo pmset -c displaysleep 10
   print_result $?
 else
-  skip "Remote Login and power settings: left as they are on a laptop (role: $DOTFILES_ROLE)"
+  skip "power settings: left as they are on a laptop (role: $DOTFILES_ROLE)"
 fi
 
 running "Disable wake-on LAN"
@@ -175,22 +141,13 @@ running "Disable guest account login"
 sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false
 print_result $?
 
-# The application firewall. /Library/Preferences/com.apple.alf.plist was
-# removed in macOS 15, so `defaults write com.apple.alf ...` is dead code and
-# socketfilterfw is the only supported control. The setters exit 0 even when
-# they change nothing (no Full Disk Access), so each result is read back.
+# The application firewall and stealth mode, read back: one routine in
+# scripts/lib/defaults-common.sh, shared with macos/defaults-remote-access.sh.
 #
 # Adding and removing individual applications through socketfilterfw has been
 # unreliable since macOS 15 and --listapps no longer prints paths, so do not
 # build per-app firewall rules on top of this.
-
-running "Turn the application firewall on"
-sudo "$FIREWALL_CTL" --setglobalstate on >/dev/null 2>&1
-print_result $?
-
-running "Turn stealth mode on (no reply to unsolicited probes)"
-sudo "$FIREWALL_CTL" --setstealthmode on >/dev/null 2>&1
-print_result $?
+dotfiles_firewall_on
 
 running "Let built-in signed software receive incoming connections"
 sudo "$FIREWALL_CTL" --setallowsigned on >/dev/null 2>&1
@@ -199,26 +156,6 @@ print_result $?
 running "Do not auto-allow downloaded signed software"
 sudo "$FIREWALL_CTL" --setallowsignedapp off >/dev/null 2>&1
 print_result $?
-
-# State = 1 is on and State = 2 is "block all incoming connections", which is
-# on with a stricter filter; only State = 0 (or no answer) is a failure.
-running "Verify the firewall is really on"
-if "$FIREWALL_CTL" --getglobalstate 2>/dev/null | grep -qE "State = [12]"; then
-  ok
-else
-  error "the application firewall is still off: grant Full Disk Access to this terminal and run again"
-  DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
-fi
-
-running "Verify stealth mode is really on"
-# macOS 26 and earlier print "Stealth mode enabled"; macOS 27 prints "Firewall
-# stealth mode is on". Off reads "disabled" or "is off", neither of which matches.
-if "$FIREWALL_CTL" --getstealthmode 2>/dev/null | grep -qiE "stealth mode (is )?(enabled|on)"; then
-  ok
-else
-  error "stealth mode is still off: grant Full Disk Access to this terminal and run again"
-  DOTFILES_DEFAULTS_FAILURES=$((DOTFILES_DEFAULTS_FAILURES + 1))
-fi
 
 # Lock the screen with a password immediately after sleep or the screensaver.
 # The defaults keys below are the declarative half; on current macOS they are

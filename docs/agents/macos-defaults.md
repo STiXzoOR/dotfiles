@@ -44,40 +44,94 @@ install (System Settings, Privacy & Security, Full Disk Access): without it
 still exit 0. A notice is printed at the start of the block, and the firewall
 state is read back afterwards; an unchanged state is an `error` naming Full Disk
 Access. `State = 1` (on) and `State = 2` (block all incoming) both count as on.
-Each failed read-back (firewall, stealth mode, Remote Login) is added to
+Each failed read-back (firewall, stealth mode, and the remote access steps below) is added to
 `DOTFILES_DEFAULTS_FAILURES`, and `dotfiles configure --defaults` then exits
 non-zero instead of ending in a success banner. Revoke the grant when the
 install is done.
 
-Declared here: firewall on with stealth mode, Remote Login on, restart after a
+Declared here: firewall on with stealth mode, restart after a
 power failure, no Power Nap, no disk sleep, no wake-on-LAN, password required
-immediately after sleep or the screen saver. Remote Login, `autorestart`,
+immediately after sleep or the screen saver. `autorestart`,
 `powernap`, `disksleep` and the AC-power sleep settings (`pmset -c sleep 0`, so the
 system never sleeps and stays reachable over SSH, and `pmset -c displaysleep 10`)
 are desktop-only: `scripts/lib/machine.sh` reads the
 role (`desktop` when `pmset -g batt` shows no internal battery, else `laptop`;
 `DOTFILES_MACHINE_ROLE` overrides) and on a laptop the script leaves those
-settings untouched (it never turns Remote Login off). Firewall, stealth mode,
-wake-on-LAN off and the screen-lock password apply to both. See
+settings untouched. Firewall, stealth mode,
+wake-on-LAN off and the screen-lock password apply to both. Remote Login is not
+role-gated any more: it belongs to remote access, below. See
 [two-mac-sync.md](two-mac-sync.md). The screen-lock delay is set with
 `sysadminctl -screenLock immediate -password -`, which prompts for the account
 password; it runs only on a terminal without `DOTFILES_YES`, otherwise the
 command is printed for you to run. `pmset standbydelay` is not written (Apple
 silicon ignores it).
 
-**Two Macs.** Remote Login and the desktop power settings above are not yet
-gated by machine role. Until the sync work lands, do not re-run
-`dotfiles configure` on the MacBook: it would enable Remote Login and the
-mini's power settings there.
+## Remote access
 
-Remote Login is read back like the firewall, but `systemsetup -getremotelogin`
-itself needs Full Disk Access (without it it reports Off while sshd runs), so it
-is not trusted alone. The state counts as on if any of these says so:
-`systemsetup -getremotelogin`, `sudo launchctl print-disabled system` showing
-`"com.openssh.sshd" => enabled`, or sshd answering on `127.0.0.1:22`. A Mac
-where all three say off gets an `error` saying to turn it on in System Settings,
-General, Sharing, Remote Login, and to re-run `dotfiles configure --defaults`;
-it is counted as a failure.
+`macos/defaults-remote-access.sh` makes a Mac reachable from a phone over
+Tailscale, safely: SSH with keys only plus macOS Screen Sharing, both answering
+only on Tailscale addresses. Tailscale here is the Mac App Store app, which
+cannot run Tailscale's own SSH server, so SSH is Apple's sshd (Remote Login).
+Who on the tailnet may connect is the Tailscale policy's business.
+
+**Opt-in.** `dotfiles_remote_access` (`scripts/lib/machine.sh`) prints `on` or
+`off`: `DOTFILES_REMOTE_ACCESS` from the environment, else from
+`macos/machine.local.sh` (per Mac; the shared `macos/local.sh` is not read), else
+the role default, `on` for a desktop and `off` for a laptop. A bad value warns
+and falls back to the role default. Off prints one skip line and changes
+nothing; nothing here ever turns anything off. It runs inside
+`dotfiles configure --defaults`, and alone with `dotfiles configure
+--remote-access` (which also exits non-zero on a failed step).
+
+When on, in this order, each step printing running/ok/error and each failure
+counted in `DOTFILES_DEFAULTS_FAILURES`:
+
+1. Firewall and stealth mode on, read back. The routine `dotfiles_firewall_on`
+   lives in `scripts/lib/defaults-common.sh` and `defaults.sh` calls the same one.
+2. Remote Login on. The state is read first and `systemsetup -setremotelogin -f on`
+   only runs when it is off (the setter errors without Full Disk Access even when
+   it is already on, and `-getremotelogin` itself needs Full Disk Access, so it is
+   not trusted alone). The state counts as on if any of these says so:
+   `systemsetup -getremotelogin`, `sudo launchctl print-disabled system` showing
+   `"com.openssh.sshd" => enabled`, or sshd answering on `127.0.0.1:22`.
+3. Only the running user may log in: the groups `com.apple.access_ssh` and
+   `com.apple.access_screensharing` are created when missing, the user is added
+   and membership is read back with `dseditgroup -o checkmember`. A group can
+   exist with no members, which means nobody can log in, so membership is always
+   ensured.
+4. sshd hardening: `macos/remote-access/sshd.conf` is installed root:wheel 0644 as
+   `/etc/ssh/sshd_config.d/010-dotfiles.conf` (it must sort before macOS's
+   `100-macos.conf`; sshd keeps the first value it reads). Keys only, no
+   keyboard-interactive, no root, Ed25519 and P-256 keys, no forwarding. Lockout
+   guard: with no key line in `~/.ssh/authorized_keys` it is not installed and the
+   step errors. After installing, `sudo /usr/sbin/sshd -t` must pass, else the file
+   is removed again. macOS starts sshd per connection, so nothing is restarted.
+5. pf: `macos/remote-access/pf.rules` goes to `/etc/pf.anchors/dotfiles.remote`
+   and loads into the anchor `com.apple/900.dotfiles-remote`, which Apple's stock
+   `anchor "com.apple/*"` already evaluates, so `/etc/pf.conf` is never edited. Ports
+   22 and 5900 pass on loopback and from Tailscale's `100.64.0.0/10` and
+   `fd7a:115c:a1e0::/48` and are blocked from everywhere else. The LaunchDaemon
+   `com.stixzoor.dotfiles-pf-remote` (installed root:wheel 0644 in
+   `/Library/LaunchDaemons`) re-asserts the rules at boot and every 300 seconds.
+   It runs as root, so its plist references only `/bin`, `/sbin`, `/usr/bin` and
+   `/etc/pf.anchors`, never anything in the repo or `$HOME` (tested). The rules
+   are read back with `sudo pfctl -a com.apple/900.dotfiles-remote -sr`.
+6. Screen Sharing cannot be switched on reliably from the CLI, so it is only
+   checked (`nc -z 127.0.0.1 5900`) and an action line says what to click. If
+   `/Library/Preferences/com.apple.VNCSettings.txt` exists, the legacy "VNC
+   viewers may control screen with password" is on and gets a warning.
+
+Installed files are compared with `cmp`; an identical one is "already set" and a
+re-run changes nothing.
+
+**Manual steps.**
+
+- Before the first run, add your phone's public key to `~/.ssh/authorized_keys`.
+- Turn on Screen Sharing: System Settings > General > Sharing > Screen Sharing,
+  then (i) > Allow access for: Only these users. Turn the legacy VNC password
+  option off if the run warns about it.
+- After this, SSH or Screen Sharing to the Mac's LAN address no longer works: use
+  its Tailscale name.
 
 ## Appearance
 

@@ -92,6 +92,7 @@ test --verbose          # Detailed output
 test --quick            # Skip the slow startup-timing tests
 configure --defaults    # Apply the macOS system defaults
 configure --dock        # Apply the Dock settings
+configure --remote-access  # Only the remote access part of --defaults: SSH (keys only) and Screen Sharing over Tailscale only
 update --system         # Update the OS and package managers
 ```
 

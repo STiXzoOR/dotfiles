@@ -1348,6 +1348,39 @@ t "N7.5f" "configure returns zero when configure --defaults succeeds" \
 t "N7.5" "no apps/* path is hardcoded in bin/dotfiles" \
   '[ "$(code_of bin/dotfiles | grep -c "ensure_submodule apps/")" -eq 0 ]'
 
+# configure --remote-access runs only macos/defaults-remote-access.sh.
+_ra_cfg() { # _ra_cfg <W> <failures the fake file leaves> -- sub_configure_remote_access with fakes
+  local W="$1"
+  mkdir -p "$W/df/macos" "$W/h"
+  printf 'echo remote >> "%s/log"\nDOTFILES_DEFAULTS_FAILURES=%s\n' "$W" "$2" > "$W/df/macos/defaults-remote-access.sh"
+  printf 'echo other >> "%s/log"\n' "$W" > "$W/df/macos/defaults-other.sh"
+  printf 'echo dock >> "%s/log"\n' "$W" > "$W/df/macos/dock.sh"
+  fn_of sub_configure_remote_access > "$W/fn.sh"
+  cat > "$W/run.sh" <<RUN
+PATH="/usr/bin:/bin"; HOME="$W/h"; DOTFILES_DIR="$W/df"
+cd "$PWD" || exit 1
+. scripts/echos.sh
+confirm() { return 0; }
+sudo() { echo "sudo \$*" >> "$W/log"; }
+. "$W/fn.sh"
+sub_configure_remote_access
+RUN
+  timeout 20 bash "$W/run.sh" </dev/null
+}
+t "N7R.1" "configure --remote-access runs only the remote access file, not the other defaults or the dock" '
+  W=$(sandbox); _ra_cfg "$W" 0 >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && [ "$(grep -c "^remote$" "$W/log")" -eq 1 ] && [ "$(grep -c "^other$\|^dock$" "$W/log")" -eq 0 ]'
+t "N7R.2" "configure --remote-access asks for sudo first and exits non-zero when a step failed" '
+  W=$(sandbox); out=$(_ra_cfg "$W" 2 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [ "$(_first_line "sudo -v" "$W/log")" -gt 0 ] && [ "$(_first_line "sudo -v" "$W/log")" -lt "$(_first_line remote "$W/log")" ] &&
+  case "$out" in *error*"2 "*) true ;; *) false ;; esac'
+t "N7R.3" "the dispatcher maps --remote-access to sub_configure_remote_access" \
+  '[ "$(code_of bin/dotfiles | grep -c "STRIPPED_SUB_COMMAND_NAME//-/_")" -ge 1 ] && [ "$(code_of bin/dotfiles | grep -c "^sub_configure_remote_access()")" -eq 1 ]'
+t "N7R.4" "configure --help lists --remote-access" \
+  '[ "$(fn_of sub_configure_help | grep -c -- "--remote-access")" -eq 1 ]'
+t "N7R.5" "the full configure leaves remote access to the defaults loop: it does not call it a second time" \
+  '[ "$(sed -n "/^sub_configure()/,/^}/p" <(code_of bin/dotfiles) | grep -c "remote_access")" -eq 0 ]'
+
 _pz_setup() { # _pz_setup <W> -- fake DOTFILES_DIR with a prezto runcoms dir and the runcoms the repo ships
   local W="$1"; mkdir -p "$W/df/modules/prezto/runcoms" "$W/df/runcom" "$W/h"
   : > "$W/df/modules/prezto/init.zsh"

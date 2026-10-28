@@ -97,7 +97,8 @@ t "B4.5" "the security block reports the real exit status" \
 section "B5 -- security defaults and Tahoe additions"
 #############################################################################
 t "B5.1" "firewall on + stealth" \
-  'grep -q -- "--setglobalstate on" macos/defaults.sh && grep -q -- "--setstealthmode on" macos/defaults.sh'
+  '[ "$(code_of scripts/lib/defaults-common.sh | grep -c -- "--setglobalstate on")" -ge 1 ] && [ "$(code_of scripts/lib/defaults-common.sh | grep -c -- "--setstealthmode on")" -ge 1 ] &&
+   [ "$(code_of macos/defaults.sh | grep -c "dotfiles_firewall_on")" -ge 1 ]'
 # The brief's plain grep already matched the comment that documented the
 # command without running it, which is exactly the state the audit flagged.
 # code_of strips whole-line comments, so this asks for real code.
@@ -169,7 +170,7 @@ section "F1 -- review round 1: no invisible prompts, no guaranteed errors"
 # `systemsetup -setremotelogin off` prompts for confirmation. Both streams now
 # go to /dev/null, so without -f the run blocks at a question nobody can see.
 t "F1.1" "remote login is turned on without an invisible confirmation prompt" \
-  'grep -q -- "-setremotelogin -f on" macos/defaults.sh'
+  'grep -q -- "-setremotelogin -f on" macos/defaults-remote-access.sh'
 # `xattr -d` on an absent attribute exits non-zero, so after the first
 # successful run this step reported error forever.
 t "F1.2" "the Library unhide step checks the attribute before deleting it" \
@@ -283,7 +284,7 @@ _g_env() {
     activateSettings lsregister dockutil; do
     _stub "$W/bin" "$n"
   done
-  _stub "$W/bin" sudo 'exec "$@"'
+  _stub "$W/bin" sudo 'case "${1:-}" in -v | -n) exit 0 ;; esac; exec "$@"'
   # `defaults` for com.tinycast.app: write records into $HK_STATE / $SFE_STATE,
   # `export <domain> <file>` writes a real plist holding them (what the script
   # reads through PlistBuddy), and `read` prints the value the way the real tool
@@ -354,12 +355,39 @@ exit ${SYSTEMSETUP_RC:-0}'
   # Remote Login fallbacks that work without Full Disk Access: launchd's
   # disabled list and sshd listening. RL_LAUNCHD / RL_PORT turn them on.
   _stub "$W/bin" launchctl '
+if [ "$1" = bootout ] && [ -n "${LC_BOOTOUT_FAIL:-}" ]; then exit 1; fi
+if [ "$1" = bootstrap ]; then [ -z "${LC_BOOTSTRAP_FAIL:-}" ] && : >"$FW_STATE/pfloaded" || exit 1; fi
 if [ "$1" = print-disabled ]; then
   if [ -n "${RL_LAUNCHD:-}" ]; then echo "	\"com.openssh.sshd\" => enabled"; else echo "	\"com.openssh.sshd\" => disabled"; fi
 fi
 exit 0'
-  _stub "$W/bin" nc '[ -n "${RL_PORT:-}" ]'
+  _stub "$W/bin" nc 'case "$*" in *5900*) [ -n "${SS_PORT:-}" ] ;; *) [ -n "${RL_PORT:-}" ] ;; esac'
   mkdir -p "$W/Tinycast.app"
+  # Remote access: the root-owned paths are seams that point into the sandbox.
+  mkdir -p "$W/etc/ssh/sshd_config.d" "$W/etc/pf.anchors" "$W/Library/LaunchDaemons"
+  [ ! -d "$ROOT_DIR/macos/remote-access" ] || cp -R "$ROOT_DIR/macos/remote-access" "$W/df/macos/remote-access"
+  # install copies the last two arguments (ownership flags are for root only).
+  _stub "$W/bin" install '
+[ -z "${INSTALL_FAIL:-}" ] || exit 1
+for a in "$@"; do p2=${p1:-}; p1=$a; done
+cp "$p2" "$p1"'
+  _stub "$W/bin" sshd '[ "$1" != -t ] || exit ${SSHD_RC:-0}'
+  # pfctl -sr lists rules once the daemon has loaded them (PF_EMPTY: never).
+  _stub "$W/bin" pfctl '
+case "$*" in *" -sr") [ -f "$FW_STATE/pfloaded" ] && [ -z "${PF_EMPTY:-}" ] && echo "block drop in quick proto tcp from any to any port = ssh" ;; esac
+exit ${PF_RC:-0}'
+  # dseditgroup: groups are files in $FW_STATE (GRP_EXIST=1 starts both empty,
+  # as seen on a real Mac); members are one per line.
+  _stub "$W/bin" dseditgroup '
+for g; do :; done
+f="$FW_STATE/grp.$g"
+[ -z "${GRP_EXIST:-}" ] || [ -e "$f" ] || : >"$f"
+case "$2" in
+  read) [ -e "$f" ] ;;
+  create) [ -z "${DSE_CREATE_FAIL:-}" ] && : >"$f" ;;
+  edit) [ -z "${DSE_EDIT_FAIL:-}" ] && [ -e "$f" ] && echo "$4" >>"$f" ;;
+  checkmember) [ -e "$f" ] && grep -qx "$4" "$f" ;;
+esac'
   _stub "$W/bin" sw_vers 'echo "${SW_VERS:-27.0.1}"'
   # mdutil: -s reports MDUTIL_OFF; -i on fails like macOS 27 when MDUTIL_FAIL is set.
   _stub "$W/bin" mdutil '
@@ -409,10 +437,13 @@ _g_run() {
   # G_TAIL: a line appended to the copy, to read variables the script leaves set.
   [ -z "${G_TAIL:-}" ] || printf '\n%s\n' "$G_TAIL" >>"$W/df/macos/$f"
   env -i HOME="$W/home" PATH="$W/bin:/usr/bin:/bin" DOTFILES_DIR="$W/df" \
-    STUB_LOG="$W/log" FW_STATE="$W/fw" TMPDIR="$W" \
+    STUB_LOG="$W/log" FW_STATE="$W/fw" TMPDIR="$W" USER=tester \
     DOTFILES_SOCKETFILTERFW="$W/bin/socketfilterfw" \
     DOTFILES_ACTIVATE_SETTINGS="$W/bin/activateSettings" \
     DOTFILES_LSREGISTER="$W/bin/lsregister" \
+    DOTFILES_SSHD="$W/bin/sshd" DOTFILES_SSHD_CONF_DIR="$W/etc/ssh/sshd_config.d" \
+    DOTFILES_PF_ANCHOR_DIR="$W/etc/pf.anchors" DOTFILES_LAUNCHDAEMONS_DIR="$W/Library/LaunchDaemons" \
+    DOTFILES_VNC_SETTINGS="$W/vnc.txt" \
     HK_STATE="$W/hk" SFE_STATE="$W/sfe" W_STATE="$W" DOTFILES_RAYCAST_APP="$W/Raycast.app" DOTFILES_TINYCAST_APP="$W/Tinycast.app" \
     "$@" /bin/bash "$W/df/macos/$f" </dev/null >"$W/out" 2>&1
 }
@@ -421,6 +452,24 @@ _g_run() {
 _logged() { grep -qxF -- "$2" "$1/log"; }
 # _logcount <W> <fixed string> -- how many logged lines contain it.
 _logcount() { grep -cF -- "$2" "$1/log"; }
+
+# _ra_env -- a sandbox with a key in authorized_keys. _ra_run <W> [VAR=val ...]
+# runs the remote access file with remote access on and every system change
+# taking effect; later VAR=val arguments win.
+_ra_env() {
+  local W
+  W=$(_g_env) || return 1
+  mkdir -p "$W/home/.ssh"
+  echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA phone" >"$W/home/.ssh/authorized_keys"
+  printf '%s' "$W"
+}
+_ra_run() {
+  local W=$1
+  shift
+  _g_run "$W" defaults-remote-access.sh DOTFILES_REMOTE_ACCESS=on FW_TAKES=1 RL_TAKES=1 SS_PORT=1 "$@"
+}
+# _ra_tally <W> [VAR=val ...] -- the failure count the file leaves behind.
+_ra_tally() { G_TAIL='echo "TALLY=${DOTFILES_DEFAULTS_FAILURES:-0}"' _ra_run "$@"; sed -n 's/^TALLY=//p' "$1/out"; }
 
 t "G0.1" "the harness runs defaults.sh and its stubs see the calls" '
   W=$(_g_env) && _g_run "$W" defaults.sh && _logged "$W" "defaults write NSGlobalDomain NSTableViewDefaultSizeMode -int 2"'
@@ -581,16 +630,16 @@ t "G3.6" "the Full Disk Access notice comes first in the security block" '
   [ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ] &&
   [ "$(grep "Full Disk Access" "$FWOK/out" | grep -c warning)" -ge 1 ]'
 t "G3.7" "Remote Login is turned on, without the confirmation prompt" \
-  '_logged "$DEF" "systemsetup -setremotelogin -f on" && [ "$(_logcount "$DEF" "-setremotelogin -f off")" -eq 0 ]'
+  'W=$(_ra_env) && _ra_run "$W" && _logged "$W" "systemsetup -setremotelogin -f on" && [ "$(_logcount "$W" "-setremotelogin -f off")" -eq 0 ]'
 t "G3.8" "a failing systemsetup is reported as an error" '
-  W=$(_g_env) && _g_run "$W" defaults.sh SYSTEMSETUP_RC=1 &&
+  W=$(_ra_env) && _ra_run "$W" RL_TAKES= SYSTEMSETUP_RC=1 &&
   grep -A0 "remote login" "$W/out" | grep -q "error"'
 t "G3.8b" "Remote Login is read back after it is set" \
-  '_logged "$FWOK" "systemsetup -getremotelogin"'
+  'W=$(_ra_env) && _ra_run "$W" && _logged "$W" "systemsetup -getremotelogin"'
 t "G3.8c" "Remote Login that took effect prints no Full Disk Access error" \
-  '[ "$(grep -c "error.*Remote Login" "$FWOK/out")" -eq 0 ]'
+  'W=$(_ra_env) && _ra_run "$W" && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
 t "G3.8d" "Remote Login left off is an error naming Full Disk Access" \
-  'grep -qE "error.*Remote Login.*Full Disk Access" "$DEF/out"'
+  'W=$(_ra_env) && _ra_run "$W" RL_TAKES= && grep -qE "error.*Remote Login.*Full Disk Access" "$W/out"'
 t "G3.9" "power settings: restart after power loss, no powernap, no disk sleep, no wake-on-LAN" '
   _logged "$DEF" "sudo pmset -a autorestart 1" && _logged "$DEF" "sudo pmset -a powernap 0" &&
   _logged "$DEF" "sudo pmset -a disksleep 0" && _logged "$DEF" "sudo pmset -a womp 0"'
@@ -732,7 +781,7 @@ t "G5.12" "config/atuin and config/gh stow into a sandbox ~/.config, and hosts.y
    }'
 
 #############################################################################
-section "G6 -- role gate: Remote Login and power are for the desktop only"
+section "G6 -- role gate: power is desktop only, Remote Login follows remote access"
 #############################################################################
 # _g_battery <W>: make the stub pmset answer like a laptop's `pmset -g batt`.
 _g_battery() {
@@ -743,9 +792,14 @@ _g_touched() { # the desktop-only settings, as logged lines: count of any call
 LAP=$(_g_env); _g_run "$LAP" defaults.sh DOTFILES_MACHINE_ROLE=laptop FW_TAKES=1
 BAT=$(_g_env); _g_battery "$BAT"; _g_run "$BAT" defaults.sh FW_TAKES=1
 DSK=$(_g_env); _g_battery "$DSK"; _g_run "$DSK" defaults.sh DOTFILES_MACHINE_ROLE=desktop FW_TAKES=1
+# The same three Macs through the remote access file, with no explicit setting:
+# the role alone decides.
+LAPR=$(_ra_env); _g_run "$LAPR" defaults-remote-access.sh DOTFILES_MACHINE_ROLE=laptop FW_TAKES=1 RL_TAKES=1
+BATR=$(_ra_env); _g_battery "$BATR"; _g_run "$BATR" defaults-remote-access.sh FW_TAKES=1 RL_TAKES=1
+DSKR=$(_ra_env); _g_battery "$DSKR"; _g_run "$DSKR" defaults-remote-access.sh DOTFILES_MACHINE_ROLE=desktop FW_TAKES=1 RL_TAKES=1
 
 t "G6.1" "laptop: Remote Login is left alone, neither turned on nor off" \
-  '[ "$(_g_touched "$LAP")" -eq 0 ]'
+  '[ "$(_g_touched "$LAP")" -eq 0 ] && [ "$(_g_touched "$LAPR")" -eq 0 ]'
 t "G6.2" "laptop: autorestart, powernap and disksleep are left alone" \
   '[ "$(_logcount "$LAP" "pmset -a autorestart")" -eq 0 ] && [ "$(_logcount "$LAP" "pmset -a powernap")" -eq 0 ] &&
    [ "$(_logcount "$LAP" "pmset -a disksleep")" -eq 0 ]'
@@ -756,9 +810,9 @@ t "G6.3" "laptop: firewall, stealth mode and the screen-lock password still appl
 t "G6.4" "laptop: the run says what it skipped and reports no error" \
   '[ "$(grep -ci "laptop" "$LAP/out")" -ge 1 ] && [ "$(grep -c "error" "$LAP/out")" -eq 0 ]'
 t "G6.5" "a Mac whose pmset reports an InternalBattery is a laptop without any override" \
-  '[ "$(_g_touched "$BAT")" -eq 0 ] && [ "$(_logcount "$BAT" "pmset -a autorestart")" -eq 0 ]'
+  '[ "$(_g_touched "$BATR")" -eq 0 ] && [ "$(_logcount "$BAT" "pmset -a autorestart")" -eq 0 ]'
 t "G6.6" "DOTFILES_MACHINE_ROLE=desktop wins over the battery" \
-  '_logged "$DSK" "systemsetup -setremotelogin -f on" && _logged "$DSK" "sudo pmset -a autorestart 1" &&
+  '_logged "$DSKR" "systemsetup -setremotelogin -f on" && _logged "$DSK" "sudo pmset -a autorestart 1" &&
    _logged "$DSK" "sudo pmset -a powernap 0" && _logged "$DSK" "sudo pmset -a disksleep 0"'
 t "G6.7" "wake-on-LAN off is a security setting and applies to both roles" \
   '_logged "$LAP" "sudo pmset -a womp 0" && _logged "$DSK" "sudo pmset -a womp 0"'
@@ -772,10 +826,14 @@ t "G6.11" "the sleep settings are set for AC power only (-c), never for every po
   '[ "$(_logcount "$DSK" "pmset -a sleep")" -eq 0 ] && [ "$(_logcount "$DSK" "pmset -a displaysleep")" -eq 0 ] &&
    [ "$(_logcount "$DSK" "pmset -b ")" -eq 0 ]'
 t "G6.12" "a pmset that says nothing is a laptop: Remote Login and the power settings are not forced" '
-  W=$(_g_env); _stub "$W/bin" pmset ":"; _g_run "$W" defaults.sh
-  [ "$(_g_touched "$W")" -eq 0 ] && [ "$(_logcount "$W" "pmset -a autorestart")" -eq 0 ] && [ "$(_logcount "$W" "pmset -c sleep")" -eq 0 ]'
-t "G6.8" "nothing in defaults.sh ever turns Remote Login off" \
-  '[ "$(code_of macos/defaults.sh | grep -c -- "-setremotelogin.* off")" -eq 0 ]'
+  W=$(_ra_env); _stub "$W/bin" pmset ":"
+  _g_run "$W" defaults.sh; cp "$W/log" "$W/log.defaults"; : >"$W/log"
+  _g_run "$W" defaults-remote-access.sh FW_TAKES=1 RL_TAKES=1
+  [ "$(_g_touched "$W")" -eq 0 ] && cat "$W/log.defaults" >>"$W/log" &&
+  [ "$(_logcount "$W" "pmset -a autorestart")" -eq 0 ] && [ "$(_logcount "$W" "pmset -c sleep")" -eq 0 ]'
+t "G6.8" "nothing in defaults.sh or the remote access file ever turns Remote Login off" \
+  '[ "$(code_of macos/defaults.sh macos/defaults-remote-access.sh | grep -c -- "-setremotelogin.* off")" -eq 0 ] &&
+   [ "$(code_of macos/defaults-remote-access.sh | grep -c -- "-setremotelogin")" -ge 1 ]'
 
 #############################################################################
 section "G8 -- the launcher block: Tinycast's Cmd-Space, or Raycast left alone"
@@ -899,16 +957,16 @@ section "G9 -- Remote Login read-back works without Full Disk Access"
 #############################################################################
 # Without Full Disk Access `systemsetup -getremotelogin` says Off while sshd is
 # really running. launchd's disabled list or port 22 tell the truth.
-t "G9.1" "systemsetup blind, launchd says sshd is enabled: no error, tally 0" '
-  W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1 RL_LAUNCHD=1)" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
-t "G9.2" "systemsetup blind, sshd listening on port 22: no error, tally 0" '
-  W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1 RL_PORT=1)" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
-t "G9.3" "really off (systemsetup, launchd and port 22 all say off): one failure" '
-  W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1)" -eq 1 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 1 ]'
+t "G9.1" "systemsetup blind, launchd says sshd is enabled: no error, no failure" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" RL_TAKES= RL_LAUNCHD=1)" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
+t "G9.2" "systemsetup blind, sshd listening on port 22: no error, no failure" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" RL_TAKES= RL_PORT=1)" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
+t "G9.3" "really off (systemsetup, launchd and port 22 all say off): one failure" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" RL_TAKES=)" -eq 1 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 1 ]'
 t "G9.4" "the Remote Login failure says exactly what to do" \
-  'W=$(_g_env) && _g_run "$W" defaults.sh FW_TAKES=1 && grep -qE "error.*Remote Login.*System Settings.*Sharing" "$W/out"'
+  'W=$(_ra_env) && _ra_run "$W" RL_TAKES= && grep -qE "error.*Remote Login.*System Settings.*Sharing" "$W/out"'
 t "G9.5" "launchd is asked through sudo about the system domain" \
-  'W=$(_g_env) && _g_run "$W" defaults.sh FW_TAKES=1 && _logged "$W" "sudo launchctl print-disabled system"'
+  'W=$(_ra_env) && _ra_run "$W" RL_TAKES= && _logged "$W" "sudo launchctl print-disabled system"'
 
 #############################################################################
 section "G10 -- the Tinycast block says what happened when the app is absent"
@@ -994,11 +1052,11 @@ t "G12.1" "macOS 27 stealth wording (Firewall stealth mode is on) is on, not an 
 t "G12.2" "macOS 27 stealth wording off (Firewall stealth mode is off) is still an error" '
   W=$(_g_env) && _g_run "$W" defaults.sh RL_TAKES=1 FW_NEWWORD=1 && [ "$(grep -c "stealth mode is still off" "$W/out")" -ge 1 ]'
 t "G12.3" "Remote Login already on: the setter is never called" '
-  W=$(_g_env) && _g_run "$W" defaults.sh FW_TAKES=1 RL_LAUNCHD=1 && [ "$(_logcount "$W" "-setremotelogin")" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
+  W=$(_ra_env) && _ra_run "$W" RL_TAKES= RL_LAUNCHD=1 && [ "$(_logcount "$W" "-setremotelogin")" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
 t "G12.4" "Remote Login off and the setter works: setter called once, no error" '
-  W=$(_g_env) && [ "$(_tally "$W" $OK_ENV)" -eq 0 ] && [ "$(grep -cxF "systemsetup -setremotelogin -f on" "$W/log")" -eq 1 ]'
+  W=$(_ra_env) && [ "$(_ra_tally "$W")" -eq 0 ] && [ "$(grep -cxF "systemsetup -setremotelogin -f on" "$W/log")" -eq 1 ]'
 t "G12.5" "Remote Login off and the setter fails: one failure with the Sharing instruction" '
-  W=$(_g_env) && [ "$(_tally "$W" FW_TAKES=1 SYSTEMSETUP_RC=1)" -eq 1 ] && grep -qE "error.*Remote Login.*Sharing" "$W/out"'
+  W=$(_ra_env) && [ "$(_ra_tally "$W" RL_TAKES= SYSTEMSETUP_RC=1)" -eq 1 ] && grep -qE "error.*Remote Login.*Sharing" "$W/out"'
 t "G12.6" "the Tinycast hotkey is written typed, so the real defaults does not refuse it" '
   W=$(_g_env) && _g_run "$W" defaults.sh && [ "$(grep -c "Could not parse" "$W/out")" -eq 0 ] && [ "$(grep -c "error.*Tinycast" "$W/out")" -eq 0 ]'
 t "G12.7" "the untyped write is refused by the stub exactly as the real tool does (harness check)" '
@@ -1174,5 +1232,229 @@ t "G16.3" "config/ghostty stows into a sandbox ~/.config/ghostty" \
    }'
 t "G16.4" "dotfiles doctor checks that ~/.config/ghostty is linked" \
   'grep -qE "config_dirs=\(.*\"ghostty\"" bin/dotfiles-doctor'
+
+#############################################################################
+section "R1 -- dotfiles_remote_access: per-Mac, never from the shared local.sh"
+#############################################################################
+# _ra_fn <dir> [VAR=val ...] -- what dotfiles_remote_access prints (stdout).
+_ra_fn() {
+  local d=$1
+  shift
+  env -i PATH="/usr/bin:/bin" HOME="$d" "$@" bash -c '. "$1/scripts/lib/machine.sh"; dotfiles_remote_access "$2"' _ "$ROOT_DIR" "$d" 2>/dev/null
+}
+# Stderr only (2>&1 before >/dev/null swaps the streams on purpose).
+# shellcheck disable=SC2069
+_ra_fn_err() {
+  local d=$1
+  shift
+  env -i PATH="/usr/bin:/bin" HOME="$d" "$@" bash -c '. "$1/scripts/lib/machine.sh"; dotfiles_remote_access "$2"' _ "$ROOT_DIR" "$d" 2>&1 >/dev/null
+}
+_ra_dir() { local d; d=$(sandbox) && mkdir -p "$d/macos" && printf '%s' "$d"; }
+
+t "R1.1" "a desktop defaults to on" \
+  'D=$(_ra_dir) && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=desktop)" = on ]'
+t "R1.2" "a laptop defaults to off" \
+  'D=$(_ra_dir) && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=laptop)" = off ]'
+t "R1.3" "DOTFILES_REMOTE_ACCESS from the environment beats the role, both ways" \
+  'D=$(_ra_dir) && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=laptop DOTFILES_REMOTE_ACCESS=on)" = on ] &&
+   [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=desktop DOTFILES_REMOTE_ACCESS=off)" = off ]'
+t "R1.4" "macos/machine.local.sh beats the role, both ways" \
+  'D=$(_ra_dir) && echo "DOTFILES_REMOTE_ACCESS=on" >"$D/macos/machine.local.sh" && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=laptop)" = on ] &&
+   echo "DOTFILES_REMOTE_ACCESS=off" >"$D/macos/machine.local.sh" && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=desktop)" = off ]'
+t "R1.5" "the environment beats machine.local.sh" \
+  'D=$(_ra_dir) && echo "DOTFILES_REMOTE_ACCESS=off" >"$D/macos/machine.local.sh" && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=desktop DOTFILES_REMOTE_ACCESS=on)" = on ]'
+t "R1.6" "macos/local.sh (shared between Macs) is NOT read" \
+  'D=$(_ra_dir) && echo "DOTFILES_REMOTE_ACCESS=off" >"$D/macos/local.sh" && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=desktop)" = on ] &&
+   echo "DOTFILES_REMOTE_ACCESS=on" >"$D/macos/local.sh" && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=laptop)" = off ]'
+t "R1.7" "a bad value warns once and falls back to the role default" \
+  'D=$(_ra_dir) && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=laptop DOTFILES_REMOTE_ACCESS=maybe)" = off ] &&
+   [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=desktop DOTFILES_REMOTE_ACCESS=maybe)" = on ] &&
+   [ "$(_ra_fn_err "$D" DOTFILES_MACHINE_ROLE=desktop DOTFILES_REMOTE_ACCESS=maybe | grep -c "warning.*DOTFILES_REMOTE_ACCESS=maybe")" -eq 1 ]'
+t "R1.8" "a bad value in machine.local.sh warns and falls back too" \
+  'D=$(_ra_dir) && echo "DOTFILES_REMOTE_ACCESS=sure" >"$D/macos/machine.local.sh" && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=desktop)" = on ] &&
+   [ "$(_ra_fn_err "$D" DOTFILES_MACHINE_ROLE=desktop | grep -c "warning")" -eq 1 ]'
+t "R1.9" "a machine.local.sh with a syntax error warns and is ignored" \
+  'D=$(_ra_dir) && echo "if then (" >"$D/macos/machine.local.sh" && [ "$(_ra_fn "$D" DOTFILES_MACHINE_ROLE=desktop)" = on ] &&
+   [ "$(_ra_fn_err "$D" DOTFILES_MACHINE_ROLE=desktop | grep -c "warning")" -eq 1 ]'
+t "R1.10" "nothing the file sets leaks into the caller" \
+  'D=$(_ra_dir) && printf "DOTFILES_REMOTE_ACCESS=on\nLEAK=yes\n" >"$D/macos/machine.local.sh" &&
+   [ "$(env -i PATH=/usr/bin:/bin DOTFILES_MACHINE_ROLE=laptop bash -c ". \"$ROOT_DIR/scripts/lib/machine.sh\"; dotfiles_remote_access \"$D\" >/dev/null; echo \"\${LEAK:-none}\${DOTFILES_REMOTE_ACCESS:-none}\"")" = nonenone ]'
+t "R1.11" "machine.local.sh.example documents it, commented out" \
+  '[ "$(grep -c "^# DOTFILES_REMOTE_ACCESS=" macos/machine.local.sh.example)" -eq 1 ] && [ "$(grep -c "^DOTFILES_REMOTE_ACCESS=" macos/machine.local.sh.example)" -eq 0 ]'
+
+#############################################################################
+section "R2 -- remote access: off changes nothing"
+#############################################################################
+ROFF=$(_ra_env); _ra_run "$ROFF" DOTFILES_REMOTE_ACCESS=off
+t "R2.1" "off: one skip line, and not a single sudo call or system change" '
+  [ "$(grep -c "skipped" "$ROFF/out")" -eq 1 ] && [ "$(grep -c "^sudo " "$ROFF/log")" -eq 0 ] &&
+  [ "$(grep -c "" "$ROFF/log")" -eq 0 ] && [ -z "$(ls -A "$ROFF/etc/ssh/sshd_config.d")$(ls -A "$ROFF/etc/pf.anchors")$(ls -A "$ROFF/Library/LaunchDaemons")" ]'
+t "R2.2" "off: no error and a zero failure tally" \
+  '[ "$(grep -c "error" "$ROFF/out")" -eq 0 ] && [ "$(_ra_tally "$ROFF" DOTFILES_REMOTE_ACCESS=off)" -eq 0 ]'
+t "R2.3" "a laptop with no setting is off: nothing changes" \
+  '[ "$(grep -c "" "$LAPR/log")" -eq 0 ] && [ "$(grep -c "skipped" "$LAPR/out")" -eq 1 ]'
+t "R2.4" "a desktop with no setting is on" \
+  '_logged "$DSKR" "systemsetup -setremotelogin -f on"'
+t "R2.5" "machine.local.sh turns it on for a laptop" '
+  W=$(_ra_env) && echo "DOTFILES_REMOTE_ACCESS=on" >"$W/df/macos/machine.local.sh" &&
+  _g_run "$W" defaults-remote-access.sh DOTFILES_MACHINE_ROLE=laptop FW_TAKES=1 RL_TAKES=1 SS_PORT=1 && _logged "$W" "systemsetup -setremotelogin -f on"'
+t "R2.6" "the code never switches anything off (Remote Login, firewall, stealth, group members)" '
+  [ "$(code_of macos/defaults-remote-access.sh | grep -cE -- "-setremotelogin.* off|--set[a-z]+ off|dseditgroup.* -d |launchctl (disable|unload)")" -eq 0 ]'
+
+#############################################################################
+section "R3 -- remote access: the steps"
+#############################################################################
+RON=$(_ra_env); _ra_run "$RON"
+t "R3.1" "the firewall and stealth mode are set and read back" \
+  '_logged "$RON" "socketfilterfw --setglobalstate on" && _logged "$RON" "socketfilterfw --setstealthmode on" &&
+   _logged "$RON" "socketfilterfw --getglobalstate" && _logged "$RON" "socketfilterfw --getstealthmode"'
+t "R3.2" "the firewall steps are one shared function, not copied: both files call it, only the lib sets it" '
+  [ "$(code_of macos/defaults.sh | grep -c "dotfiles_firewall_on")" -ge 1 ] &&
+  [ "$(code_of macos/defaults-remote-access.sh | grep -c "dotfiles_firewall_on")" -ge 1 ] &&
+  [ "$(code_of macos/defaults.sh macos/defaults-remote-access.sh | grep -c -- "--setglobalstate\|--setstealthmode")" -eq 0 ] &&
+  [ "$(code_of scripts/lib/defaults-common.sh | grep -c -- "--setglobalstate on")" -eq 1 ]'
+t "R3.3" "an unchanged firewall is a counted failure in the remote access file too" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" FW_TAKES=)" -ge 2 ] && grep -q "error.*application firewall is still off" "$W/out"'
+t "R3.4" "a good run has no error and a zero tally" \
+  '[ "$(grep -c "error" "$RON/out")" -eq 0 ] && [ "$(_ra_tally "$(_ra_env)")" -eq 0 ]'
+t "R3.5" "the steps run in order: firewall, Remote Login, groups, sshd, pf, Screen Sharing" '
+  f=macos/defaults-remote-access.sh
+  a=$(_first_line dotfiles_firewall_on $f); b=$(_first_line "-setremotelogin -f on" $f); c=$(_first_line dseditgroup $f)
+  d=$(_first_line 010-dotfiles.conf $f); e=$(_first_line dotfiles.remote $f); g=$(_first_line 5900 $f)
+  [ "$a" -gt 0 ] && [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && [ "$c" -lt "$d" ] && [ "$d" -lt "$e" ] && [ "$e" -lt "$g" ]'
+
+# Groups.
+t "R3.6" "missing groups are created, the user is added and membership is read back" '
+  bad=0
+  for g in com.apple.access_ssh com.apple.access_screensharing; do
+    _logged "$RON" "dseditgroup -o create -q $g" && _logged "$RON" "dseditgroup -o edit -a tester -t user $g" &&
+    _logged "$RON" "dseditgroup -o checkmember -m tester $g" || bad=$((bad + 1))
+  done
+  [ "$bad" -eq 0 ]'
+t "R3.7" "a group that exists with no members is not created again, and the user is added" '
+  W=$(_ra_env) && _ra_run "$W" GRP_EXIST=1 && [ "$(_logcount "$W" "dseditgroup -o create")" -eq 0 ] &&
+  _logged "$W" "dseditgroup -o edit -a tester -t user com.apple.access_ssh" && [ "$(grep -c "error" "$W/out")" -eq 0 ] &&
+  grep -qx tester "$W/fw/grp.com.apple.access_ssh"'
+t "R3.8" "a user who cannot be added is an error and a counted failure" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" DSE_EDIT_FAIL=1)" -ge 2 ] && grep -q "error.*access_ssh" "$W/out"'
+t "R3.9" "a group that cannot be created is an error and a counted failure" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" DSE_CREATE_FAIL=1)" -ge 2 ] && grep -q "error.*access_ssh" "$W/out"'
+
+# sshd hardening.
+SSHC=$RON/etc/ssh/sshd_config.d/010-dotfiles.conf
+_inst_line() { grep -E "^install .*$2\$" "$1/log"; }
+_inst_flags() { # _inst_flags <W> <dest-name> -- installed 0644 root:wheel
+  local l
+  l=$(_inst_line "$1" "$2")
+  case "$l" in *"-m 0644"*) ;; *) return 1 ;; esac
+  case "$l" in *"-o root"*) ;; *) return 1 ;; esac
+  case "$l" in *"-g wheel"*) ;; *) return 1 ;; esac
+}
+t "R3.10" "sshd.conf is installed root:wheel 0644 as 010-dotfiles.conf, identical to the tracked file" \
+  'cmp -s macos/remote-access/sshd.conf "$SSHC" && _inst_flags "$RON" 010-dotfiles.conf'
+t "R3.11" "010-dotfiles.conf sorts before macOS 100-macos.conf (sshd keeps the first value it reads)" '
+  [ "$(printf "%s\n%s\n" 100-macos.conf 010-dotfiles.conf | LC_ALL=C sort | head -1)" = 010-dotfiles.conf ] &&
+  [ "$(code_of macos/defaults-remote-access.sh | grep -c "010-dotfiles.conf")" -ge 1 ]'
+t "R3.12" "sshd.conf turns off passwords, keyboard-interactive and root, and allows publickey only" '
+  f=macos/remote-access/sshd.conf; bad=0
+  for l in "PermitRootLogin no" "PasswordAuthentication no" "KbdInteractiveAuthentication no" "AuthenticationMethods publickey" \
+    "PermitEmptyPasswords no" "MaxAuthTries 3" "LoginGraceTime 20" "DisableForwarding yes" "PermitTunnel no" "PermitUserEnvironment no" \
+    "PubkeyAcceptedAlgorithms ssh-ed25519,sk-ssh-ed25519@openssh.com,ecdsa-sha2-nistp256,sk-ecdsa-sha2-nistp256@openssh.com"; do
+    grep -qxF "$l" "$f" || bad=$((bad + 1))
+  done
+  [ "$bad" -eq 0 ] && [ "$(code_of "$f" | grep -ciE "^(PasswordAuthentication|KbdInteractiveAuthentication|PermitRootLogin|PermitEmptyPasswords)[[:space:]]+yes")" -eq 0 ]'
+t "R3.13" "sshd -t runs after the file is installed" \
+  '_logged "$RON" "sshd -t" && [ "$(_first_line "install" "$RON/log")" -lt "$(_first_line "sshd -t" "$RON/log")" ]'
+t "R3.14" "a failing sshd -t removes the file again, errors and counts a failure" '
+  W=$(_ra_env) && [ "$(_ra_tally "$W" SSHD_RC=1)" -ge 1 ] && [ ! -e "$W/etc/ssh/sshd_config.d/010-dotfiles.conf" ] &&
+  grep -q "error.*sshd" "$W/out"'
+t "R3.15" "no authorized_keys: nothing installed, an error naming the phone key, a counted failure" '
+  W=$(_ra_env) && rm -f "$W/home/.ssh/authorized_keys" && [ "$(_ra_tally "$W")" -ge 1 ] &&
+  [ ! -e "$W/etc/ssh/sshd_config.d/010-dotfiles.conf" ] && [ "$(_logcount "$W" "sshd -t")" -eq 0 ] &&
+  grep -qE "error.*(phone|public key).*authorized_keys" "$W/out"'
+t "R3.16" "authorized_keys with only blanks and comments counts as no key" '
+  W=$(_ra_env) && printf "# a comment\n\n   \n  # indented comment\n" >"$W/home/.ssh/authorized_keys" && [ "$(_ra_tally "$W")" -ge 1 ] &&
+  [ ! -e "$W/etc/ssh/sshd_config.d/010-dotfiles.conf" ]'
+t "R3.17" "a key line among comments is enough" '
+  W=$(_ra_env) && printf "# c\n\nssh-ed25519 AAAA phone\n" >"$W/home/.ssh/authorized_keys" && _ra_run "$W" && [ -e "$W/etc/ssh/sshd_config.d/010-dotfiles.conf" ]'
+t "R3.18" "the missing-key guard only blocks sshd: groups and pf still apply" '
+  W=$(_ra_env) && rm -f "$W/home/.ssh/authorized_keys" && _ra_run "$W" && _logged "$W" "dseditgroup -o edit -a tester -t user com.apple.access_ssh" &&
+  [ -e "$W/etc/pf.anchors/dotfiles.remote" ]'
+
+# pf.
+PFR=macos/remote-access/pf.rules
+PLIST=macos/remote-access/com.stixzoor.dotfiles-pf-remote.plist
+t "R3.19" "pf.rules passes both Tailscale ranges and loopback to 22 and 5900, then blocks them for everyone else" '
+  c=$(code_of $PFR | grep -v "^[[:space:]]*$")
+  printf "%s\n" "$c" | grep -q "^table <dotfiles_tailnet> const { 100.64.0.0/10, fd7a:115c:a1e0::/48 }$" &&
+  printf "%s\n" "$c" | grep -q "^pass in quick on lo0 proto { tcp udp } to any port { 22 5900 }$" &&
+  printf "%s\n" "$c" | grep -q "^pass in quick proto { tcp udp } from <dotfiles_tailnet> to any port { 22 5900 }$" &&
+  [ "$(printf "%s\n" "$c" | tail -1)" = "block drop in quick proto { tcp udp } to any port { 22 5900 }" ] &&
+  [ "$(printf "%s\n" "$c" | grep -c "^pass ")" -eq 2 ] && [ "$(printf "%s\n" "$c" | grep -c "^block ")" -eq 1 ]'
+t "R3.20" "pf.rules and the daemon are installed root:wheel 0644 into the system directories" '
+  cmp -s $PFR "$RON/etc/pf.anchors/dotfiles.remote" && cmp -s $PLIST "$RON/Library/LaunchDaemons/com.stixzoor.dotfiles-pf-remote.plist" &&
+  _inst_flags "$RON" dotfiles.remote && _inst_flags "$RON" com.stixzoor.dotfiles-pf-remote.plist'
+t "R3.21" "the daemon plist is valid, labelled, runs at load and every 300 seconds" '
+  plutil -lint $PLIST >/dev/null && [ "$(plutil -extract Label raw $PLIST)" = com.stixzoor.dotfiles-pf-remote ] &&
+  [ "$(plutil -extract RunAtLoad raw $PLIST)" = true ] && [ "$(plutil -extract StartInterval raw $PLIST)" = 300 ]'
+t "R3.22" "SECURITY: the root daemon references only root-owned system paths, nothing under the repo or HOME" '
+  txt=$(sed -E "s/<[^>]*>/ /g" $PLIST | tr "\047\042" "  ")
+  paths=$(printf "%s\n" "$txt" | grep -oE "(^|[[:space:];|])/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]*)*" | tr -d " ;|")
+  bad=0
+  for p in $paths; do
+    case "$p" in /bin/* | /sbin/* | /usr/bin/* | /etc/pf.anchors/*) ;; *) bad=$((bad + 1)) ;; esac
+  done
+  [ -n "$paths" ] && [ "$bad" -eq 0 ] &&
+  [ "$(printf "%s\n" "$txt" | grep -ciE "/Users|[$]HOME|~|/[.]dotfiles|/private/var")" -eq 0 ]'
+t "R3.23" "the daemon loads the anchor com.apple/900.dotfiles-remote and enables pf if it is off" '
+  txt=$(sed -E "s/<[^>]*>/ /g" $PLIST)
+  case "$txt" in *"/sbin/pfctl -q -a com.apple/900.dotfiles-remote -f /etc/pf.anchors/dotfiles.remote"*"pfctl -q -E"*) true ;; *) false ;; esac'
+t "R3.24" "the old daemon is booted out (failure ignored), then bootstrapped, then the rules are read back" '
+  L=com.stixzoor.dotfiles-pf-remote
+  _logged "$RON" "sudo launchctl bootout system/$L" && _logged "$RON" "sudo launchctl bootstrap system $RON/Library/LaunchDaemons/$L.plist" &&
+  _logged "$RON" "sudo pfctl -a com.apple/900.dotfiles-remote -sr" &&
+  [ "$(_first_line bootout "$RON/log")" -lt "$(_first_line bootstrap "$RON/log")" ] &&
+  [ "$(_first_line bootstrap "$RON/log")" -lt "$(_first_line "-sr" "$RON/log")" ]'
+t "R3.25" "a failing bootout is ignored" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" LC_BOOTOUT_FAIL=1)" -eq 0 ] && _logged "$W" "sudo launchctl bootstrap system $W/Library/LaunchDaemons/com.stixzoor.dotfiles-pf-remote.plist"'
+t "R3.26" "rules that do not show up afterwards are an error and a counted failure" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" PF_EMPTY=1)" -eq 1 ] && grep -q "error.*pf" "$W/out"'
+t "R3.27" "a failing bootstrap is an error and a counted failure" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" LC_BOOTSTRAP_FAIL=1)" -ge 1 ]'
+t "R3.28" "/etc/pf.conf is never touched" \
+  '[ "$(code_of macos/defaults-remote-access.sh | grep -c "pf\.conf")" -eq 0 ] && [ "$(grep -c "pf\.conf" "$RON/log")" -eq 0 ]'
+t "R3.39" "rules pf cannot parse are an error, and nothing is installed or loaded" '
+  W=$(_ra_env) && [ "$(_ra_tally "$W" PF_RC=1)" -ge 1 ] && [ ! -e "$W/etc/pf.anchors/dotfiles.remote" ] &&
+  [ ! -e "$W/Library/LaunchDaemons/com.stixzoor.dotfiles-pf-remote.plist" ] && [ "$(_logcount "$W" "bootstrap")" -eq 0 ]'
+
+# Screen Sharing.
+t "R3.29" "Screen Sharing listening: no action line, and it was probed on 5900" \
+  '[ "$(grep -c "Only these users" "$RON/out")" -eq 0 ] && _logged "$RON" "nc -z 127.0.0.1 5900"'
+t "R3.30" "Screen Sharing off: an action line with the exact path, and it is not a failure" '
+  W=$(_ra_env) && [ "$(_ra_tally "$W" SS_PORT=)" -eq 0 ] && grep -q "System Settings > General > Sharing > Screen Sharing" "$W/out" &&
+  grep -q "Only these users" "$W/out"'
+t "R3.31" "the legacy VNC password setting present: a warning to turn it off" '
+  W=$(_ra_env) && : >"$W/vnc.txt" && _ra_run "$W" && grep -q "warning.*VNC viewers may control screen with password" "$W/out"'
+t "R3.32" "no legacy VNC file: no VNC warning" \
+  '[ "$(grep -c "VNC viewers" "$RON/out")" -eq 0 ]'
+t "R3.33" "Screen Sharing is never switched on from the CLI" \
+  '[ "$(code_of macos/defaults-remote-access.sh | grep -ci "kickstart\|launchctl.*screensharing")" -eq 0 ]'
+
+# Idempotence.
+t "R3.34" "a second run installs nothing, says already set, and is clean" '
+  W=$(_ra_env) && _ra_run "$W" && : >"$W/log" && [ "$(_ra_tally "$W")" -eq 0 ] &&
+  [ "$(_logcount "$W" "install")" -eq 0 ] && [ "$(_logcount "$W" "bootstrap")" -eq 0 ] && [ "$(_logcount "$W" "sshd -t")" -eq 0 ] &&
+  [ "$(grep -c "already set" "$W/out")" -ge 2 ] && [ "$(grep -c "error" "$W/out")" -eq 0 ]'
+t "R3.35" "a changed installed file is replaced on the next run" '
+  W=$(_ra_env) && _ra_run "$W" && echo "PasswordAuthentication yes" >"$W/etc/ssh/sshd_config.d/010-dotfiles.conf" && : >"$W/log" &&
+  _ra_run "$W" && cmp -s macos/remote-access/sshd.conf "$W/etc/ssh/sshd_config.d/010-dotfiles.conf"'
+t "R3.36" "files are compared with cmp, not just checked for existing" \
+  '[ "$(code_of macos/defaults-remote-access.sh | grep -c "cmp -s")" -ge 1 ]'
+t "R3.37" "the file works alone: it sets DOTFILES_DIR and sources the shared helpers itself" \
+  'grep -q "^DOTFILES_DIR=" macos/defaults-remote-access.sh && [ "$(code_of macos/defaults-remote-access.sh | grep -c "defaults-common.sh")" -ge 1 ]'
+t "R3.38" "the tracked files carry no home path and no private address" \
+  'ips=$(cat macos/remote-access/* macos/defaults-remote-access.sh | grep -oE "[0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}(/[0-9]+)?" | grep -vxE "127[.]0[.]0[.]1|100[.]64[.]0[.]0/10")
+   homes=$(cat macos/remote-access/* macos/defaults-remote-access.sh | grep -F "/Users/")
+   [ -z "$ips" ] && [ -z "$homes" ]'
 
 finish

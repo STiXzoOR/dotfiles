@@ -10,7 +10,8 @@ cannot be synced safely are left manual on purpose.
 | ------------------------------------------------ | --------------------------------------------------------------------------- | ---------------------------------- |
 | Dotfiles, scripts, lists, Brewfile, mise config  | This repo, through git                                                      | `dotfiles sync` (fast-forward)     |
 | Personal gitignored files (git identity, private profiles, work marketplaces, extra packages, locale, private SSH hosts, the encrypted secrets export) | A private GitHub repo cloned to `~/.dotfiles-private`, symlinked into place | `dotfiles private`, `dotfiles sync` |
-| Role-specific settings (Remote Login, power)     | `dotfiles_machine_role`: `desktop` or `laptop`, read from `pmset -g batt`    | `dotfiles configure` (each Mac decides for itself) |
+| Role-specific settings (power)                   | `dotfiles_machine_role`: `desktop` or `laptop`, read from `pmset -g batt`    | `dotfiles configure` (each Mac decides for itself) |
+| Remote access (Remote Login, Screen Sharing, over Tailscale only) | `dotfiles_remote_access`: `on` or `off`; `DOTFILES_REMOTE_ACCESS` in `macos/machine.local.sh` (per Mac, never the shared `local.sh`), else on for a desktop and off for a laptop | `dotfiles configure` or `dotfiles configure --remote-access` |
 | The Obsidian vault                               | iCloud Drive; `~/Vault` is a symlink to the vault folder there               | iCloud; `dotfiles vault migrate` once |
 | App settings snapshots (mackup)                  | iCloud Drive, one folder per Mac (`dotfiles apps`, see [app-settings.md](app-settings.md)) | The daily backup agent; restore is deliberate |
 | VS Code, Warp, Paste, Brave, atuin, Raycast      | Each app's own sync                                                          | The apps                           |
@@ -29,12 +30,18 @@ failed probe never forces anything) and
 `LocalHostName`; the app-settings snapshots use it too). Set
 `DOTFILES_MACHINE_ROLE=desktop|laptop` to override (another value warns and is ignored).
 
-`dotfiles configure --defaults` uses the role: Remote Login and the power
+`dotfiles configure --defaults` uses the role: the power
 settings (`autorestart`, `powernap`, `disksleep`, plus `sleep 0` and `displaysleep 10` on
 AC power, so the Mac mini stays reachable over SSH and Tailscale) are applied on the
-desktop only. On a laptop the script leaves them exactly as they are; it never turns
-Remote Login off. The firewall, stealth mode, wake-on-LAN off and the screen-lock
-password apply to both.
+desktop only. On a laptop the script leaves them exactly as they are. The firewall,
+stealth mode, wake-on-LAN off and the screen-lock password apply to both.
+
+Remote Login follows remote access, not the role: `dotfiles_remote_access` prints `on`
+or `off` from `DOTFILES_REMOTE_ACCESS` (environment), else from
+`macos/machine.local.sh` (per Mac; `macos/local.sh` is shared between the Macs, so it is
+never read), else the role default (`on` for a desktop, `off` for a laptop). Off means
+nothing changes and nothing is ever switched off. See the Remote access section of
+[macos-defaults.md](macos-defaults.md).
 
 The computer name is per Mac. `macos/local.sh` (shared through the private repo)
 holds the locale, languages, units and timezone, not `DOTFILES_COMPUTER_NAME`;

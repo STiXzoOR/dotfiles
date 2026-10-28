@@ -103,7 +103,8 @@ MCP project at projects.blender.org (see [claude-bootstrap.md](claude-bootstrap.
 ## Two Macs
 
 `configure` detects the machine role: a Mac with no internal battery is a
-desktop and gets Remote Login and the always-on power settings (restart after
+desktop and gets remote access (Remote Login and Screen Sharing over Tailscale only,
+see macos-defaults.md) and the always-on power settings (restart after
 power loss, no Power Nap, no disk sleep, no system sleep on AC); a laptop keeps
 its own. Override with `DOTFILES_MACHINE_ROLE=desktop|laptop` in
 `macos/local.sh`. Keeping both Macs in step (the private companion repo,

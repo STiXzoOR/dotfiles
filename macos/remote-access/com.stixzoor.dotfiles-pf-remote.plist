@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stixzoor.dotfiles-pf-remote</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>/sbin/pfctl -q -a com.apple/900.dotfiles-remote -f /etc/pf.anchors/dotfiles.remote; /sbin/pfctl -s info 2>/dev/null | /usr/bin/grep -q "Status: Enabled" || /sbin/pfctl -q -E</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>300</integer>
+</dict>
+</plist>

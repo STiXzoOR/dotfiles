@@ -83,6 +83,37 @@ dotfiles_launcher() {
   esac
 }
 
+# on | off: whether this Mac is set up to be reached remotely (Remote Login,
+# Screen Sharing, over Tailscale only; macos/defaults-remote-access.sh).
+#
+# DOTFILES_REMOTE_ACCESS from the environment, else from macos/machine.local.sh,
+# else the role default: on for a desktop, off for a laptop. Remote access is
+# per Mac, so macos/local.sh (shared between the Macs through the private repo)
+# is deliberately NOT read. Any other value warns once and falls back to the
+# role default. Takes the dotfiles dir as $1, else DOTFILES_DIR, else
+# ~/.dotfiles. The file is read in a subshell, so nothing it sets leaks.
+dotfiles_remote_access() {
+  local dir="${1:-${DOTFILES_DIR:-$HOME/.dotfiles}}" v="${DOTFILES_REMOTE_ACCESS:-}" f="machine.local.sh" default=""
+  if [ -z "$v" ] && [ -e "$dir/macos/$f" ]; then
+    if [ ! -r "$dir/macos/$f" ] || ! bash -n "$dir/macos/$f" >/dev/null 2>&1; then
+      printf 'warning: cannot read %s/macos/%s (unreadable or a syntax error); ignoring it\n' "$dir" "$f" >&2
+    else
+      # shellcheck disable=SC1090
+      v=$(unset DOTFILES_REMOTE_ACCESS; . "$dir/macos/$f" >/dev/null 2>&1; printf '%s' "${DOTFILES_REMOTE_ACCESS:-}")
+    fi
+  fi
+  case "$v" in
+    on | off)
+      printf '%s\n' "$v"
+      return 0
+      ;;
+  esac
+  # Only now is the role needed (it runs pmset), so an explicit value costs nothing.
+  if [ "$(dotfiles_machine_role)" = desktop ]; then default=on; else default=off; fi
+  [ -z "$v" ] || printf 'warning: ignoring DOTFILES_REMOTE_ACCESS=%s (use on or off); using %s\n' "$v" "$default" >&2
+  printf '%s\n' "$default"
+}
+
 # Export the resolved launcher where `brew bundle` can see it. brew hides every
 # variable that does not start with HOMEBREW_ from the Brewfile, so this is
 # HOMEBREW_DOTFILES_LAUNCHER. Call it before any `brew bundle check|install`.

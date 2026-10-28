@@ -18,3 +18,11 @@ DOTFILES_LAUNCHER="raycast"
 # This Mac's name; also sets LocalHostName, HostName and the SMB NetBIOS name.
 # Set it here rather than in macos/local.sh, which both Macs share.
 # DOTFILES_COMPUTER_NAME="my-mac"
+
+# Remote access: SSH (keys only) and Screen Sharing, reachable only over
+# Tailscale. `on` or `off`. Unset, a desktop is on and a laptop is off. Applied
+# by `dotfiles configure --defaults` and by `dotfiles configure --remote-access`.
+# This lives here and not in macos/local.sh, which both Macs share: remote
+# access is a choice per Mac. The environment wins over this file. Add your
+# phone's public key to ~/.ssh/authorized_keys before the first run.
+# DOTFILES_REMOTE_ACCESS="off"

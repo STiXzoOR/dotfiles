@@ -91,6 +91,7 @@ sub_configure_help() {
   echo "Commands:"
   echo "   --defaults         Apply macOS system defaults"
   echo "   --dock             Apply macOS Dock settings"
+  echo "   --remote-access    SSH (keys only) and Screen Sharing over Tailscale only; just this part of --defaults"
   echo "   --help             This help message"
 }
 
@@ -871,6 +872,25 @@ sub_configure_defaults() {
 
 }
 
+# Only macos/defaults-remote-access.sh: a Mac can get remote access without
+# re-applying every default. The same file runs inside `configure --defaults`.
+sub_configure_remote_access() {
+  bot "Remote access\n"
+
+  if confirm "Do you want to set up remote access (SSH with keys only and Screen Sharing, over Tailscale only)?"; then
+    sudo -v || return 1
+    DOTFILES_DEFAULTS_FAILURES=0
+    . "$DOTFILES_DIR/macos/defaults-remote-access.sh"
+
+    if [[ "${DOTFILES_DEFAULTS_FAILURES:-0}" -gt 0 ]]; then
+      error "${DOTFILES_DEFAULTS_FAILURES} remote access step(s) did not take effect (see the errors above)"
+      return 1
+    fi
+  else
+    skip
+  fi
+}
+
 sub_configure_dock() {
   bot "Dock Configuration\n"
 
@@ -1305,8 +1325,10 @@ case $COMMAND_NAME in
   if [[ -n $SUB_COMMAND_NAME ]]; then
     case $SUB_COMMAND_NAME in
     --"${STRIPPED_SUB_COMMAND_NAME}")
-      if has_sub "sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}"; then
-        "sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME}"
+      # --remote-access is sub_configure_remote_access: a function name cannot
+      # carry a hyphen portably.
+      if has_sub "sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME//-/_}"; then
+        "sub_${COMMAND_NAME}_${STRIPPED_SUB_COMMAND_NAME//-/_}"
       else
         subcmd_error
       fi
