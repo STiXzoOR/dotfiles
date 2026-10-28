@@ -372,9 +372,17 @@ exit 0'
 for a in "$@"; do p2=${p1:-}; p1=$a; done
 cp "$p2" "$p1"'
   _stub "$W/bin" sshd '[ "$1" != -t ] || exit ${SSHD_RC:-0}'
-  # pfctl -sr lists rules once the daemon has loaded them (PF_EMPTY: never).
+  # pfctl -sr lists rules once the daemon has loaded them (PF_EMPTY: never;
+  # PF_LATE: not on the first look, as when launchd has not run the job yet).
+  # -s info says pf is enabled unless PF_DISABLED is set.
   _stub "$W/bin" pfctl '
-case "$*" in *" -sr") [ -f "$FW_STATE/pfloaded" ] && [ -z "${PF_EMPTY:-}" ] && echo "block drop in quick proto tcp from any to any port = ssh" ;; esac
+case "$*" in
+  *" -sr")
+    [ -f "$FW_STATE/pfloaded" ] && [ -z "${PF_EMPTY:-}" ] || exit ${PF_RC:-0}
+    if [ -n "${PF_LATE:-}" ] && [ ! -e "$FW_STATE/pfseen" ]; then : >"$FW_STATE/pfseen"; exit 0; fi
+    echo "block drop in quick proto tcp from any to any port = ssh" ;;
+  "-s info") if [ -n "${PF_DISABLED:-}" ]; then echo "Status: Disabled"; else echo "Status: Enabled for 0 days 00:00:01"; fi ;;
+esac
 exit ${PF_RC:-0}'
   # dseditgroup: groups are files in $FW_STATE (GRP_EXIST=1 starts both empty,
   # as seen on a real Mac); members are one per line.
@@ -1317,11 +1325,14 @@ t "R3.3" "an unchanged firewall is a counted failure in the remote access file t
   'W=$(_ra_env) && [ "$(_ra_tally "$W" FW_TAKES=)" -ge 2 ] && grep -q "error.*application firewall is still off" "$W/out"'
 t "R3.4" "a good run has no error and a zero tally" \
   '[ "$(grep -c "error" "$RON/out")" -eq 0 ] && [ "$(_ra_tally "$(_ra_env)")" -eq 0 ]'
-t "R3.5" "the steps run in order: firewall, Remote Login, groups, sshd, pf, Screen Sharing" '
+t "R3.5" "the steps run in order: firewall, groups, sshd, pf, then Remote Login, then Screen Sharing" '
   f=macos/defaults-remote-access.sh
   a=$(_first_line dotfiles_firewall_on $f); b=$(_first_line "-setremotelogin -f on" $f); c=$(_first_line dseditgroup $f)
-  d=$(_first_line 010-dotfiles.conf $f); e=$(_first_line dotfiles.remote $f); g=$(_first_line 5900 $f)
-  [ "$a" -gt 0 ] && [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && [ "$c" -lt "$d" ] && [ "$d" -lt "$e" ] && [ "$e" -lt "$g" ]'
+  d=$(_first_line 010-dotfiles.conf $f); e=$(_first_line dotfiles.remote $f); g=$(_first_line "127.0.0.1 5900" $f)
+  [ "$a" -gt 0 ] && [ "$a" -lt "$c" ] && [ "$c" -lt "$d" ] && [ "$d" -lt "$e" ] && [ "$e" -lt "$b" ] && [ "$b" -lt "$g" ]'
+t "R3.5b" "at run time Remote Login is switched on only after sshd.conf and the pf daemon are installed" '
+  W=$(_ra_env) && _ra_run "$W" && l=$(_first_line "-setremotelogin -f on" "$W/log") && [ "$l" -gt 0 ] &&
+  [ "$(_first_line 010-dotfiles.conf "$W/log")" -lt "$l" ] && [ "$(_first_line bootstrap "$W/log")" -lt "$l" ]'
 
 # Groups.
 t "R3.6" "missing groups are created, the user is added and membership is read back" '
@@ -1418,7 +1429,7 @@ t "R3.24" "the old daemon is booted out (failure ignored), then bootstrapped, th
 t "R3.25" "a failing bootout is ignored" \
   'W=$(_ra_env) && [ "$(_ra_tally "$W" LC_BOOTOUT_FAIL=1)" -eq 0 ] && _logged "$W" "sudo launchctl bootstrap system $W/Library/LaunchDaemons/com.stixzoor.dotfiles-pf-remote.plist"'
 t "R3.26" "rules that do not show up afterwards are an error and a counted failure" \
-  'W=$(_ra_env) && [ "$(_ra_tally "$W" PF_EMPTY=1)" -eq 1 ] && grep -q "error.*pf" "$W/out"'
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" PF_EMPTY=1 DOTFILES_PF_WAIT=0)" -ge 1 ] && grep -q "error.*pf" "$W/out"'
 t "R3.27" "a failing bootstrap is an error and a counted failure" \
   'W=$(_ra_env) && [ "$(_ra_tally "$W" LC_BOOTSTRAP_FAIL=1)" -ge 1 ]'
 t "R3.28" "/etc/pf.conf is never touched" \
@@ -1426,6 +1437,26 @@ t "R3.28" "/etc/pf.conf is never touched" \
 t "R3.39" "rules pf cannot parse are an error, and nothing is installed or loaded" '
   W=$(_ra_env) && [ "$(_ra_tally "$W" PF_RC=1)" -ge 1 ] && [ ! -e "$W/etc/pf.anchors/dotfiles.remote" ] &&
   [ ! -e "$W/Library/LaunchDaemons/com.stixzoor.dotfiles-pf-remote.plist" ] && [ "$(_logcount "$W" "bootstrap")" -eq 0 ]'
+t "R3.40" "rules loaded while pf itself is disabled are an error and a counted failure" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" PF_DISABLED=1 DOTFILES_PF_WAIT=0)" -ge 1 ] && _logged "$W" "sudo pfctl -s info" && grep -q "error.*pf" "$W/out"'
+t "R3.41" "rules that show up a moment after bootstrap (launchd runs the job on its own time) are fine" \
+  'W=$(_ra_env) && [ "$(_ra_tally "$W" PF_LATE=1)" -eq 0 ] && [ "$(grep -c "error" "$W/out")" -eq 0 ]'
+t "R3.42" "a disabled pf with unchanged files still gets the daemon bootstrapped again" '
+  W=$(_ra_env) && _ra_run "$W" && : >"$W/log" && _ra_run "$W" PF_DISABLED=1 DOTFILES_PF_WAIT=0 &&
+  _logged "$W" "sudo launchctl bootstrap system $W/Library/LaunchDaemons/com.stixzoor.dotfiles-pf-remote.plist"'
+
+# Remote Login is switched on last, and only onto a hardened, Tailscale-only sshd.
+t "R3.43" "no key in authorized_keys: Remote Login is left off, with an error saying why" '
+  W=$(_ra_env) && rm -f "$W/home/.ssh/authorized_keys" && _ra_run "$W" &&
+  [ "$(_logcount "$W" "-setremotelogin")" -eq 0 ] && grep -qE "error.*Remote Login.*(keys only|Tailscale)" "$W/out"'
+t "R3.44" "sshd rejecting the config: Remote Login is left off" \
+  'W=$(_ra_env) && _ra_run "$W" SSHD_RC=1 && [ "$(_logcount "$W" "-setremotelogin")" -eq 0 ]'
+t "R3.45" "pf not restricting (bootstrap fails, or no rules): Remote Login is left off" '
+  W=$(_ra_env) && _ra_run "$W" LC_BOOTSTRAP_FAIL=1 && [ "$(_logcount "$W" "-setremotelogin")" -eq 0 ] &&
+  W=$(_ra_env) && _ra_run "$W" PF_EMPTY=1 DOTFILES_PF_WAIT=0 && [ "$(_logcount "$W" "-setremotelogin")" -eq 0 ]'
+t "R3.46" "Remote Login already on is left on when the hardening fails (nothing is ever turned off)" '
+  W=$(_ra_env) && rm -f "$W/home/.ssh/authorized_keys" && _ra_run "$W" RL_LAUNCHD=1 &&
+  [ "$(_logcount "$W" "-setremotelogin")" -eq 0 ] && [ "$(grep -c "error.*Remote Login" "$W/out")" -eq 0 ]'
 
 # Screen Sharing.
 t "R3.29" "Screen Sharing listening: no action line, and it was probed on 5900" \

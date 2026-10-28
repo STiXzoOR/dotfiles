@@ -88,25 +88,19 @@ counted in `DOTFILES_DEFAULTS_FAILURES`:
 
 1. Firewall and stealth mode on, read back. The routine `dotfiles_firewall_on`
    lives in `scripts/lib/defaults-common.sh` and `defaults.sh` calls the same one.
-2. Remote Login on. The state is read first and `systemsetup -setremotelogin -f on`
-   only runs when it is off (the setter errors without Full Disk Access even when
-   it is already on, and `-getremotelogin` itself needs Full Disk Access, so it is
-   not trusted alone). The state counts as on if any of these says so:
-   `systemsetup -getremotelogin`, `sudo launchctl print-disabled system` showing
-   `"com.openssh.sshd" => enabled`, or sshd answering on `127.0.0.1:22`.
-3. Only the running user may log in: the groups `com.apple.access_ssh` and
+2. Only the running user may log in: the groups `com.apple.access_ssh` and
    `com.apple.access_screensharing` are created when missing, the user is added
    and membership is read back with `dseditgroup -o checkmember`. A group can
    exist with no members, which means nobody can log in, so membership is always
    ensured.
-4. sshd hardening: `macos/remote-access/sshd.conf` is installed root:wheel 0644 as
+3. sshd hardening: `macos/remote-access/sshd.conf` is installed root:wheel 0644 as
    `/etc/ssh/sshd_config.d/010-dotfiles.conf` (it must sort before macOS's
    `100-macos.conf`; sshd keeps the first value it reads). Keys only, no
    keyboard-interactive, no root, Ed25519 and P-256 keys, no forwarding. Lockout
    guard: with no key line in `~/.ssh/authorized_keys` it is not installed and the
    step errors. After installing, `sudo /usr/sbin/sshd -t` must pass, else the file
    is removed again. macOS starts sshd per connection, so nothing is restarted.
-5. pf: `macos/remote-access/pf.rules` goes to `/etc/pf.anchors/dotfiles.remote`
+4. pf: `macos/remote-access/pf.rules` goes to `/etc/pf.anchors/dotfiles.remote`
    and loads into the anchor `com.apple/900.dotfiles-remote`, which Apple's stock
    `anchor "com.apple/*"` already evaluates, so `/etc/pf.conf` is never edited. Ports
    22 and 5900 pass on loopback and from Tailscale's `100.64.0.0/10` and
@@ -114,8 +108,20 @@ counted in `DOTFILES_DEFAULTS_FAILURES`:
    `com.stixzoor.dotfiles-pf-remote` (installed root:wheel 0644 in
    `/Library/LaunchDaemons`) re-asserts the rules at boot and every 300 seconds.
    It runs as root, so its plist references only `/bin`, `/sbin`, `/usr/bin` and
-   `/etc/pf.anchors`, never anything in the repo or `$HOME` (tested). The rules
-   are read back with `sudo pfctl -a com.apple/900.dotfiles-remote -sr`.
+   `/etc/pf.anchors`, never anything in the repo or `$HOME` (tested). The step
+   passes only when pf is enforcing: `sudo pfctl -a com.apple/900.dotfiles-remote
+   -sr` lists rules and `sudo pfctl -s info` says `Status: Enabled` (rules in a
+   disabled pf filter nothing). launchd runs the job on its own time after
+   bootstrap, so this is polled for up to `DOTFILES_PF_WAIT` seconds (default 5).
+5. Remote Login on, last, and only when steps 3 and 4 both took effect;
+   otherwise it is left off with an error, so a failed step never leaves sshd
+   answering password logins on every network. Remote Login that is already on
+   stays on. The state is read first and `systemsetup -setremotelogin -f on`
+   only runs when it is off (the setter errors without Full Disk Access even when
+   it is already on, and `-getremotelogin` itself needs Full Disk Access, so it is
+   not trusted alone). The state counts as on if any of these says so:
+   `systemsetup -getremotelogin`, `sudo launchctl print-disabled system` showing
+   `"com.openssh.sshd" => enabled`, or sshd answering on `127.0.0.1:22`.
 6. Screen Sharing cannot be switched on reliably from the CLI, so it is only
    checked (`nc -z 127.0.0.1 5900`) and an action line says what to click. If
    `/Library/Preferences/com.apple.VNCSettings.txt` exists, the legacy "VNC

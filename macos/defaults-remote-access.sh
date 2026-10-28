@@ -13,6 +13,11 @@
 # environment, else macos/machine.local.sh, else on for a desktop and off for a
 # laptop). Off means one skip line and no change. Nothing here ever turns
 # anything off.
+#
+# Order matters: the access groups, the keys-only sshd config and the
+# Tailscale-only pf rules go in first, and Remote Login is switched on last,
+# only when both of those took effect. Otherwise a failed step would leave sshd
+# answering password logins on every network.
 
 DOTFILES_DIR="${DOTFILES_DIR:=$HOME/.dotfiles}"
 
@@ -47,35 +52,6 @@ if [ "$(dotfiles_remote_access)" = on ]; then
   # Firewall and stealth mode first: the same routine defaults.sh runs.
   dotfiles_firewall_on
 
-  # Remote Login (SSH) on. -f suppresses the confirmation prompt, which would
-  # otherwise block forever because it is written to a stream that goes to
-  # /dev/null while stdin is still the terminal. See `man systemsetup`,
-  # -setremotelogin [-f] on | off.
-  #
-  # The state is read first and the setter only runs when it is off: without
-  # Full Disk Access the setter errors even when Remote Login is already on
-  # (enabled by hand), and `-getremotelogin` needs Full Disk Access too, reading
-  # Off while sshd runs. So the state is read from systemsetup, from launchd's
-  # disabled list and from sshd listening on port 22; the last two need no Full
-  # Disk Access.
-  _remote_login_on() {
-    sudo systemsetup -getremotelogin 2>/dev/null | grep -q "Remote Login: On" ||
-      sudo launchctl print-disabled system 2>/dev/null | grep -q '"com.openssh.sshd" => enabled' ||
-      nc -z 127.0.0.1 22 >/dev/null 2>&1
-  }
-  running "Enable remote login"
-  if _remote_login_on; then
-    ok "already on"
-  else
-    sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
-    if _remote_login_on; then
-      ok
-    else
-      error "Remote Login is off: turn it on in System Settings, General, Sharing, Remote Login (or grant Full Disk Access to this terminal), then run \`dotfiles configure --remote-access\` again"
-      _ra_fail
-    fi
-  fi
-
   # Only the running user may log in. A group can exist with no members (seen on
   # a real Mac), which means nobody can log in, so membership is always ensured
   # and read back, not just the group's existence.
@@ -106,17 +82,20 @@ if [ "$(dotfiles_remote_access)" = on ]; then
   # leave no way in over SSH, so the file is not installed then. macOS starts
   # sshd per connection from launchd, so there is nothing to restart.
   running "Allow only key logins over SSH"
+  _ra_sshd_ok=0
   _ra_keys="$HOME/.ssh/authorized_keys"
   if [ -f "$_ra_keys" ] && grep -qvE '^[[:space:]]*(#|$)' "$_ra_keys"; then
     _ra_sshd_src="$DOTFILES_DIR/macos/remote-access/sshd.conf"
     _ra_sshd_dest="${DOTFILES_SSHD_CONF_DIR:-/etc/ssh/sshd_config.d}/010-dotfiles.conf"
     if cmp -s "$_ra_sshd_src" "$_ra_sshd_dest" 2>/dev/null; then
       ok "already set"
+      _ra_sshd_ok=1
     elif ! _ra_put "$_ra_sshd_src" "$_ra_sshd_dest"; then
       error "could not install $_ra_sshd_dest (sudo install failed)"
       _ra_fail
     elif sudo "${DOTFILES_SSHD:-/usr/sbin/sshd}" -t >/dev/null 2>&1; then
       ok
+      _ra_sshd_ok=1
     else
       sudo rm -f "$_ra_sshd_dest"
       error "sshd rejected the new configuration (sshd -t failed), so it was removed again; SSH is as it was"
@@ -142,8 +121,14 @@ if [ "$(dotfiles_remote_access)" = on ]; then
   _ra_pf_dest="${DOTFILES_PF_ANCHOR_DIR:-/etc/pf.anchors}/dotfiles.remote"
   _ra_plist_src="$DOTFILES_DIR/macos/remote-access/$_ra_pf_label.plist"
   _ra_plist_dest="${DOTFILES_LAUNCHDAEMONS_DIR:-/Library/LaunchDaemons}/$_ra_pf_label.plist"
-  _ra_pf_loaded() { [ -n "$(sudo pfctl -a "$_ra_pf_anchor" -sr 2>/dev/null)" ]; }
+  # Enforcing means both: the anchor lists rules, and pf itself is enabled.
+  # Rules in a disabled pf filter nothing.
+  _ra_pf_active() {
+    [ -n "$(sudo pfctl -a "$_ra_pf_anchor" -sr 2>/dev/null)" ] &&
+      sudo pfctl -s info 2>/dev/null | grep -q "Status: Enabled"
+  }
   _ra_pf_good=1
+  _ra_pf_ok=0
   _ra_pf_changed=0
   if ! cmp -s "$_ra_pf_src" "$_ra_pf_dest" 2>/dev/null || ! cmp -s "$_ra_plist_src" "$_ra_plist_dest" 2>/dev/null; then
     _ra_pf_changed=1
@@ -159,7 +144,7 @@ if [ "$(dotfiles_remote_access)" = on ]; then
     fi
   fi
   if [ "$_ra_pf_good" -eq 1 ]; then
-    if [ "$_ra_pf_changed" -eq 1 ] || ! _ra_pf_loaded; then
+    if [ "$_ra_pf_changed" -eq 1 ] || ! _ra_pf_active; then
       sudo launchctl bootout "system/$_ra_pf_label" >/dev/null 2>&1
       if ! sudo launchctl bootstrap system "$_ra_plist_dest" >/dev/null 2>&1; then
         error "launchctl could not load the pf LaunchDaemon ($_ra_plist_dest)"
@@ -169,10 +154,50 @@ if [ "$(dotfiles_remote_access)" = on ]; then
     fi
   fi
   if [ "$_ra_pf_good" -eq 1 ]; then
-    if _ra_pf_loaded; then
+    # launchd runs the job on its own time after bootstrap: give it a moment.
+    _ra_wait=0
+    until _ra_pf_active || [ "$_ra_wait" -ge "${DOTFILES_PF_WAIT:-5}" ]; do
+      sleep 1
+      _ra_wait=$((_ra_wait + 1))
+    done
+    if _ra_pf_active; then
       if [ "$_ra_pf_changed" -eq 1 ]; then ok; else ok "already set"; fi
+      _ra_pf_ok=1
     else
-      error "pf lists no rules in $_ra_pf_anchor: SSH and Screen Sharing are not restricted to Tailscale (check: sudo pfctl -a $_ra_pf_anchor -sr)"
+      error "pf is not enforcing $_ra_pf_anchor (no rules listed, or pf disabled): SSH and Screen Sharing are not restricted to Tailscale (check: sudo pfctl -s info; sudo pfctl -a $_ra_pf_anchor -sr)"
+      _ra_fail
+    fi
+  fi
+
+  # Remote Login (SSH) on, last. -f suppresses the confirmation prompt, which
+  # would otherwise block forever because it is written to a stream that goes to
+  # /dev/null while stdin is still the terminal. See `man systemsetup`,
+  # -setremotelogin [-f] on | off.
+  #
+  # The state is read first and the setter only runs when it is off: without
+  # Full Disk Access the setter errors even when Remote Login is already on
+  # (enabled by hand), and `-getremotelogin` needs Full Disk Access too, reading
+  # Off while sshd runs. So the state is read from systemsetup, from launchd's
+  # disabled list and from sshd listening on port 22; the last two need no Full
+  # Disk Access. Remote Login that is already on is left on whatever happened
+  # above: nothing here turns anything off.
+  _remote_login_on() {
+    sudo systemsetup -getremotelogin 2>/dev/null | grep -q "Remote Login: On" ||
+      sudo launchctl print-disabled system 2>/dev/null | grep -q '"com.openssh.sshd" => enabled' ||
+      nc -z 127.0.0.1 22 >/dev/null 2>&1
+  }
+  running "Enable remote login"
+  if _remote_login_on; then
+    ok "already on"
+  elif [ "$_ra_sshd_ok" -ne 1 ] || [ "$_ra_pf_ok" -ne 1 ]; then
+    error "Remote Login left off: it is switched on only once SSH takes keys only and answers only on Tailscale (fix the errors above, then run \`dotfiles configure --remote-access\` again)"
+    _ra_fail
+  else
+    sudo systemsetup -setremotelogin -f on >/dev/null 2>&1
+    if _remote_login_on; then
+      ok
+    else
+      error "Remote Login is off: turn it on in System Settings, General, Sharing, Remote Login (or grant Full Disk Access to this terminal), then run \`dotfiles configure --remote-access\` again"
       _ra_fail
     fi
   fi
@@ -192,8 +217,8 @@ if [ "$(dotfiles_remote_access)" = on ]; then
   fi
   echo -e " ⇒ SSH and Screen Sharing now answer only on Tailscale: use this Mac's Tailscale name, not its LAN address"
 
-  unset _ra_user _ra_group _ra_good _ra_keys _ra_sshd_src _ra_sshd_dest _ra_pf_label _ra_pf_anchor _ra_pf_src \
-    _ra_pf_dest _ra_plist_src _ra_plist_dest _ra_pf_good _ra_pf_changed _RA_CHANGED
+  unset _ra_user _ra_group _ra_good _ra_keys _ra_sshd_ok _ra_sshd_src _ra_sshd_dest _ra_pf_label _ra_pf_anchor _ra_pf_src \
+    _ra_pf_dest _ra_plist_src _ra_plist_dest _ra_pf_good _ra_pf_ok _ra_pf_changed _ra_wait _RA_CHANGED
 else
   skip "remote access: off for this Mac (DOTFILES_REMOTE_ACCESS=on in macos/machine.local.sh turns it on); nothing changed"
 fi
