@@ -241,7 +241,11 @@ if [ "$(dotfiles_remote_access)" = on ]; then
   if [ -e "${DOTFILES_VNC_SETTINGS:-/Library/Preferences/com.apple.VNCSettings.txt}" ]; then
     warn "the legacy \"VNC viewers may control screen with password\" setting is on: turn it off in Screen Sharing's (i) panel"
   fi
-  echo -e " ⇒ SSH and Screen Sharing now answer only on Tailscale: use this Mac's Tailscale name, not its LAN address"
+  if [ -n "$_ra_lan" ]; then
+    echo -e " ⇒ SSH and Screen Sharing now answer on Tailscale and from $_ra_lan only: anywhere else, use this Mac's Tailscale name"
+  else
+    echo -e " ⇒ SSH and Screen Sharing now answer only on Tailscale: use this Mac's Tailscale name, not its LAN address"
+  fi
 
   unset _ra_user _ra_group _ra_good _ra_keys _ra_sshd_ok _ra_sshd_msg _ra_sshd_src _ra_sshd_dest _ra_pf_label _ra_pf_anchor _ra_pf_src \
     _ra_pf_dest _ra_plist_src _ra_plist_dest _ra_pf_good _ra_pf_ok _ra_pf_changed _ra_wait _ra_lan _ra_pf_built _RA_CHANGED

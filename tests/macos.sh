@@ -1554,6 +1554,9 @@ t "R4.10" "changing the LAN peers reinstalls and reloads the rules" '
   grep -qxF "pass in quick proto { tcp udp } from { 192.0.2.30 } to any port { 22 5900 }" "$RLAN/$ANCH" && _logged "$RLAN" "sudo launchctl bootout system/com.stixzoor.dotfiles-pf-remote"'
 t "R4.11" "the rules are parsed (pfctl -n) as built, LAN line included, before anything is installed" '
   W=$(_ra_env) && _ra_run "$W" DOTFILES_REMOTE_LAN_PEERS="192.0.2.10" PF_RC=1 && [ ! -e "$W/$ANCH" ]'
+t "R4.13" "the closing line names the LAN peers when there are some, and says Tailscale only when there are none" '
+  grep -q "answer on Tailscale and from 192.0.2.30" "$RLAN/out" && [ "$(grep -c "answer only on Tailscale" "$RLAN/out")" -eq 0 ] &&
+  grep -q "answer only on Tailscale" "$RON/out"'
 t "R4.12" "macos/local.sh.example documents it, commented out, with documentation addresses only" \
   '[ "$(grep -c "^# DOTFILES_REMOTE_LAN_PEERS=\"192[.]0[.]2[.]" macos/local.sh.example)" -eq 1 ] && [ "$(grep -c "^DOTFILES_REMOTE_LAN_PEERS=" macos/local.sh.example)" -eq 0 ]'
 
