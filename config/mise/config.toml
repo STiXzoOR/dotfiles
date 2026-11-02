@@ -67,6 +67,7 @@ uv = "latest"
 "npm:hyperframes" = "latest"
 "npm:local-web-server" = "latest"
 "npm:md-to-pdf" = "latest"
+"npm:neonctl" = "latest"
 "npm:nodemon" = "latest"
 "npm:npm-check-updates" = "latest"
 "npm:pptxgenjs" = "latest"
@@ -80,6 +81,7 @@ uv = "latest"
 "npm:tsx" = "latest"
 "npm:typescript" = "latest"
 "npm:typescript-language-server" = "latest"
+"npm:vercel" = "latest"
 "npm:xc-mcp" = { version = "latest", allow_low_downloads = true, trust_policy_excludes = ["xc-mcp@4.2.0"] }
 
 #############################################################################

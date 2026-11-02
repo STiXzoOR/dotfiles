@@ -244,6 +244,12 @@ aube = { path = "locks/npm-md-to-pdf/5.2.5", digest = "sha256:ae8fcd98c91bf46375
 backend = "npm:md-to-pdf"
 specifiers = ["latest"]
 
+[[tools."npm:neonctl"]]
+version = "8.8.0"
+aube = { path = "locks/npm-neonctl/8.8.0", digest = "sha256:95d3c28a5d87b88f13f116b0315e22c1906d5b1f7166494efffb36fed611aa4f" }
+backend = "npm:neonctl"
+specifiers = ["latest"]
+
 [[tools."npm:nodemon"]]
 version = "3.1.14"
 aube = { path = "locks/npm-nodemon/3.1.14", digest = "sha256:975420cde9afc1e3fcbbeaaea489cd8b7a02c02d41363d49aeb018ea6e2aefb8" }
@@ -326,6 +332,12 @@ specifiers = ["latest"]
 version = "6.0.0"
 aube = { path = "locks/npm-typescript-language-server/6.0.0", digest = "sha256:df8016fc179bdf942026d39a79f313ca5bf515e470c5e68d93fe0783d635decf" }
 backend = "npm:typescript-language-server"
+specifiers = ["latest"]
+
+[[tools."npm:vercel"]]
+version = "64.7.0"
+aube = { path = "locks/npm-vercel/64.7.0", digest = "sha256:6834f03fd24f3970c8149f7932665cf3b9df090d5a80e759a015a41aa87c7f3a" }
+backend = "npm:vercel"
 specifiers = ["latest"]
 
 [[tools."npm:xc-mcp"]]
@@ -546,35 +558,45 @@ backend = "aqua:yarnpkg/berry"
 specifiers = ["latest"]
 
 [tools.yarn."platforms.linux-arm64"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.linux-arm64-musl"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.linux-x64"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.linux-x64-baseline"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.linux-x64-musl"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.macos-arm64"]
-checksum = "blake3:6b5fe0bc6105452f663d5a15ee03574caab7ac642f0400266273d0b9562c9dc4"
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.macos-x64"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.macos-x64-baseline"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.windows-x64"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
 
 [tools.yarn."platforms.windows-x64-baseline"]
+checksum = "sha256:fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5"
 url = "https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js"
