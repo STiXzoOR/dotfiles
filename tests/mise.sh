@@ -50,6 +50,15 @@ t "M1.4b" "paranoid keeps provenance, plugins and env files, without the config 
    case "$_p" in *plugins*) ;; *) false ;; esac &&
    case "$_p" in *env_files*) ;; *) false ;; esac &&
    case "$_p" in *\"config\"*|*"= true"*) false ;; *) true ;; esac'
+# A list for paranoid is 2026.10.14 syntax (jdx/mise#14609). An older mise
+# rejects it and drops every other setting along with it, so the doctor's
+# floor has to be at least that release.
+t "M1.4d" "the doctor's mise floor covers paranoid as a list" \
+  '_p=$(code_of config/mise/config.toml | grep -E "^paranoid *= *\[")
+   [ -z "$_p" ] || {
+     _m=$(sed -n "s/^MISE_MIN_VERSION=//p" bin/dotfiles-doctor)
+     [ -n "$_m" ] && [ "$(printf "%s\n%s\n" 2026.10.14 "$_m" | sort -V | head -1)" = 2026.10.14 ]
+   }'
 t "M1.4c" "an untrusted project package.json does not break mise" \
   '! command -v mise >/dev/null 2>&1 || {
      W=$(sandbox); mkdir -p "$W/proj" "$W/state"

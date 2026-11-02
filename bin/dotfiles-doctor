@@ -51,6 +51,13 @@ source "$DOTFILES_DIR/scripts/lib/fs.sh"
 # tap trust, which `dotfiles install --packages` relies on.
 BREW_MIN_MAJOR=7
 
+# The oldest mise that reads config/mise/config.toml. 2026.10.14 made
+# `paranoid` accept a list of categories (jdx/mise#14609). An older mise
+# rejects the list and drops the whole [settings] block with only a warning,
+# so not_found_auto_install, paranoid and minimum_release_age quietly go back
+# to their defaults.
+MISE_MIN_VERSION=2026.10.14
+
 # Counters
 ISSUES=0
 WARNINGS=0
@@ -247,7 +254,7 @@ check_shell() {
 
   # Check starship
   if command -v starship &>/dev/null; then
-    ok "Starship installed: $(starship --version)"
+    ok "Starship installed: $(starship --version | head -1)"
   else
     warn "Starship not installed"
   fi
@@ -355,7 +362,27 @@ check_node() {
     warn "mise not installed (run: dotfiles install --node)"
     return
   fi
-  ok "mise installed"
+
+  local mise_version settings_err
+  mise_version=$(mise --version 2>/dev/null | awk '{print $1}')
+  autoload -Uz is-at-least
+  if [[ "$mise_version" == <->.<->.<-> ]] && ! is-at-least "$MISE_MIN_VERSION" "$mise_version"; then
+    error "mise $mise_version is older than $MISE_MIN_VERSION, which config.toml needs; it ignores every [settings] entry (run: brew upgrade mise)"
+  else
+    if [[ "$mise_version" == <->.<->.<-> ]]; then
+      ok "mise $mise_version installed"
+    else
+      warn "mise installed, but its version is unreadable (run: mise --version)"
+    fi
+    # The symptom itself, whatever the cause: mise reports a [settings] block
+    # it cannot parse only as a warning on stderr, then runs without it.
+    settings_err=$(mise settings get not_found_auto_install 2>&1 >/dev/null | grep -m1 'Error loading settings')
+    if [[ -n "$settings_err" ]]; then
+      error "mise cannot load the [settings] in config.toml, so none of them apply: ${settings_err#*Error loading settings file }"
+    else
+      ok "mise loads the [settings] in config.toml"
+    fi
+  fi
 
   # Not the raw exit status. `mise doctor` is non-zero on this setup for two
   # things the repo chooses on purpose: it reports "not activated" because the
@@ -485,7 +512,8 @@ check_touchid_sudo() {
   fi
 
   echo "      sudo cp /etc/pam.d/sudo_local.template /etc/pam.d/sudo_local"
-  echo "      sudo sed -i '' 's/^#auth/auth/' /etc/pam.d/sudo_local"
+  # By path: sudo keeps the caller's PATH, which finds GNU sed interactively.
+  echo "      sudo /usr/bin/sed -i '' 's/^#auth/auth/' /etc/pam.d/sudo_local"
 }
 
 #############################################################################

@@ -133,6 +133,10 @@ t "A5.3" "doctor checks sudo_local for pam_tid" \
   'grep -q "pam_tid" <(code_of bin/dotfiles-doctor)'
 t "A5.4" "doctor checks the update-proof sudo_local, not just /etc/pam.d/sudo" \
   'grep -q "pam.d/sudo_local" <(code_of bin/dotfiles-doctor)'
+# sudo keeps the caller's PATH, and in an interactive shell that finds GNU sed,
+# which takes BSD's empty -i suffix as the script and the substitution as a file.
+t "A5.4b" "doctor's Touch ID hint calls BSD sed by path" \
+  'grep -q "sudo /usr/bin/sed -i" bin/dotfiles-doctor && ! grep -q "sudo sed -i" bin/dotfiles-doctor'
 t "A5.5" "the --passwordless help line is gone" \
   '! grep -q -- "--passwordless" <(code_of bin/dotfiles)'
 
@@ -1578,6 +1582,37 @@ t "N10.18" "every other brew doctor warning is still counted" '
   stub "$W/bin" brew "case \"\$1\" in --version) echo \"Homebrew 7.0.0\" ;; doctor) printf \"Warning: Putting non-prefixed coreutils in your path can cause GMP builds to fail.\nWarning: You have unlinked kegs in your Cellar.\n\"; exit 1 ;; esac; exit 0"
   out=$(_doc_run "$W" 2>&1)
   _has "$out" "brew doctor reports 1 warning(s)"'
+# A mise too old for config.toml does not fail: it rejects one setting, drops
+# the whole [settings] block with a warning, and runs with
+# not_found_auto_install, paranoid and minimum_release_age back at defaults.
+_mise_stub() { # _mise_stub <W> <version> [warning `mise settings` prints]
+  mkdir -p "$1/bin"
+  printf '#!/bin/bash\ncase "$1" in\n  --version) echo "%s macos-arm64 (2026-01-01)" ;;\n  settings) [ -z "%s" ] || echo "%s" >&2; echo false ;;\nesac\nexit 0\n' \
+    "$2" "${3:-}" "${3:-}" > "$1/bin/mise"
+  chmod +x "$1/bin/mise"
+}
+t "N10.21" "a mise older than config.toml needs is an error that names the fix" '
+  W=$(sandbox); _doc_setup "$W" yes; _mise_stub "$W" 2026.9.15
+  out=$(_doc_run "$W" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && _has "$out" "mise 2026.9.15 is older than" && _has "$out" "brew upgrade mise"'
+t "N10.22" "a current mise passes the version check" '
+  W=$(sandbox); _doc_setup "$W" yes; _mise_stub "$W" 2026.10.25
+  out=$(_doc_run "$W" 2>&1)
+  _has "$out" "mise 2026.10.25" && ! _has "$out" "is older than"'
+t "N10.23" "a settings block mise cannot load is an error, whatever the version" '
+  W=$(sandbox); _doc_setup "$W" yes
+  _mise_stub "$W" 2026.10.25 "mise WARN  Error loading settings file ~/.config/mise/config.toml: invalid type: sequence, expected a boolean"
+  out=$(_doc_run "$W" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && _has "$out" "mise cannot load" && _has "$out" "invalid type: sequence"'
+t "N10.25" "the Starship line is the version alone, not its build info" '
+  W=$(sandbox); _doc_setup "$W" yes
+  stub "$W/bin" starship "printf \"starship 1.26.0\nbranch:main\nbuild_env:rustc\n\""
+  out=$(_doc_run "$W" 2>&1)
+  _has "$out" "Starship installed: starship 1.26.0" && ! _has "$out" "build_env"'
+t "N10.24" "settings that load are reported as loaded" '
+  W=$(sandbox); _doc_setup "$W" yes; _mise_stub "$W" 2026.10.25
+  out=$(_doc_run "$W" 2>&1)
+  _has "$out" "mise loads the [settings] in config.toml"'
 
 #############################################################################
 section "N11 — the setup wizard (1.11)"
