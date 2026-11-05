@@ -31,6 +31,13 @@
 
   "alwaysThinkingEnabled": true,
   "tui": "fullscreen",
+  "autoCompactEnabled": true,
+  "autoCompactWindow": 500000,
+  "deniedMcpServers": [
+    { "serverName": "claude.ai Vercel" },
+    { "serverName": "claude.ai Tripsy" },
+    { "serverName": "blender" }
+  ],
 
   "statusLine": {
     "type": "command",
