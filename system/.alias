@@ -3,7 +3,8 @@
 #############################################################
 
 alias _="sudo"
-alias clauded="CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --dangerously-skip-permissions"
+# Rex draws Kitty images, but Claude Code only trusts kitty and ghostty by name.
+alias clauded='CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 CLAUDE_CODE_FORCE_TERMINAL_IMAGES=$([[ $TERM_PROGRAM == rex ]] && echo 1) claude --dangerously-skip-permissions'
 alias codexxx="codex --sandbox workspace-write --ask-for-approval never"
 alias rr="rm -rf -I"
 alias g="git"
