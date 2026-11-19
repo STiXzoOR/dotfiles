@@ -16,17 +16,30 @@ bindkey-cap() {
 bindkey-cap "$terminfo[kcuu1]" history-substring-search-up
 bindkey-cap "$terminfo[kcud1]" history-substring-search-down
 
-# Backward and forward word with option+left/right
+# Backward and forward word with option+left/right: ESC ESC [D in iTerm and
+# Terminal, ESC b/f, and CSI 1;3 in Rex and Ghostty. Left unbound, vi mode reads
+# that CSI as ESC plus commands, and its final D deletes to the end of the line.
 bindkey '^[^[[D' backward-word
 bindkey '^[b' backward-word
+bindkey '^[[1;3D' backward-word
 bindkey '^[^[[C' forward-word
 bindkey '^[f' forward-word
+bindkey '^[[1;3C' forward-word
 
-# To the beggining/end of line with fn+left/right or home/end
+# Delete a word with option+delete
+bindkey '^[^?' backward-kill-word
+
+# To the beginning/end of line with fn+left/right or home/end, and with
+# cmd+left/right: Rex and Ghostty send ^A/^E (CSI 1;9 without their keymap).
+# Vi insert mode otherwise types ^A as text.
 bindkey-cap "$terminfo[khome]" beginning-of-line
 bindkey '^[[H' beginning-of-line
+bindkey '^A' beginning-of-line
+bindkey '^[[1;9D' beginning-of-line
 bindkey-cap "$terminfo[kend]" end-of-line
 bindkey '^[[F' end-of-line
+bindkey '^E' end-of-line
+bindkey '^[[1;9C' end-of-line
 
 # Delete char with backspaces and delete
 bindkey '^[[3~' delete-char

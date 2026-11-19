@@ -286,6 +286,13 @@ KEY_STATE='
   print -r -- "KEY_R=$(bindkey "^R")"
   print -r -- "KEY_TAB=$(bindkey "^I")"
   print -r -- "KEY_T=$(bindkey "^T")"
+  print -r -- "KEY_CTRL_A=$(bindkey "^A")"
+  print -r -- "KEY_CTRL_E=$(bindkey "^E")"
+  print -r -- "KEY_CMD_LEFT=$(bindkey "^[[1;9D")"
+  print -r -- "KEY_CMD_RIGHT=$(bindkey "^[[1;9C")"
+  print -r -- "KEY_ALT_LEFT=$(bindkey "^[[1;3D")"
+  print -r -- "KEY_ALT_RIGHT=$(bindkey "^[[1;3C")"
+  print -r -- "KEY_ALT_BS=$(bindkey "^[^?")"
   print -r -- "ATUIN_HOOK=${precmd_functions[(r)_atuin_precmd]:-none}"
   print -r -- "ATUIN_ARGS=${ATUIN_STUB_ARGS:-none}"
 '
@@ -551,6 +558,15 @@ t "H4.3" ".bindings loads in rich terminals only" \
   '[ "$(pv KEYTIMEOUT rich)" = 1 ] &&
    [ -n "$(pv KEYTIMEOUT warp)" ] && [ "$(pv KEYTIMEOUT warp)" != 1 ] &&
    [ -n "$(pv KEYTIMEOUT dumb)" ] && [ "$(pv KEYTIMEOUT dumb)" != 1 ]'
+# What Rex and Ghostty send: cmd+arrow is ^A/^E from the app (CSI 1;9 from a
+# bare encoder), option+arrow CSI 1;3, option+delete ESC DEL. Vi insert mode
+# bound none but ^E, so ^A typed itself and an unbound CSI fell into command
+# mode, where its final D deleted to the end of the line.
+t "H4.4" "a rich terminal moves by line and word with the cmd and option keys" \
+  'bound_to "$(pv KEY_CTRL_A)" beginning-of-line && bound_to "$(pv KEY_CTRL_E)" end-of-line &&
+   bound_to "$(pv KEY_CMD_LEFT)" beginning-of-line && bound_to "$(pv KEY_CMD_RIGHT)" end-of-line &&
+   bound_to "$(pv KEY_ALT_LEFT)" backward-word && bound_to "$(pv KEY_ALT_RIGHT)" forward-word &&
+   bound_to "$(pv KEY_ALT_BS)" backward-kill-word'
 
 section "H5 — Powerlevel10k retired"
 t "H5.1" "the Powerlevel10k config is gone" \
