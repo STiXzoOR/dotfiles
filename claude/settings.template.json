@@ -16,7 +16,6 @@
   ],
 
   "env": {
-    "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "VAULT_DIR": "$HOME/Vault"
   },

@@ -33,9 +33,9 @@ kenryu42/cc-marketplace
 warpdotdev/claude-code-warp
 
 # Inline images -- draws pasted and tool images in the terminal transcript, as
-# real pixels in kitty, Ghostty and Rex (through tmux and ssh too). A mod: it
-# runs only with CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, which settings.template.json
-# sets. The marketplace id is "claude-inline-images".
+# real pixels in kitty, Ghostty and Rex (through tmux and ssh too). A mod, so
+# it needs Claude Code 2.1.287 or later, where mods are on by default. The
+# marketplace id is "claude-inline-images".
 STiXzoOR/claude-inline-images
 
 # Private/work marketplaces belong in claude/marketplaces.local.list
