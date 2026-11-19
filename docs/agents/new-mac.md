@@ -113,7 +113,7 @@ its own. Override with `DOTFILES_MACHINE_ROLE=desktop|laptop` in
 
 ## Things that are manual on purpose
 
-- Apps outside Homebrew, the App Store and Setapp (direct downloads).
+- Apps outside Homebrew, the App Store and Setapp (direct downloads). Rex, the main terminal, is one: install it from superlogical.com, then run `dotfiles configure --dock` so it joins the Dock.
 - Per-app permissions macOS asks for on first launch (Accessibility, Input Monitoring, Screen Recording, system extensions such as Karabiner's).
 - Keyboard modifier remaps and input sources (System Settings, Keyboard). They are stored per keyboard.
 - The default browser (System Settings, Desktop & Dock). macOS asks for confirmation, so it cannot be scripted unattended.

@@ -752,7 +752,7 @@
   "saveBackup.conf.backupDir": "${.vscode}/saveBackup",
   "shellformat.path": "/usr/local/bin/shfmt",
   "shellformat.useEditorConfig": true,
-  "terminal.external.osxExec": "Warp.app",
+  "terminal.external.osxExec": "Rex.app",
   "terminal.integrated.copyOnSelection": true,
   "terminal.integrated.cursorBlinking": true,
   "terminal.integrated.cursorStyle": "line",

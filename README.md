@@ -61,7 +61,7 @@ Don't you hate getting a new laptop or joining a new team and then spending a wh
 
 \\[^_^]/ - This started as [Adam Eivy](http://adameivy.com)'s MacOS shell configuration dotfiles but has grown to a multi-developer platform for machine configuration.
 
-When I finish with your machine, you will have a fully configured development environment with modern terminal emulators (Warp, plus Ghostty and cmux for agent work) and a customizable shell prompt.
+When I finish with your machine, you will have a fully configured development environment with modern terminal emulators (Rex as the main one, plus Warp, Ghostty and cmux) and a customizable shell prompt.
 
 ![Terminal Screenshot](./resources/terminal.png)
 
@@ -79,6 +79,7 @@ The dotfiles configure Neovim as a terminal-based IDE, managed with lazy.nvim.
 
 Modern terminal features:
 
+- Rex: the main terminal and the one in the Dock, built on libghostty. Its key bindings live in `config/rex/init.lua`, stowed to `~/.config/rex`. There is no Homebrew cask, so install it from superlogical.com. Start Claude Code with the `clauded` alias there to get real-pixel inline images
 - Warp: AI-powered terminal with native text editing
 - Full-screen mode: `Command + Enter`
 - Ghostty and cmux: both read `config/ghostty/config` (Nord, SSH terminfo, left Option as Alt, a `ctrl+cmd+\`` quick terminal). cmux adds a sidebar that shows which Claude Code session finished and which needs an answer, and both draw Claude Code's inline images as real pixels. Keep agent sessions out of tmux: Claude Code turns its images off there.
@@ -656,6 +657,7 @@ The following is the software installed by default:
 
 **Terminals:**
 
+- Rex (direct download, not a cask)
 - Warp
 - Ghostty
 - cmux

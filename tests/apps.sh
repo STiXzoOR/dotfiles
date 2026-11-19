@@ -249,6 +249,11 @@ t "G1.10" "definitions list no OOBE, no aws sso or cache, no transmission blockl
    [ "$(paths_of config/mackup/applications/aws-settings.cfg | grep -Eci "sso|cache")" -eq 0 ] &&
    [ "$(paths_of config/mackup/applications/transmission-settings.cfg | grep -Eci "blocklist|stats")" -eq 0 ] &&
    ! allow_of | grep -Eqx "illustrator|photoshop|aws|transmission"'
+# Application Support/rex holds the host id and the tailnet node:
+# a restored copy would make both Macs one Rex host. ~/.config/rex is stowed.
+t "G1.11" "rex-settings is allowlisted and copies the Rex preferences plist, nothing else" \
+  '[ "$(allow_of | grep -cx rex-settings)" -eq 1 ] &&
+   [ "$(awk "/^\\[/ { s = (\$0 == \"[configuration_files]\"); next } s && NF && \$0 !~ /^#/ { print }" config/mackup/applications/rex-settings.cfg)" = "Library/Preferences/com.superlogical.rex.plist" ]'
 t "G2.16" "the shipped allowlist passes against real mackup (skipped, visibly, when not installed)" \
   '[ "$HAVE_MACKUP" -eq 0 ] || {
    W=$(sandbox); mkdir -p "$W/home/.config/mackup" "$W/stubs"

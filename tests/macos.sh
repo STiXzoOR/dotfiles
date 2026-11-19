@@ -1013,7 +1013,7 @@ _d_env() {
   mkdir -p "$W/bin" "$W/root/Applications" "$W/root/System/Applications" "$W/home/Downloads"
   : >"$W/log"; printf 0 >"$W/clock"; printf 3 >"$W/down_until"; : >"$W/revert"
   printf 'Safari\nMail\n' >"$W/old"; cp "$W/old" "$W/state"
-  for n in "Brave Browser" "Google Chrome" Slack Figma WebStorm Warp; do mkdir -p "$W/root/Applications/$n.app"; done
+  for n in "Brave Browser" "Google Chrome" Slack Figma WebStorm Warp Rex; do mkdir -p "$W/root/Applications/$n.app"; done
   for n in Apps Calendar Notes "System Settings"; do mkdir -p "$W/root/System/Applications/$n.app"; done
   tick='
 c=$(($(cat "$W_STATE/clock") + 1)); printf %s "$c" >"$W_STATE/clock"
@@ -1123,9 +1123,9 @@ t "G13.10" "local.sh.example documents both variables" \
 
 t "G11.1" "a Dock that relaunches over the first edits still ends with every installed app" '
   W=$(_d_env); _d_run "$W"
-  for a in Apps "Brave Browser" "Google Chrome" Slack Calendar Notes Figma WebStorm Warp "System Settings"; do
+  (for a in Apps "Brave Browser" "Google Chrome" Slack Calendar Notes Figma WebStorm Rex "System Settings"; do
     _d_has "$W" "$a" || exit 1
-  done; [ "$(_d_failed "$W")" = 0 ]'
+  done) && [ "$(_d_failed "$W")" = 0 ]'
 t "G11.2" "an app that is not installed is a quiet skipped line with the exact follow-up command" '
   W=$(_d_env); _d_run "$W"
   grep -qF "skipped" "$W/out" && grep -qF "not installed yet" "$W/out" && grep -q "Spark Mail" "$W/out" && grep -qF "dotfiles configure --dock" "$W/out"'
@@ -1133,7 +1133,7 @@ t "G11.3" "a missing app is never a warning or an error, and never a failure" '
   W=$(_d_env); _d_run "$W"; [ "$(grep -c "warning\|error" "$W/out")" -eq 0 ] && [ "$(_d_failed "$W")" = 0 ]'
 t "G11.4" "the final restart losing the edits once: the Dock is rebuilt and ends right" '
   W=$(_d_env); _d_run "$W" DOCK_LOSE_KILLS=1
-  _d_has "$W" Slack && _d_has "$W" Warp && [ "$(_d_failed "$W")" = 0 ] &&
+  _d_has "$W" Slack && _d_has "$W" Rex && [ "$(_d_failed "$W")" = 0 ] &&
   [ "$(grep -c "^dockutil --no-restart --remove all" "$W/log")" -eq 2 ]'
 t "G11.5" "a Dock that keeps losing the edits: an error naming the missing entries, and a failure" '
   W=$(_d_env); _d_run "$W" DOCK_LOSE_KILLS=9
@@ -1142,6 +1142,8 @@ t "G11.6" "a Dock that never comes back: the wait is bounded, the run ends, and 
   W=$(_d_env); _d_run "$W" DOCK_NEVER=1 DOTFILES_DOCK_SETTLE_TIMEOUT=3; [ -n "$(_d_failed "$W")" ] && [ "$(_logcount "$W" "sleep 1")" -le 12 ] && grep -q "did not settle" "$W/out"'
 t "G11.7" "the Dock process is waited for before the first edit" '
   W=$(_d_env); _d_run "$W"; a=$(_first_line "pgrep -x Dock" "$W/log"); b=$(_first_line "dockutil --no-restart --remove all" "$W/log"); [ "$a" -gt 0 ] && [ "$a" -lt "$b" ]'
+t "G11.8" "Rex is the Dock's terminal: with Warp and Rex both installed, only Rex is added" '
+  W=$(_d_env); _d_run "$W"; _d_has "$W" Rex && ! _d_has "$W" Warp'
 
 #############################################################################
 section "G14 -- review round: undo reduceTransparency, Tinycast is a warning, validation"
@@ -1246,6 +1248,20 @@ t "G16.3" "config/ghostty stows into a sandbox ~/.config/ghostty" \
    }'
 t "G16.4" "dotfiles doctor checks that ~/.config/ghostty is linked" \
   'grep -qE "config_dirs=\(.*\"ghostty\"" bin/dotfiles-doctor'
+
+#############################################################################
+section "G17 -- Rex reads its config from the repo"
+#############################################################################
+t "G17.1" "config/rex stows into a sandbox ~/.config/rex" \
+  '! command -v stow >/dev/null 2>&1 || {
+     W=$(sandbox) && mkdir -p "$W/xdg" "$W/repo" &&
+     (cd "$ROOT_DIR" && git ls-files --cached --others --exclude-standard config/rex | while IFS= read -r f; do
+        mkdir -p "$W/repo/$(dirname "$f")" && cp "$f" "$W/repo/$f" || exit 1
+      done) &&
+     stow -d "$W/repo" -t "$W/xdg" config >/dev/null 2>&1 && [ -f "$W/xdg/rex/init.lua" ]
+   }'
+t "G17.2" "dotfiles doctor checks that ~/.config/rex is linked" \
+  'grep -qE "config_dirs=\(.*\"rex\"" bin/dotfiles-doctor'
 
 #############################################################################
 section "R1 -- dotfiles_remote_access: per-Mac, never from the shared local.sh"

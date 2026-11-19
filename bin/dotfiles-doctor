@@ -126,7 +126,7 @@ check_dotfiles_linked() {
 
   # Check .config directory
   if [[ -d "$HOME/.config" ]]; then
-    local config_dirs=("git" "starship" "karabiner" "ghostty")
+    local config_dirs=("git" "starship" "karabiner" "ghostty" "rex")
     for dir in "${config_dirs[@]}"; do
       if [[ -L "$HOME/.config/$dir" ]]; then
         ok ".config/$dir is linked"

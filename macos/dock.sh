@@ -23,7 +23,8 @@ source "$DOTFILES_DIR/scripts/echos.sh"
 # loop swallowed that, leaving a Dock short while the run still reported
 # success. Spark Mail comes from Setapp (the `setapp` cask), so it lives under
 # /Applications/Setapp. An app that is not installed yet is an info line, not a
-# warning: re-run `dotfiles configure --dock` once it is.
+# warning: re-run `dotfiles configure --dock` once it is. Rex is the terminal
+# here; Warp stays installed but left the Dock when Rex became the default.
 Icons=(
   "/System/Applications/Apps.app"
   "/Applications/Brave Browser.app"
@@ -33,7 +34,7 @@ Icons=(
   "/System/Applications/Notes.app"
   "/Applications/Figma.app"
   "/Applications/WebStorm.app"
-  "/Applications/Warp.app"
+  "/Applications/Rex.app"
   "/System/Applications/System Settings.app"
   "/Applications/Setapp/Spark Mail.app"
 )

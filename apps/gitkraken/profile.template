@@ -84,7 +84,7 @@
       "externalTerminalType": "custom",
       "externalTerminalName": null,
       "customTerminal": {
-        "path": "/Applications/Warp.app"
+        "path": "/Applications/Rex.app"
       }
     }
   },

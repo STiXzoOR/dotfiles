@@ -26,7 +26,8 @@ before prezto loads, and sets `DOTFILES_TERM_HOST`:
 | `warp` | `TERM_PROGRAM=WarpTerminal`                       | environment, completion, zoxide, atuin's recording hooks                             |
 | `rich` | any other terminal                                | everything: Starship, prezto's line-editor modules, fzf, fzf-tab, atuin, `.bindings` |
 
-Warp is the only host detected positively; anything unrecognised is rich. To
+Warp is the only host detected positively; anything unrecognised is rich,
+including Rex (`TERM_PROGRAM=rex`), the main terminal. To
 override detection, set `DOTFILES_TERM_HOST` in `profiles/local.zsh` under a
 condition that picks out the host. The reasoning is in
 `docs/superpowers/specs/2026-09-22-zsh-2026-design.md`.

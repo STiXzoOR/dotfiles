@@ -94,6 +94,7 @@ that is the owner's decision.
 | `pixelsnap2-setapp` | custom: the `-setapp` plist |
 | `playcover` | custom: `io.playcover.PlayCover.plist` |
 | `proxyman-setapp` | custom: the `-setapp` plist only (the built-in also copies certificate material) |
+| `rex-settings` | custom: `com.superlogical.rex.plist` only. Never `Application Support/rex`, which holds the host id and the tailnet node (a copy would make both Macs one Rex host). `~/.config/rex` is stowed from `config/rex` |
 | `shottr` | custom: the container plist, and the Preferences plist for a non-sandboxed build |
 | `spark-setapp` | custom: the `-setapp` plist |
 | `supercharge-setapp` | custom: the `-setapp` plist |
