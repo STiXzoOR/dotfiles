@@ -474,6 +474,10 @@ t "N4.3" "the bootstrap adds those marketplaces and installs those plugins" '
   [ "$(grep -c "^claude plugin marketplace add warpdotdev/claude-code-warp" "$W/log")" -eq 1 ] &&
   [ "$(grep -c "^claude plugin install cc-safety-net@cc-marketplace" "$W/log")" -eq 1 ] &&
   [ "$(grep -c "^claude plugin install warp@claude-code-warp" "$W/log")" -eq 1 ]'
+t "N4.4" "the inline-images mod is listed and the template switches mods on, without which it does nothing" '
+  grep -qx "STiXzoOR/claude-inline-images" claude/marketplaces.list &&
+  grep -qx "inline-images@claude-inline-images" claude/plugins.list &&
+  [ "$(jq -r ".env.CLAUDE_CODE_ENABLE_FUNCTION_HOOKS" claude/settings.template.json)" = 1 ]'
 
 section "N5 — MCP servers from a list (item 2.5)"
 t "N5.1" "mcp.list holds qmd and blender and the file documents its format" '

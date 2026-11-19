@@ -19,6 +19,7 @@ compound-engineering@compound-engineering-plugin
 # on a fresh machine.
 cc-safety-net@cc-marketplace
 warp@claude-code-warp
+inline-images@claude-inline-images
 
 # Required by the QMD/Obsidian bootstrap, not a preference:
 #   recall                -> extract-sessions.py, driven by the Stop hook
