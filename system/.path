@@ -36,6 +36,10 @@ prepend-path "$HOME/.cargo/bin"
 prepend-path "$HOME/.local/share/pnpm"
 prepend-path "$HOME/.cache/.bun/bin"
 prepend-path "/Applications/Postgres.app/Contents/Versions/16/bin"
+# The rex CLI ships inside Rex Server.app, and the Rex app puts it only on its
+# own tabs' PATH. `rex -S <host>` runs rex on the other Mac over ssh, in a
+# non-interactive shell whose PATH comes from this file alone.
+prepend-path "$HOME/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS"
 
 # Remove duplicate PATH entries (typeset -U is zsh-only). Normalisation runs
 # later, from .zprofile, because ~/.local/bin/env is sourced after this file
