@@ -40,12 +40,13 @@ prepend-path "/Applications/Postgres.app/Contents/Versions/16/bin"
 # own tabs' PATH. `rex -S <host>` runs rex on the other Mac over ssh, in a
 # non-interactive shell whose PATH comes from this file alone.
 prepend-path "$HOME/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS"
-# Rex.app's server listens in Application Support, but with REX_SERVER unset
-# the CLI looks under $XDG_RUNTIME_DIR (set in .env) and starts a second
-# server there that the app never shows. Rex.app sets REX_SERVER for its own
-# tabs, so only other shells, such as `rex -S <host>` over ssh, take this.
-if [ -z "${REX_SERVER:-}" ] && [ -d "$HOME/Library/Application Support/rex" ]; then
-  export REX_SERVER="unix://$HOME/Library/Application%20Support/rex/server.sock"
+# Rex keeps its server socket in its runtime dir, which on macOS is
+# Application Support, where Rex.app's server listens. With XDG_RUNTIME_DIR
+# set (.env), rex uses $XDG_RUNTIME_DIR/rex instead, so `rex server start`,
+# which `rex -S <host>` runs over ssh, started a second server there that the
+# app never showed. REX_RUNTIME_DIR puts rex back on the app's.
+if [ -z "${REX_RUNTIME_DIR:-}" ] && [ -d "$HOME/Library/Application Support/rex" ]; then
+  export REX_RUNTIME_DIR="$HOME/Library/Application Support/rex"
 fi
 
 # Remove duplicate PATH entries (typeset -U is zsh-only). Normalisation runs
