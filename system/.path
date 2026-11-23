@@ -40,6 +40,13 @@ prepend-path "/Applications/Postgres.app/Contents/Versions/16/bin"
 # own tabs' PATH. `rex -S <host>` runs rex on the other Mac over ssh, in a
 # non-interactive shell whose PATH comes from this file alone.
 prepend-path "$HOME/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS"
+# Rex.app's server listens in Application Support, but with REX_SERVER unset
+# the CLI looks under $XDG_RUNTIME_DIR (set in .env) and starts a second
+# server there that the app never shows. Rex.app sets REX_SERVER for its own
+# tabs, so only other shells, such as `rex -S <host>` over ssh, take this.
+if [ -z "${REX_SERVER:-}" ] && [ -d "$HOME/Library/Application Support/rex" ]; then
+  export REX_SERVER="unix://$HOME/Library/Application%20Support/rex/server.sock"
+fi
 
 # Remove duplicate PATH entries (typeset -U is zsh-only). Normalisation runs
 # later, from .zprofile, because ~/.local/bin/env is sourced after this file
